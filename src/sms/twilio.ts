@@ -1,0 +1,113 @@
+// Twilio adapter for the SMS provider boundary (SPEC FR-6, FR-8; Integrations: Twilio). No SDK: the webhook
+// signature is an HMAC-SHA1 over the configured URL plus the sorted form fields, and sending is one REST call.
+// Nothing here logs or returns phone numbers, message text or the auth token.
+import { createHmac, timingSafeEqual } from "node:crypto";
+import type { InboundSms, SmsProvider } from "./provider";
+
+const MAX_BODY_BYTES = 64 * 1024; // Twilio webhooks are a few KB; anything larger is not from Twilio
+const SEND_TIMEOUT_MS = 10_000;
+
+export type TwilioConfig = {
+  accountSid: string;
+  authToken: string;
+  // The exact public URL configured as the number's or Messaging Service's incoming-message webhook. Twilio signs
+  // this URL, so it is fixed by config rather than read from the request (which a proxy may rewrite).
+  webhookUrl: string;
+};
+
+// Twilio's request signature: base64(HMAC-SHA1(authToken, url + each key+value, keys sorted)).
+export function twilioSignature(authToken: string, url: string, params: URLSearchParams) {
+  const pairs = [...params.entries()].sort(([a, av], [b, bv]) =>
+    a < b ? -1 : a > b ? 1 : av < bv ? -1 : av > bv ? 1 : 0,
+  );
+  const data = url + pairs.map(([k, v]) => k + v).join("");
+  return createHmac("sha1", authToken).update(data, "utf8").digest("base64");
+}
+
+function sameSignature(expected: string, given: string) {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(given);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// Raised when Twilio refuses a message. Carries Twilio's numeric error code (e.g. 21610: recipient replied STOP)
+// and the HTTP status only, so it is safe to log.
+export class TwilioSendError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: number | null,
+  ) {
+    super(`Twilio send failed: status=${status} code=${code ?? "none"}`);
+    this.name = "TwilioSendError";
+  }
+}
+
+export class TwilioSms implements SmsProvider {
+  constructor(
+    private readonly config: TwilioConfig,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  async parseInbound(req: Request): Promise<InboundSms | null> {
+    if (req.method !== "POST") return null;
+    const signature = req.headers.get("x-twilio-signature");
+    if (!signature) return null;
+    if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded"))
+      return null;
+    const declared = Number(req.headers.get("content-length") ?? 0);
+    if (declared > MAX_BODY_BYTES) return null;
+    const raw = await req.text();
+    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return null;
+
+    const params = new URLSearchParams(raw);
+    if (!sameSignature(twilioSignature(this.config.authToken, this.config.webhookUrl, params), signature)) return null;
+    // A signed request for another Twilio account (a shared auth token would be a misconfiguration) is still refused.
+    if (params.get("AccountSid") !== this.config.accountSid) return null;
+
+    const from = params.get("From");
+    const to = params.get("To");
+    if (!from || !to) return null;
+    return {
+      from,
+      to,
+      body: params.get("Body") ?? "",
+      // Set only when Advanced Opt-Out is on and Twilio itself opted the sender out and replied (see provider.ts).
+      providerHandled: params.get("OptOutType")?.toUpperCase() === "STOP",
+    };
+  }
+
+  async send(from: string, to: string, body: string): Promise<string | void> {
+    const { accountSid, authToken } = this.config;
+    const res = await this.fetchImpl(
+      `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({ From: from, To: to, Body: body }),
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      },
+    );
+    const json = (await res.json().catch(() => null)) as { sid?: unknown; code?: unknown } | null;
+    if (!res.ok) throw new TwilioSendError(res.status, typeof json?.code === "number" ? json.code : null);
+    return typeof json?.sid === "string" ? json.sid : undefined;
+  }
+}
+
+// Reads TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WEBHOOK_URL (or APP_BASE_URL + /api/sms/inbound).
+// Throws with the name of the missing setting, never its value.
+export function twilioConfigFromEnv(env: Record<string, string | undefined> = process.env): TwilioConfig {
+  const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
+  if (!accountSid || !/^AC[0-9a-fA-F]{32}$/.test(accountSid))
+    throw new Error("TWILIO_ACCOUNT_SID missing or not an AC… account SID");
+  const authToken = env.TWILIO_AUTH_TOKEN?.trim();
+  if (!authToken) throw new Error("TWILIO_AUTH_TOKEN missing");
+  const base = env.APP_BASE_URL?.trim().replace(/\/+$/, "");
+  const webhookUrl = env.TWILIO_WEBHOOK_URL?.trim() || (base ? `${base}/api/sms/inbound` : "");
+  if (!/^https?:\/\//.test(webhookUrl) || !URL.canParse(webhookUrl))
+    throw new Error("TWILIO_WEBHOOK_URL (or APP_BASE_URL) missing or not an http(s) URL");
+  return { accountSid, authToken, webhookUrl };
+}
