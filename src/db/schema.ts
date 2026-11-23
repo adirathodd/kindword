@@ -53,6 +53,9 @@ export const businesses = pgTable(
       .notNull()
       .default(sql`'{en}'::text[]`),
     toneNotes: text("tone_notes"),
+    // Facts a reply may use (hours, the phone or email for taking a complaint offline). Set by the operator at
+    // onboarding; the AI drafter may use nothing else about the business (SPEC: AI reply generation, rule 4).
+    approvedFacts: text("approved_facts"),
     status: businessStatus("status").notNull().default("onboarding"),
   },
   (t) => [
