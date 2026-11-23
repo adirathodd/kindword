@@ -25,7 +25,8 @@ export const consentMethod = pgEnum("consent_method", ["signed_estimate", "web_f
 export const visitSource = pgEnum("visit_source", ["csv", "sheet"]);
 export const channel = pgEnum("channel", ["sms", "email"]);
 export const requestStatus = pgEnum("request_status", ["scheduled", "sent", "failed", "skipped"]);
-export const skipReason = pgEnum("skip_reason", ["stale", "opted_out", "no_consent", "duplicate"]);
+// clicked: a reminder not sent because the customer clicked the review link after it was scheduled (FR-5).
+export const skipReason = pgEnum("skip_reason", ["stale", "opted_out", "no_consent", "duplicate", "clicked"]);
 export const draftStatus = pgEnum("draft_status", [
   "draft",
   "awaiting_owner",
