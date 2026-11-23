@@ -12,5 +12,6 @@ export type InboundSms = {
 export interface SmsProvider {
   // Checks the request signature; null when it fails. Must not log the payload.
   parseInbound(req: Request): Promise<InboundSms | null>;
-  send(from: string, to: string, body: string): Promise<void>;
+  // Resolves with the provider's message ID when it has one; throws when the provider refuses the message.
+  send(from: string, to: string, body: string): Promise<string | void>;
 }
