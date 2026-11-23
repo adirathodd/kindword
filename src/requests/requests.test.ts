@@ -213,6 +213,7 @@ describe("channel (FR-6)", () => {
     expect(m.text).toContain(`${BASE}/r/${(await one(v)).id}`);
     expect(m.text).toContain(config.postalAddress);
     expect((await one(v)).providerMessageId).toBe("em_1");
+    expect(m.idempotencyKey).toBe(`review-request/${(await one(v)).id}`);
 
     const token = /\/u\/([A-Za-z0-9_-]+)/.exec(m.text)![1];
     const res = await unsubPOST(new Request(`${BASE}/u/${token}`, { method: "POST" }), ctx({ token }));

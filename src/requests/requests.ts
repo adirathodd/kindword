@@ -354,8 +354,8 @@ async function deliver(providers: Providers, cfg: SendConfig, s: Claimed, now: D
     messageId =
       rr.channel === "sms"
         ? await providers.sms.send(l.smsNumber!, s.address, smsBody(lang, attempt, s.businessName, link))
-        : await providers.email.send(
-            reviewEmail({
+        : await providers.email.send({
+            ...reviewEmail({
               lang,
               attempt,
               business: s.businessName,
@@ -364,7 +364,9 @@ async function deliver(providers: Providers, cfg: SendConfig, s: Claimed, now: D
               unsubscribeUrl: `${cfg.baseUrl}/u/${unsubscribeToken(l.id, s.address)}`,
               postalAddress: cfg.postalAddress,
             }),
-          );
+            // A row is one message (request or reminder), so a retried job never sends it twice.
+            idempotencyKey: `review-request/${rr.id}`,
+          });
   } catch {
     // Provider errors can echo the recipient, so none of it is kept. Adapters retry transient errors themselves.
     await db.transaction(async (tx) => {
