@@ -1,6 +1,6 @@
-> **Source of truth for intended behavior (with the Notion project page "Review & Reputation Automation Service (v1.0)", which tracks status and priorities).** Keep this file and Notion in sync; change the SPEC here by PR. Started as an export of the Claude Doc (rev 244, 2026-11-23, https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs), which is no longer updated and may lag. Two diagrams (architecture, build plan) are not included here. Last synced against main 09688ec on 2026-11-23 (see Implementation status and docs/sync/last-sync.json).
+> **Source of truth for intended behavior (with the Notion project page "Kindword (v1.0)", which tracks status and priorities).** Keep this file and Notion in sync; change the SPEC here by PR. Started as an export of the Claude Doc (rev 244, 2026-11-23, https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs), which is no longer updated and may lag. Two diagrams (architecture, build plan) are not included here. Last synced against main 09688ec on 2026-11-23 (see Implementation status and docs/sync/last-sync.json).
 
-# SPEC: Review & Reputation Automation Service (v1.0 MVP, approved 2026-11-22)
+# SPEC: Kindword (v1.0 MVP, approved 2026-11-22)
 
 Nov 22, 2026 · @Adityasinh Rathod
 
@@ -12,7 +12,9 @@ Nov 22, 2026 · @Adityasinh Rathod
 
 ## Overview
 
-v0.1 is a done-for-you service that asks every customer of a local business for a Google review after their visit, and drafts a reply to every review for the owner to approve. It is run by one person, part-time, for a small number of pilot customers in the NYC/NJ area.
+Kindword v0.1 is a done-for-you service that asks every customer of a local business for a Google review after their visit, and drafts a reply to every review for the owner to approve. It is run by one person, part-time, for a small number of pilot customers in the NYC/NJ area.
+
+**Brand.** Kindword (chosen 2026-11-23; working name was Review & Reputation Automation Service). The name is not tied to home services so the business can add other local-business verticals later. Before using it publicly: a USPTO trademark search (software and marketing-services classes), the domain and social handles, and a New Jersey trade name filing for the sole proprietorship.
 
 **Problem.** Local businesses depend on Google reviews to be found and chosen, but owners rarely ask for reviews consistently or reply on time. Cheap tools leave setup and wording to the owner. Platforms like Podium and Birdeye cost $300+/month on contracts.
 
