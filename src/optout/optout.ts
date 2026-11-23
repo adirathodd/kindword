@@ -13,16 +13,24 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 // Twilio's single-word keywords plus our own; matched as whole words so "stop please" and "STOP!!" count.
 // A false positive costs one review request; a missed opt-out is TCPA exposure, so we err toward matching.
 const KEYWORDS = new Set(["stop", "stopall", "unsubscribe", "cancel", "end", "quit", "revoke", "optout"]);
+const LONGEST = Math.max(...[...KEYWORDS].map((k) => k.length));
 
+// FR-8 strips punctuation and spaces before matching, so a keyword split by them counts anywhere in the message:
+// any run of adjacent whole words that joins into a keyword ("opt out", "un-subscribe me", "please s t o p").
+// Only whole words are joined, so "I stopped by" and "nonstop" still don't match.
 export function isOptOutMessage(body: string): boolean {
   const words = body
     .toLowerCase()
     .split(/[^a-z]+/)
     .filter(Boolean);
-  return (
-    KEYWORDS.has(words.join("")) || // "s t o p", "opt out", "un-subscribe"
-    words.some((w, i) => KEYWORDS.has(w) || (w === "opt" && words[i + 1] === "out"))
-  );
+  return words.some((_, i) => {
+    let run = "";
+    for (let j = i; j < words.length && run.length < LONGEST; j++) {
+      run += words[j];
+      if (KEYWORDS.has(run)) return true;
+    }
+    return false;
+  });
 }
 
 const normalize = (ch: Channel, address: string) =>
