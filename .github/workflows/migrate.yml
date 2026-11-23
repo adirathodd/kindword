@@ -1,0 +1,44 @@
+name: Migrate production DB
+
+on:
+  push:
+    branches: [main]
+    paths: ["drizzle/**"]
+  workflow_dispatch:
+
+# Never run two migrations at once; never cancel one mid-run.
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+    steps:
+      - name: Skip until the production database exists
+        id: guard
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "PRODUCTION_DATABASE_URL is not set; skipping." >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@v4
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - if: steps.guard.outputs.run == 'true'
+        run: npm ci
+      - if: steps.guard.outputs.run == 'true'
+        run: npm run db:migrate
