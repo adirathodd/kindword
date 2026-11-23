@@ -7,7 +7,15 @@ import { db as defaultDb, type Db } from "../db/client";
 import { consentAttestations, consentMethod, customers, locations, visits } from "../db/schema";
 import { normalizePhone, parseTime } from "./normalize";
 
-export const COLUMNS = ["name", "phone", "email", "visit_time", "consent_method", "consent_date", "evidence_ref"] as const;
+export const COLUMNS = [
+  "name",
+  "phone",
+  "email",
+  "visit_time",
+  "consent_method",
+  "consent_date",
+  "evidence_ref",
+] as const;
 
 const UploadContext = z.object({
   attestationId: z.uuid(), // operator picks the list's attestation per upload
@@ -55,7 +63,8 @@ const rowSchema = (tz: string) =>
     evidence_ref: text,
   });
 
-// Spreadsheet row number: header is row 1.
+// Header is row 1. shortcut: blank lines are not counted and a quoted multi-line field counts once, so numbers drift
+// from the spreadsheet view in those files; track line offsets if operators get confused.
 const rowNo = (i: number) => i + 2;
 
 export async function importCsv(
@@ -65,6 +74,7 @@ export async function importCsv(
   db: Db = defaultDb,
 ): Promise<ImportResult> {
   const ctx = UploadContext.parse(uploadContext);
+  z.uuid().parse(locationId); // a non-UUID would otherwise surface as a raw Postgres error
   const [loc] = await db.select().from(locations).where(eq(locations.id, locationId));
   if (!loc) throw new Error("importCsv: location not found");
 
@@ -75,6 +85,8 @@ export async function importCsv(
     transformHeader: (h) => h.trim().toLowerCase(),
   });
   if (parsed.errors.length) return { ok: false, error: "malformed_csv", row: rowNo(parsed.errors[0].row ?? -1) };
+  // papaparse renames a repeated header to "phone_1" and keeps going; which column is right is ambiguous.
+  if (Object.keys(parsed.meta.renamedHeaders ?? {}).length) return { ok: false, error: "malformed_csv", row: 1 };
   const missing = COLUMNS.filter((c) => !parsed.meta.fields?.includes(c));
   if (missing.length) return { ok: false, error: "missing_columns", columns: missing };
 
@@ -83,7 +95,11 @@ export async function importCsv(
     .select({ id: consentAttestations.id })
     .from(consentAttestations)
     .where(and(eq(consentAttestations.id, ctx.attestationId), eq(consentAttestations.businessId, loc.businessId)));
-  if (!att) return { ok: true, rows: parsed.data.map((_, i) => ({ row: rowNo(i), status: "rejected", reason: "attestation_invalid" })) };
+  if (!att)
+    return {
+      ok: true,
+      rows: parsed.data.map((_, i) => ({ row: rowNo(i), status: "rejected", reason: "attestation_invalid" })),
+    };
 
   const schema = rowSchema(loc.timezone);
   const seen = new Set<string>(); // normalized phones and emails already accepted from this file
@@ -116,9 +132,6 @@ export async function importCsv(
       res("skipped", "duplicate_in_file");
       continue;
     }
-    if (phone) seen.add(phone);
-    if (email) seen.add(email);
-
     const keptPhone = phone && consented ? phone : undefined;
     const visitAt = parseTime(v.visit_time!, loc.timezone)!;
 
@@ -128,6 +141,8 @@ export async function importCsv(
       outcome = await db.transaction(async (tx) => {
         // Serialize imports per location so concurrent uploads cannot race the customer lookup.
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${locationId}))`);
+        // Match on the row's phone even when it will be dropped (used, never stored), so a person already on file
+        // is not split into a second email-only customer and asked twice (FR-9).
         const matches = await tx
           .select()
           .from(customers)
@@ -135,7 +150,7 @@ export async function importCsv(
             and(
               eq(customers.locationId, locationId),
               or(
-                keptPhone ? eq(customers.normalizedPhone, keptPhone) : undefined,
+                phone ? eq(customers.normalizedPhone, phone) : undefined,
                 email ? eq(customers.normalizedEmail, email) : undefined,
               ),
             ),
@@ -143,7 +158,7 @@ export async function importCsv(
         const existing = matches[0];
         if (
           matches.length > 1 ||
-          (existing && keptPhone && existing.normalizedPhone && existing.normalizedPhone !== keptPhone) ||
+          (existing && phone && existing.normalizedPhone && existing.normalizedPhone !== phone) ||
           (existing && email && existing.normalizedEmail && existing.normalizedEmail !== email)
         )
           return ["rejected", "contact_conflict"];
@@ -190,6 +205,11 @@ export async function importCsv(
       throw new Error(`importCsv: row ${row} failed (${pg.code ?? "unknown"} ${pg.constraint ?? ""})`.trim());
     }
     res(...outcome);
+    // Only rows that were accepted claim their contacts; a rejected row must not block a later valid one.
+    if (outcome[0] !== "rejected") {
+      if (phone) seen.add(phone);
+      if (email) seen.add(email);
+    }
   }
   return { ok: true, rows };
 }

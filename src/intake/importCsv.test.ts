@@ -62,7 +62,12 @@ describe("importCsv", () => {
     const r = await run(csv("Pat Doe,201-555-0101,pat@example.test,2026-11-20 14:30,,,"));
     expect(r).toEqual({ ok: true, rows: [{ row: 2, status: "inserted", reason: "phone_dropped_no_consent" }] });
     const [c] = await customersOf();
-    expect(c).toMatchObject({ phone: null, normalizedPhone: null, consentMethod: null, normalizedEmail: "pat@example.test" });
+    expect(c).toMatchObject({
+      phone: null,
+      normalizedPhone: null,
+      consentMethod: null,
+      normalizedEmail: "pat@example.test",
+    });
   });
 
   it("treats a partial or future consent record as no consent", async () => {
@@ -92,7 +97,12 @@ describe("importCsv", () => {
         `D,,,2026-11-20 14:30,${CONSENT}`,
       ),
     );
-    expect(r.ok && r.rows.map((x) => x.reason)).toEqual(["invalid_phone", "invalid_email", "invalid_visit_time", "no_contact"]);
+    expect(r.ok && r.rows.map((x) => x.reason)).toEqual([
+      "invalid_phone",
+      "invalid_email",
+      "invalid_visit_time",
+      "no_contact",
+    ]);
     expect(await customersOf()).toHaveLength(0);
   });
 
@@ -134,9 +144,33 @@ describe("importCsv", () => {
   });
 
   it("rejects a row whose phone and email belong to different customers", async () => {
-    await run(csv(`A,201-555-0113,a@example.test,2026-11-20 14:30,${CONSENT}`, "B,,b@example.test,2026-11-20 14:30,,,"));
+    await run(
+      csv(`A,201-555-0113,a@example.test,2026-11-20 14:30,${CONSENT}`, "B,,b@example.test,2026-11-20 14:30,,,"),
+    );
     const r = await run(csv(`X,201-555-0113,b@example.test,2026-11-22 14:30,${CONSENT}`));
     expect(r.ok && r.rows[0].reason).toBe("contact_conflict");
+  });
+
+  it("matches an existing customer on a dropped phone instead of creating a second customer", async () => {
+    await run(csv(`A,201-555-0119,,2026-11-20 14:30,${CONSENT}`));
+    const r = await run(csv("A,201-555-0119,new@example.test,2026-11-21 14:30,,,"));
+    expect(r.ok && r.rows[0]).toMatchObject({ status: "inserted" });
+    expect(await customersOf()).toHaveLength(1);
+    expect(await visitsOf()).toHaveLength(2);
+  });
+
+  it("does not let a rejected row block a later valid row with the same contact", async () => {
+    await run(
+      csv(`A,201-555-0120,a@example.test,2026-11-20 14:30,${CONSENT}`, "B,,b@example.test,2026-11-20 14:30,,,"),
+    );
+    const r = await run(
+      csv(`X,201-555-0120,b@example.test,2026-11-22 14:30,${CONSENT}`, "B,,b@example.test,2026-11-22 15:30,,,"),
+    );
+    expect(r.ok && r.rows.map((x) => x.reason)).toEqual(["contact_conflict", "existing_customer"]);
+  });
+
+  it("rejects a non-UUID location id without a database error", async () => {
+    await expect(importCsv("not-a-uuid", csv(), t.ctx)).rejects.toThrow(/Invalid UUID/);
   });
 
   it("rejects every row when the attestation belongs to another business", async () => {
@@ -150,7 +184,9 @@ describe("importCsv", () => {
   });
 
   it("rejects a malformed CSV without importing anything", async () => {
-    const unclosed = await run(csv(`A,201-555-0115,a@example.test,2026-11-20 14:30,${CONSENT}`, `"B,,b@example.test,2026-11-20 14:30,,,`));
+    const unclosed = await run(
+      csv(`A,201-555-0115,a@example.test,2026-11-20 14:30,${CONSENT}`, `"B,,b@example.test,2026-11-20 14:30,,,`),
+    );
     expect(unclosed).toMatchObject({ ok: false, error: "malformed_csv" });
     const ragged = await run(csv(`A,201-555-0116,a@example.test,2026-11-20 14:30,${CONSENT}`, "B,,b@example.test"));
     expect(ragged).toEqual({ ok: false, error: "malformed_csv", row: 3 });
@@ -160,12 +196,19 @@ describe("importCsv", () => {
       error: "missing_columns",
       columns: ["email", "visit_time", "consent_method", "consent_date", "evidence_ref"],
     });
+    const dupCols = await run(
+      `${HEADER},phone\nA,201-555-0121,a@example.test,2026-11-20 14:30,${CONSENT},201-555-0122`,
+    );
+    expect(dupCols).toEqual({ ok: false, error: "malformed_csv", row: 1 });
     expect(await customersOf()).toHaveLength(0);
   });
 
   it("never puts contact data in results", async () => {
     const r = await run(
-      csv(`Pat Doe,201-555-0118,pat@example.test,2026-11-20 14:30,${CONSENT}`, "Pat Doe,201-555-01,x@example.test,2026-11-20 14:30,,,"),
+      csv(
+        `Pat Doe,201-555-0118,pat@example.test,2026-11-20 14:30,${CONSENT}`,
+        "Pat Doe,201-555-01,x@example.test,2026-11-20 14:30,,,",
+      ),
     );
     expect(JSON.stringify(r)).not.toMatch(/555|example\.test|Pat/);
   });
@@ -197,5 +240,10 @@ describe("parseTime", () => {
     expect(parseTime("2026-11-20T14:30:00-05:00", ny)).toEqual(new Date("2026-11-20T19:30:00Z"));
     expect(parseTime("11/20/2026", ny)).toBeNull();
     expect(parseTime("2026-11-20 24:00", ny)).toBeNull();
+    expect(parseTime("2026-11-20T14:30:00.5Z", ny)).toEqual(new Date("2026-11-20T14:30:00.500Z"));
+    // new Date() would roll these over instead of rejecting them
+    expect(parseTime("2026-02-30T10:00:00Z", ny)).toBeNull();
+    expect(parseTime("2026-11-20T24:00:00Z", ny)).toBeNull();
+    expect(parseTime("2026-11-20T14:30+15:00", ny)).toBeNull();
   });
 });
