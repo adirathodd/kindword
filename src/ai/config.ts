@@ -2,7 +2,7 @@
 // Groq's free tier first, the Claude API as the paid fallback).
 //   DRAFT_PROVIDER  groq (default) | anthropic
 //   DRAFT_MODEL     optional model ID override for that provider
-//   GROQ_API_KEY    required for groq; the Anthropic SDK reads ANTHROPIC_API_KEY itself
+//   GROQ_API_KEY    required for groq; ANTHROPIC_API_KEY required for anthropic (the SDK reads it itself)
 // Throws with the name of the missing or malformed setting, never its value.
 import { AnthropicDraftModel } from "./anthropic";
 import { GroqDraftModel } from "./groq";
@@ -18,6 +18,11 @@ export function draftModelFromEnv(env: Record<string, string | undefined> = proc
     if (!apiKey) throw new Error("GROQ_API_KEY missing");
     return new GroqDraftModel({ apiKey, model });
   }
-  if (provider === "anthropic") return new AnthropicDraftModel({ model });
+  if (provider === "anthropic") {
+    // The SDK reads the key itself, but only fails on the first request; refuse the configuration up front instead.
+    if (!env.ANTHROPIC_API_KEY?.trim() && !env.ANTHROPIC_AUTH_TOKEN?.trim())
+      throw new Error("ANTHROPIC_API_KEY missing");
+    return new AnthropicDraftModel({ model });
+  }
   throw new Error("DRAFT_PROVIDER must be groq or anthropic");
 }

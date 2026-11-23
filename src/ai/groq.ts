@@ -80,7 +80,8 @@ export class GroqDraftModel implements DraftModel {
       }
       const json = (await res.json().catch(() => null)) as ChatResponse | null;
       if (res.status === 429) {
-        const after = Number(res.headers.get("retry-after"));
+        const raw = res.headers.get("retry-after")?.trim();
+        const after = raw ? Number(raw) : NaN; // no header: unknown, not 0 seconds
         throw new ModelRateLimitError(Number.isFinite(after) && after >= 0 ? after : null);
       }
       if (res.status >= 500) {

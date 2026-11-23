@@ -95,6 +95,13 @@ describe("AnthropicDraftModel", () => {
     expect(err.retryAfterSeconds).toBe(30);
   });
 
+  it("reports an unknown wait (not 0 s) for a 429 without retry-after", async () => {
+    const c = client([{ status: 429, body: { type: "error", error: { type: "rate_limit_error", message: "x" } } }]);
+    const err = await new AnthropicDraftModel({ client: c.client }).writeReply(prompt).catch((e) => e);
+    expect(err).toBeInstanceOf(ModelRateLimitError);
+    expect(err.retryAfterSeconds).toBeNull();
+  });
+
   it("wraps other API errors with status and class only", async () => {
     const c = client([
       { status: 500, body: { type: "error", error: { type: "api_error", message: "secret detail" } } },

@@ -94,6 +94,13 @@ describe("GroqDraftModel", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("reports an unknown wait (not 0 s) for a 429 without retry-after", async () => {
+    const { m } = adapter([json(429, { error: { code: "rate_limit_exceeded" } })]);
+    const err = await m.writeReply(prompt).catch((e) => e);
+    expect(err).toBeInstanceOf(ModelRateLimitError);
+    expect(err.retryAfterSeconds).toBeNull();
+  });
+
   it("retries 5xx and network errors with backoff", async () => {
     const { m, calls, sleeps } = adapter([
       json(503, { error: { type: "service_unavailable" } }),

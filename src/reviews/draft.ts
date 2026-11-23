@@ -6,11 +6,30 @@
 import { and, asc, count, eq, notExists, notInArray, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses, locations, replyDrafts, reviews } from "../db/schema";
-import { ModelRateLimitError, ModelRefusalError, type DraftModel, type ModelPrompt } from "../ai/provider";
+import {
+  DraftModelError,
+  ModelRateLimitError,
+  ModelRefusalError,
+  type DraftModel,
+  type ModelPrompt,
+} from "../ai/provider";
 
 export const PROMPT_VERSION = 1;
 const BATCH = 20;
-export const MAX_DRAFT_FAILURES = 3; // after this many failed attempts a review is left for the owner to answer
+export const MAX_DRAFT_FAILURES = 3; // after this many failures caused by the review itself, the owner answers it
+
+// A failure caused by this review (the model refused it, ran out of tokens or returned nothing, or the provider
+// rejected this request as invalid). Only these count toward MAX_DRAFT_FAILURES. Everything else (the provider is
+// down or times out, a bad or missing API key, an unknown model, a database error) says nothing about the review:
+// the run stops and every review waits for the next run, like a rate limit (SPEC Integrations, AI model: "drafting
+// waits for the next run"), so an outage or a configuration mistake can never abandon reviews for good (FR-12).
+const SYSTEM_STATUSES = new Set([401, 403, 404, 408, 409, 429]);
+function causedByReview(e: unknown) {
+  if (e instanceof ModelRefusalError) return true;
+  if (!(e instanceof DraftModelError)) return false;
+  if (e.kind === "max_tokens" || e.kind === "empty_response") return true;
+  return e.status !== null && e.status >= 400 && e.status < 500 && !SYSTEM_STATUSES.has(e.status);
+}
 
 // Flags the inbox knows how to show (src/inbox/http.ts). The model may only pick from MODEL_FLAGS.
 export const MODEL_FLAGS = [
@@ -50,8 +69,13 @@ export type DraftInput = {
   text: string | null;
 };
 
-// Review text is untrusted: our delimiter tags are removed from it so it cannot close the <review> block.
-const fence = (s: string) => s.replace(/<\s*\/?\s*review\b[^>]*>/gi, " ");
+// Review text is untrusted: our delimiter tags are removed from it so it cannot close the <review> block. Repeated
+// until nothing is left, so a tag hidden inside another ("<</review>/review>") cannot be rebuilt by the removal.
+const REVIEW_TAG = /<\s*\/?\s*review\b[^>]*>/gi;
+const fence = (s: string) => {
+  for (let prev = ""; prev !== s;) [prev, s] = [s, s.replace(REVIEW_TAG, " ")];
+  return s;
+};
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 export const firstName = (name: string | null) => {
   const first =
@@ -107,7 +131,11 @@ export function buildRiskPrompt(i: DraftInput): ModelPrompt {
 // Deterministic checks, so the obvious cases are flagged even if the model misses them. English and Spanish.
 const PHONE_RE = /(?:\+?\d[\s().-]*){10,}/g;
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const URL_RE = /\bhttps?:\/\/|\bwww\.|\b[a-z0-9-]+\.(?:com|net|org|biz|info|io|co|us)\b/i;
+// Post-check only (stricter than the review rules above): any domain-like word.tld, whatever the TLD, and a phone
+// number of 7 or more digits (a local number without area code is still a phone number). A false match only holds
+// the draft for the owner's extra care.
+const URL_RE = /\bhttps?:\/\/|\bwww\.|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,24}\b/i;
+const DRAFT_PHONE_RE = /(?:\+?\d[\s().-]*){7,}/g;
 const KEYWORDS: Array<[Flag, RegExp]> = [
   ["injury", /\b(injur\w*|hurt|burn(?:ed|t)|bleed\w*|hospital\w*|herid\w*|lesi[oó]n\w*|lastim\w*)\b/i],
   ["property_damage", /\b(damag\w*|destroy\w*|ruin\w*|flood\w*|da[ñn]ad\w*|da[ñn]os?|inund\w*)\b/i],
@@ -140,23 +168,33 @@ const digits = (s: string) => s.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
 // SPEC Quality checks: 2 to 4 sentences, no URL, and no phone number or email other than the approved facts.
 export function postCheck(draft: string, approvedFacts: string | null): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
+  // A sentence ends at . ! ? … (or their CJK forms), optionally followed by closing quotes or brackets: "fast!) We".
   const sentences = draft
-    .split(/(?<=[.!?。！？])\s+/)
+    .split(/(?<=[.!?…。！？]["'”’)\]]*)\s+/u)
     .map((s) => s.trim())
     .filter((s) => /[\p{L}\p{N}]/u.test(s));
   if (sentences.length < 2 || sentences.length > 4) reasons.push("sentences");
   if (URL_RE.test(draft.replace(EMAIL_RE, " "))) reasons.push("url");
   const facts = approvedFacts ?? "";
-  const allowedPhones = new Set((facts.match(PHONE_RE) ?? []).map(digits));
+  const allowedPhones = [...new Set((facts.match(DRAFT_PHONE_RE) ?? []).map(digits))];
+  // An approved number may be written without its area code ("555-0199" for "(201) 555-0199").
+  const allowedPhone = (p: string) => allowedPhones.some((a) => a === digits(p) || a.endsWith(digits(p)));
   const allowedEmails = new Set((facts.match(EMAIL_RE) ?? []).map((e) => e.toLowerCase()));
-  if ((draft.match(PHONE_RE) ?? []).some((p) => !allowedPhones.has(digits(p)))) reasons.push("phone");
+  if ((draft.match(DRAFT_PHONE_RE) ?? []).some((p) => !allowedPhone(p))) reasons.push("phone");
   if ((draft.match(EMAIL_RE) ?? []).some((e) => !allowedEmails.has(e.toLowerCase()))) reasons.push("email");
   return { ok: reasons.length === 0, reasons };
 }
 
-// rateLimited: the provider's quota ran out (e.g. the free tier's daily cap); the run stopped early and the rest wait
+// rateLimited: the provider's quota ran out (e.g. the free tier's daily cap); providerError: the provider failed in a
+// way that is not about one review (down, timed out, bad key). Either way the run stopped early and the rest wait
 // for the next run. Not counted as failures.
-export type DraftResult = { drafted: number; held: number; failed: number; rateLimited: boolean };
+export type DraftResult = {
+  drafted: number;
+  held: number;
+  failed: number;
+  rateLimited: boolean;
+  providerError: boolean;
+};
 
 // Drafts replies for reviews that need one. Idempotent: a review gets at most one draft, even when two runs overlap.
 // Businesses that are paused or offboarded are skipped (FR-20).
@@ -166,7 +204,7 @@ export async function draftPendingReviews(
   db: Db = defaultDb,
 ): Promise<DraftResult> {
   const now = o.now ?? new Date();
-  const result: DraftResult = { drafted: 0, held: 0, failed: 0, rateLimited: false };
+  const result: DraftResult = { drafted: 0, held: 0, failed: 0, rateLimited: false, providerError: false };
   const pending = await db
     .select({
       reviewId: reviews.id,
@@ -194,7 +232,7 @@ export async function draftPendingReviews(
             .from(replyDrafts)
             .where(eq(replyDrafts.reviewId, reviews.id)),
         ),
-        // Stop retrying a review the model keeps failing on (refusals, errors); the owner can still answer it.
+        // Stop retrying a review the model keeps failing on (refusals, see causedByReview); the owner can still answer it.
         sql`(select count(*) from ${auditLog} where ${auditLog.entity} = 'review' and ${auditLog.entityId} = ${reviews.id} and ${auditLog.action} = 'draft_failed') < ${MAX_DRAFT_FAILURES}`,
       ),
     )
@@ -204,6 +242,7 @@ export async function draftPendingReviews(
   for (const r of pending) {
     const outcome = await draftOne(model, r, now, db).catch(async (e) => {
       if (e instanceof ModelRateLimitError) return "rate_limited" as const;
+      if (!causedByReview(e)) return "provider_error" as const;
       const reason = e instanceof ModelRefusalError ? "refused" : "model_error";
       await db.insert(auditLog).values({
         locationId: r.locationId,
@@ -219,6 +258,10 @@ export async function draftPendingReviews(
       result.rateLimited = true;
       break;
     }
+    if (outcome === "provider_error") {
+      result.providerError = true;
+      break;
+    }
     if (outcome === "failed") result.failed++;
     else if (outcome === "held") {
       result.drafted++;
@@ -232,7 +275,7 @@ type Pending = DraftInput & { reviewId: string; locationId: string };
 
 async function draftOne(model: DraftModel, r: Pending, now: Date, db: Db) {
   const reply = (await model.writeReply(buildReplyPrompt(r))).trim();
-  if (!reply) throw new Error("empty reply");
+  if (!reply) throw new DraftModelError(null, "empty_response");
 
   const flags = new Set<Flag>(ruleFlags(r));
   try {
