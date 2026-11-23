@@ -1,0 +1,196 @@
+{
+  "audit_id": "audit-2026-11-23-02",
+  "started_at": "2026-11-23T14:22Z",
+  "completed_at": "2026-11-23T14:40Z",
+  "status": "complete_with_documented_issues",
+  "target_branch": "main",
+  "previous_audit": {
+    "audit_id": "audit-2026-11-23-01",
+    "status": "blocked",
+    "record_location": "branch origin/ccr-84f78022-39jjtz (commit 632707b), never merged to main",
+    "note": "Blocked on SPEC access; audited nothing. Its scope inventory was reused here."
+  },
+  "baseline": {
+    "sha": "5414e139e827cbc2d32df466dbe623d124b45c4d",
+    "inferred": true,
+    "reasoning": "No completed audit exists. 5414e13 is the remediation commit of the earlier intake audit (of 655a9fa), so history up to it is treated as audited. Same baseline as audit-2026-11-23-01."
+  },
+  "end_sha": "a8e36629b4c80ede533d7da15db18c4341adbe99",
+  "spec": {
+    "file": "docs/SPEC.md",
+    "revision": "Doc rev 244, exported 2026-11-23 (added by #4)",
+    "changes_in_period": "docs/SPEC.md added by #4 (first in-repo copy). PR #1 and #2 descriptions mention Doc edits (locations.sms_number; sheet_sources columns, row_id in FR-2a); the export reflects sms_number and FR-2a row ID."
+  },
+  "in_scope": [
+    {
+      "pr": 1,
+      "title": "Opt-out handling (FR-8, Flow 2 step 4)",
+      "url": "https://github.com/adirathodd/review-automation/pull/1",
+      "author": "adirathodd",
+      "merge_commit": "c7c74dd2a516863ef6e334313dd555c69c470c6d",
+      "merge_type": "squash",
+      "base_sha": "5414e139e827cbc2d32df466dbe623d124b45c4d",
+      "merged_at": "2026-11-23T02:15:56Z",
+      "source_commits": ["d2c2273", "2da47eb"],
+      "changed_files": [
+        ".env.example",
+        "drizzle/0003_location_sms_number.sql",
+        "drizzle/meta/0003_snapshot.json",
+        "drizzle/meta/_journal.json",
+        "src/db/schema.test.ts",
+        "src/db/schema.ts",
+        "src/optout/optout.test.ts",
+        "src/optout/optout.ts",
+        "src/sms/provider.ts"
+      ],
+      "depends_on": [],
+      "previously_audited": false,
+      "audit_status": "audited",
+      "findings": ["F-1", "O-1"]
+    },
+    {
+      "pr": 2,
+      "title": "Google Sheet intake: pollSheet with shared FR-2 row rules (FR-2a)",
+      "url": "https://github.com/adirathodd/review-automation/pull/2",
+      "author": "adirathodd",
+      "merge_commit": "5a85947b587f3bd51648072d8b6ae11115736702",
+      "merge_type": "squash",
+      "base_sha": "c7c74dd2a516863ef6e334313dd555c69c470c6d",
+      "merged_at": "2026-11-23T02:17:21Z",
+      "source_commits": ["0a21c85", "331e9db"],
+      "changed_files": [
+        "drizzle/0004_sheet_source_consent.sql",
+        "drizzle/meta/0004_snapshot.json",
+        "drizzle/meta/_journal.json",
+        "src/db/schema.ts",
+        "src/intake/importCsv.ts",
+        "src/intake/pollSheet.test.ts",
+        "src/intake/pollSheet.ts"
+      ],
+      "depends_on": [1],
+      "previously_audited": false,
+      "audit_status": "audited",
+      "findings": ["O-2", "A-1", "A-2"]
+    },
+    {
+      "pr": 3,
+      "title": "Add CI pipeline",
+      "url": "https://github.com/adirathodd/review-automation/pull/3",
+      "author": "adirathodd",
+      "merge_commit": "5a6debacca5676c192188bc5e169e4a42797508d",
+      "merge_type": "squash",
+      "base_sha": "5a85947b587f3bd51648072d8b6ae11115736702",
+      "merged_at": "2026-11-23T14:20:46Z",
+      "source_commits": ["317db9f"],
+      "changed_files": [".github/workflows/ci.yml"],
+      "depends_on": [],
+      "previously_audited": false,
+      "audit_status": "audited",
+      "findings": []
+    },
+    {
+      "pr": 4,
+      "title": "Add SPEC export to docs/SPEC.md",
+      "url": "https://github.com/adirathodd/review-automation/pull/4",
+      "author": "adirathodd",
+      "merge_commit": "a8e36629b4c80ede533d7da15db18c4341adbe99",
+      "merge_type": "squash",
+      "base_sha": "5a85947b587f3bd51648072d8b6ae11115736702",
+      "merged_at": "2026-11-23T14:21:11Z",
+      "source_commits": ["e306ceb"],
+      "changed_files": [".prettierignore", "docs/SPEC.md", "src/db/schema.ts"],
+      "depends_on": [],
+      "previously_audited": false,
+      "audit_status": "audited",
+      "findings": []
+    }
+  ],
+  "direct_commits_outside_prs": [],
+  "completed_stages": [
+    "scope_inventory",
+    "worktrees",
+    "audit",
+    "verification",
+    "remediation",
+    "validation",
+    "fix_prs",
+    "mergeability",
+    "report"
+  ],
+  "findings": [
+    {
+      "id": "F-1",
+      "pr": 1,
+      "classification": "introduced_by_pr",
+      "severity": "high",
+      "status": "fixed_in_pr",
+      "fix_pr": 5,
+      "spec": "FR-8 (webhook strips punctuation and spaces and matches opt-out phrases itself); Flow 2 step 4",
+      "summary": "isOptOutMessage missed keywords split by a space or punctuation inside a longer message ('un-subscribe me', 'please s-t-o-p texting', 're-voke consent', 'can-cel please'); Twilio's filter misses them too, so the customer stayed opted in.",
+      "evidence": "Failing vitest cases on main and at c7c74dd; 6 new tests fail before the fix, pass after."
+    },
+    {
+      "id": "O-1",
+      "pr": 1,
+      "classification": "observation",
+      "severity": "low",
+      "status": "not_a_verified_bug",
+      "summary": "locations.sms_number has no DB check for E.164 (SPEC data model says E.164, unique). A non-E.164 value would make inbound STOP fall back to platform-wide suppression only (still blocks all sends). No code writes sms_number yet (FR-1 not built); enforce when FR-1 lands."
+    },
+    {
+      "id": "O-2",
+      "pr": 2,
+      "classification": "observation",
+      "severity": "low",
+      "status": "not_a_verified_bug",
+      "summary": "sheet_sources.attestation_id FK is not tenant-scoped (customers' attestation FK is). importRows rejects a foreign-business attestation at runtime (every row 'attestation_invalid'), so no wrong consent is stored; consider a tenant-scoped FK or a not_configured result."
+    },
+    {
+      "id": "A-1",
+      "pr": 2,
+      "classification": "spec_ambiguity",
+      "status": "documented",
+      "summary": "Reliability line 316 says sheet reads 'track the last row ID so a row is never imported twice'; implementation re-reads the whole sheet and dedups by row ID in visits, keeping last_row_id as a progress marker only. Meets the intent (never imported twice, tested incl. crash/concurrency); PR #2 already lists rewording line 316 as a Doc follow-up."
+    },
+    {
+      "id": "A-2",
+      "pr": 2,
+      "classification": "spec_ambiguity",
+      "status": "documented",
+      "summary": "SPEC does not say how sheet row IDs are generated or whether they are stable. A template that reuses IDs (e.g. =ROW() after deleting a row) or re-pointing a location to a new sheet would make new rows skip as duplicate_visit. Recommend the SPEC/template require stable, never-reused row IDs."
+    }
+  ],
+  "fix_prs": [
+    {
+      "number": 5,
+      "url": "https://github.com/adirathodd/review-automation/pull/5",
+      "branch": "fix/audit-2026-11-23-pr1-optout-split-keywords",
+      "base": "main",
+      "base_sha": "a8e36629b4c80ede533d7da15db18c4341adbe99",
+      "remediates": [1],
+      "findings": ["F-1"],
+      "depends_on": []
+    }
+  ],
+  "validation": {
+    "environment": "local Postgres 16 (CI uses 17), Node from container",
+    "fix_pr_5": {
+      "vitest": "139/139 passed",
+      "prettier": "clean",
+      "eslint": "clean",
+      "tsc": "clean",
+      "next_build": "passed"
+    },
+    "main_before_fixes": {
+      "vitest": "126/126 passed",
+      "prettier": "clean",
+      "eslint": "clean"
+    }
+  },
+  "merge_order": ["#5 (independent; only fix PR)"],
+  "unresolved": [
+    "O-1 and O-2 are hardening items, not verified SPEC violations",
+    "A-1 and A-2 need SPEC clarification by the owner"
+  ],
+  "next_audit_starts_after": "a8e36629b4c80ede533d7da15db18c4341adbe99"
+}
