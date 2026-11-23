@@ -12,6 +12,8 @@ export type InboundSms = {
 export interface SmsProvider {
   // Checks the request signature; null when it fails. Must not log the payload.
   parseInbound(req: Request): Promise<InboundSms | null>;
-  // Resolves with the provider's message ID when it has one; throws when the provider refuses the message.
+  // Resolves with the provider's message ID when it has one; throws when the send fails. The error has
+  // `refused: true` only when the provider answered and did not take the message (only then may a request fall back
+  // to email, FR-6), and `recipientOptedOut: true` when the provider has the recipient opted out (Twilio 21610).
   send(from: string, to: string, body: string): Promise<string | void>;
 }

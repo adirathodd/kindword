@@ -19,7 +19,7 @@ import {
   type channel,
 } from "../db/schema";
 import type { EmailProvider } from "../email/provider";
-import { unsubscribeToken } from "../optout/optout";
+import { optOut, unsubscribeToken } from "../optout/optout";
 import type { SmsProvider } from "../sms/provider";
 import { pickLanguage, reviewEmail, smsBody, type Attempt } from "./messages";
 import { inSendWindow, nextSendTime } from "./window";
@@ -272,11 +272,20 @@ export async function sendDueRequests(
   const cfg = o.config ?? sendConfigFromEnv();
   const { now, staleMs, reminderDelayMs } = opts(o);
   const result: SendResult = { sent: 0, failed: 0, deferred: 0, waiting: 0, skipped: {} };
+  // Rows that can go out now come first. Rows held for a business that is not live, or for a location that cannot
+  // text yet, stay due without moving, so ordering by due time alone let 200 of them fill every batch and starve
+  // every other tenant's requests until they went stale (FR-5, FR-10: ask every eligible customer).
   const due = await db
     .select({ id: reviewRequests.id })
     .from(reviewRequests)
+    .innerJoin(visits, eq(visits.id, reviewRequests.visitId))
+    .innerJoin(locations, eq(locations.id, visits.locationId))
+    .innerJoin(businesses, eq(businesses.id, locations.businessId))
     .where(and(eq(reviewRequests.status, "scheduled"), lte(reviewRequests.scheduledFor, now)))
-    .orderBy(asc(reviewRequests.scheduledFor))
+    .orderBy(
+      sql`case when ${businesses.status} = 'live' and (${reviewRequests.channel} = 'email' or ${locations.smsNumber} is not null) then 0 else 1 end`,
+      asc(reviewRequests.scheduledFor),
+    )
     .limit(BATCH);
 
   for (const { id } of due) {
@@ -367,13 +376,31 @@ async function deliver(providers: Providers, cfg: SendConfig, s: Claimed, now: D
             // A row is one message (request or reminder), so a retried job never sends it twice.
             idempotencyKey: `review-request/${rr.id}`,
           });
-  } catch {
-    // Provider errors can echo the recipient, so none of it is kept. Adapters retry transient errors themselves.
+  } catch (e) {
+    // Provider errors can echo the recipient, so only these two flags are read. Adapters retry transient errors
+    // themselves. `refused`: the provider answered and did not take the message. Anything else (a timeout, a lost
+    // connection, an ambiguous 5xx) may have gone out, so it never falls back to the other channel.
+    const err = e as { refused?: unknown; recipientOptedOut?: unknown } | null;
+    // Twilio 21610: the customer texted STOP to the provider. Record the opt-out here too (FR-8: suppression applies
+    // to provider callbacks and future imports) and send nothing else.
+    const providerOptOut = rr.channel === "sms" && err?.recipientOptedOut === true;
+    const refused = providerOptOut || err?.refused === true;
+    const error = providerOptOut ? "provider_opted_out" : refused ? "provider_rejected" : "outcome_unknown";
     await db.transaction(async (tx) => {
       await tx.update(reviewRequests).set({ status: "failed", sentAt: null }).where(eq(reviewRequests.id, rr.id));
-      await audit(tx, l.id, rr.id, "failed", `attempt=${rr.attempt};channel=${rr.channel};error=provider_rejected`);
-      // FR-6: a request whose text fails goes by email instead (one channel per request; the text never went out).
-      if (rr.channel === "sms" && rr.attempt === 1 && c.normalizedEmail && !(await isOptedOut(tx, l.id, c))) {
+      await audit(tx, l.id, rr.id, "failed", `attempt=${rr.attempt};channel=${rr.channel};error=${error}`);
+      if (providerOptOut) {
+        await optOut(tx, l.id, "sms", s.address, "provider_sms");
+        return;
+      }
+      // FR-6: a request whose text was refused goes by email instead (one channel per request, never both).
+      if (
+        refused &&
+        rr.channel === "sms" &&
+        rr.attempt === 1 &&
+        c.normalizedEmail &&
+        !(await isOptedOut(tx, l.id, c))
+      ) {
         const [fb] = await tx
           .insert(reviewRequests)
           .values({ visitId: rr.visitId, scheduledFor: now, channel: "email", attempt: 1 })

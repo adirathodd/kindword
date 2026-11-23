@@ -35,12 +35,15 @@ const plus = (t: Date, ms: number) => new Date(t.getTime() + ms);
 
 class FakeSms implements SmsProvider {
   sent: { from: string; to: string; body: string }[] = [];
-  fail = false;
+  fail = false; // the provider answered and refused the text (SmsProvider contract: refused: true)
+  failWith: unknown = null; // any other error, e.g. a timeout after which the text may have gone out
   async parseInbound(): Promise<InboundSms | null> {
     return null;
   }
   async send(from: string, to: string, body: string) {
-    if (this.fail) throw new Error(`Twilio 21211 invalid 'To' ${to}`); // provider errors can echo the number
+    if (this.failWith) throw this.failWith;
+    // Provider errors can echo the number.
+    if (this.fail) throw Object.assign(new Error(`Twilio 21211 invalid 'To' ${to}`), { refused: true });
     this.sent.push({ from, to, body });
     return `SM${this.sent.length}`;
   }
@@ -259,6 +262,53 @@ describe("channel (FR-6)", () => {
     expect(await send(plus(DUE, 120_000))).toMatchObject({ sent: 0, failed: 0 });
   });
 
+  // FR-6 "one channel per request, never both": a timeout or lost connection may come after the provider took the
+  // text, so the request is marked failed but never sent again by email.
+  it.each([
+    ["a timeout", new DOMException("The operation was aborted due to timeout", "TimeoutError")],
+    ["a network error", new TypeError("fetch failed")],
+    ["an ambiguous provider error", Object.assign(new Error("Twilio send failed: status=500"), { refused: false })],
+  ])("does not fall back to email after %s (the text may have gone out)", async (_label, error) => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    sms.failWith = error;
+    expect(await send(DUE)).toMatchObject({ sent: 0, failed: 1 });
+    expect(await send(plus(DUE, 60_000))).toMatchObject({ sent: 0, failed: 0 });
+    expect(email.sent).toEqual([]);
+    expect((await one(v)).status).toBe("failed");
+    const [log] = await db
+      .select()
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.locationId, t.locationId), eq(s.auditLog.action, "failed")));
+    expect(log.detail).toBe("attempt=1;channel=sms;error=outcome_unknown");
+  });
+
+  // FR-8: never message an opted-out phone or email; suppression applies to provider callbacks and future imports.
+  it("records a provider opt-out (Twilio 21610) and sends nothing else, not even the email fallback", async () => {
+    const t = await makeTenant();
+    const c = await t.customer();
+    const v = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    sms.failWith = Object.assign(new Error("Twilio send failed: status=400 code=21610"), {
+      refused: true,
+      recipientOptedOut: true,
+    });
+    await send(DUE);
+    await send(plus(DUE, 60_000));
+    expect(email.sent).toEqual([]);
+    expect(await one(v)).toMatchObject({ channel: "sms", status: "failed" });
+    const rows = await db.select().from(s.suppressionList).where(eq(s.suppressionList.address, PHONE));
+    expect(rows.map((r) => r.locationId).sort()).toEqual([t.locationId, null].sort());
+    const [cust] = await db.select().from(s.customers).where(eq(s.customers.id, c));
+    expect(cust.optedOutAt).not.toBeNull();
+    // A later visit is not asked either.
+    const v2 = await t.visit(c, plus(VISIT, 100 * DAY));
+    await scheduleReviewRequests({ now: plus(VISIT, 100 * DAY) });
+    expect(await one(v2)).toMatchObject({ status: "skipped", skipReason: "opted_out" });
+    await db.delete(s.suppressionList).where(eq(s.suppressionList.address, PHONE));
+  });
+
   it("marks a failed text with no email as failed, with nothing else sent", async () => {
     const t = await makeTenant();
     const v = await t.visit(await t.customer({ mail: null }));
@@ -387,6 +437,39 @@ describe("send-time checks", () => {
     }
     expect((await one(v)).status).toBe("scheduled");
   });
+});
+
+describe("batching (FR-5, FR-10)", () => {
+  it("does not let 200 due requests of a business that is not live starve a live business's request", async () => {
+    const held = await makeTenant({ status: "onboarding", smsNumber: "+12015550189" });
+    const rows = await db
+      .insert(s.customers)
+      .values(
+        Array.from({ length: 200 }, (_, i) => ({
+          locationId: held.locationId,
+          businessId: held.businessId,
+          email: `c${i}@example.test`,
+          normalizedEmail: `c${i}@example.test`,
+        })),
+      )
+      .returning({ id: s.customers.id });
+    await db.insert(s.visits).values(
+      rows.map((c, i) => ({
+        customerId: c.id,
+        locationId: held.locationId,
+        visitAt: plus(VISIT, -60_000), // due first
+        source: "csv" as const,
+        externalVisitId: `held-${i}`,
+      })),
+    );
+    const live = await makeTenant(); // replaces the shared fakes
+    const v = await live.visit(await live.customer({ mail: null }));
+    await scheduleReviewRequests({ now: VISIT }); // the 200 held visits (one batch)
+    await scheduleReviewRequests({ now: VISIT }); // the live one
+    expect(await send(DUE)).toMatchObject({ sent: 1 });
+    expect(await one(v)).toMatchObject({ status: "sent" });
+    expect(sms.sent).toHaveLength(1);
+  }, 30_000);
 });
 
 describe("90-day rule (FR-9)", () => {
