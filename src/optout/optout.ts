@@ -55,7 +55,7 @@ export async function isSuppressed(locationId: string, ch: Channel, address: str
 // Adds the location row (if known) and the platform-wide row, marks the location's customer opted out, and audits.
 // Returns true only the first time this location (or, with no location, the platform) records the opt-out,
 // so a retried webhook or second STOP changes nothing and triggers no confirmation.
-async function optOut(tx: Tx, locationId: string | null, ch: Channel, address: string, actor: string) {
+export async function optOut(tx: Tx, locationId: string | null, ch: Channel, address: string, actor: string) {
   const add = async (loc: string | null) =>
     (
       await tx
