@@ -3,3 +3,5 @@ drizzle/
 package-lock.json
 .claude/
 tsconfig.json
+# Byte-exact export of the SPEC Doc; never reformat.
+docs/SPEC.md

@@ -1,4 +1,4 @@
-// Data model from SPEC-v1.0.md ("Data model"). Hard constraints live here as DB constraints.
+// Data model from docs/SPEC.md ("Data model"). Hard constraints live here as DB constraints.
 import { sql } from "drizzle-orm";
 import {
   check,
