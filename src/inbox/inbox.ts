@@ -129,6 +129,11 @@ export async function decide(
     if (!(ALLOWED_FROM[decision.action] as readonly string[]).includes(d.status))
       return { ok: false, reason: "not_allowed" } as const;
 
+    // A held draft has no one-tap approve (SPEC, AI reply generation: "the owner must edit it or open it and confirm
+    // 'Approve anyway'"). Saving the pre-filled edit form unchanged is not an edit, so it needs the confirmation too.
+    if (decision.action === "edit" && d.status === "held" && text === d.draftText.replace(/\r\n/g, "\n").trim())
+      return { ok: false, reason: "needs_confirmation" } as const;
+
     const approving = decision.action !== "reject";
     const finalText = approving ? (text ?? d.draftText) : null;
     const edited = approving && finalText !== d.draftText;

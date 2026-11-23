@@ -304,6 +304,23 @@ describe("decide", () => {
     expect(await decide(sess, id2, { action: "edit", text: "Please call us." })).toMatchObject({ ok: true });
   });
 
+  it("does not let an unchanged edit approve a held draft without the Approve anyway confirmation", async () => {
+    const id = await draft(A, { status: "held", rating: 1, flags: ["low_rating", "legal"] });
+    const [{ draftText }] = await db
+      .select({ draftText: s.replyDrafts.draftText })
+      .from(s.replyDrafts)
+      .where(eq(s.replyDrafts.id, id));
+    for (const text of [draftText, `  ${draftText}\n`, draftText.replace(/\n/g, "\r\n")])
+      expect(await decide(sess, id, { action: "edit", text })).toEqual({ ok: false, reason: "needs_confirmation" });
+    expect(await draftRow(id)).toMatchObject({ status: "held", approvedAt: null, finalText: null });
+    expect(await audit(id)).toEqual([]);
+    // A real edit still approves it, and so does a confirmed Approve anyway.
+    expect(await decide(sess, id, { action: "edit", text: `${draftText} Please call us.` })).toMatchObject({
+      ok: true,
+      edited: true,
+    });
+  });
+
   it("does not offer Approve anyway for an unflagged draft", async () => {
     const id = await draft(A);
     expect(await decide(sess, id, { action: "approve_anyway", confirmed: true })).toEqual({
