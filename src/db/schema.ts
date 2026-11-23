@@ -71,6 +71,8 @@ export const locations = pgTable(
     reviewLink: text("review_link").notNull(),
     googleLocationId: text("google_location_id").unique(), // one row per Google Business Profile
     googleConnectedAt: ts("google_connected_at"),
+    // E.164 Twilio number this location texts from; inbound texts to it map back here (FR-8 per-client suppression).
+    smsNumber: text("sms_number").unique(),
   },
   (t) => [index().on(t.businessId), unique().on(t.id, t.businessId)],
 );
