@@ -8,7 +8,7 @@
   "previous_code_audit": "docs/audits/last-audit.json (audit-2026-11-23-02, end a8e3662)",
   "sources_of_truth": {
     "spec": "docs/SPEC.md",
-    "status_and_priorities": "Notion: Review & Reputation Automation Service (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
+    "status_and_priorities": "Notion: Kindword (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
     "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
     "note": "Owner decision 2026-11-23: docs/SPEC.md and Notion are the source of truth and are kept in sync. The Claude Doc is no longer updated."
   },
