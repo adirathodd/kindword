@@ -120,7 +120,7 @@ const NOTICES: Record<string, [string, boolean]> = {
 };
 
 export function inboxPage(inbox: Inbox, notice: string | null) {
-  const n = notice ? NOTICES[notice] : undefined;
+  const n = notice && Object.hasOwn(NOTICES, notice) ? NOTICES[notice] : undefined; // not inherited keys (?done=constructor)
   const pending = inbox.pending.length
     ? inbox.pending.map(pendingCard).join("")
     : `<p class="empty">No replies waiting for you. We will email you when a new one is ready.</p>`;

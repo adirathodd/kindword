@@ -156,6 +156,15 @@ describe("inbox page", () => {
     expect(card).not.toContain('value="approve"');
   });
 
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
+    "renders the inbox when ?done= names an inherited object key (%s)",
+    async (key) => {
+      const res = await getInbox(await cookieFor(A), `?done=${key}`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("Waiting for you");
+    },
+  );
+
   it("shows an empty state", async () => {
     const page = await (await getInbox(await cookieFor(A))).text();
     expect(page).toContain("No replies waiting for you");
@@ -197,6 +206,23 @@ describe("draft decisions", () => {
     expect(await status(id)).toBe("held");
     await act(cookie, id, { action: "approve_anyway", confirm: "yes" });
     expect(await status(id)).toBe("approved");
+  });
+
+  it("does not approve a held draft when its pre-filled edit form is saved unchanged", async () => {
+    const cookie = await cookieFor(A);
+    const id = await draft(A, "held", "They broke my pipe, calling my lawyer");
+    const page = await (await getInbox(cookie)).text();
+    const card = page.slice(page.indexOf(`id="d-${id}"`), page.indexOf("</article>", page.indexOf(`id="d-${id}"`)));
+    const prefilled = card
+      .match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/)![1]
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+    const res = await act(cookie, id, { action: "edit", text: prefilled });
+    expect(res.headers.get("location")).toBe("/inbox?done=needs_confirmation");
+    expect(await status(id)).toBe("held");
   });
 
   it("cannot act on another location's draft", async () => {
