@@ -1,0 +1,63 @@
+{
+  "audit_id": "audit-2026-11-23-01",
+  "started_at": "2026-11-23",
+  "status": "blocked",
+  "status_reason": "SPEC unreachable from the audit environment. Nothing in this range has been audited yet.",
+  "target_branch": "main",
+  "last_completed_audit": null,
+  "baseline": {
+    "sha": "5414e139e827cbc2d32df466dbe623d124b45c4d",
+    "inferred": true,
+    "reasoning": "No earlier audit record exists. 5414e13 ('Fix intake audit findings ...') is the remediation commit from the earlier intake audit of 655a9fa, so everything up to and including it is treated as audited. Confirm or correct this baseline."
+  },
+  "candidate_end_sha": "5a85947b587f3bd51648072d8b6ae11115736702",
+  "end_sha": null,
+  "spec": {
+    "source_of_truth": "Claude Doc 'SPEC: Review & Reputation Automation Service' https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs (v1.0, approved 2026-11-22), linked from the Notion page 'Review & Reputation Automation Service (v1.0)'",
+    "frozen_snapshot": "SPEC-v1.0.md (referenced by src/db/schema.ts) - not committed to the repo",
+    "accessible": false,
+    "blocker": "Its content can only be read through the Claude Docs connector, which is not attached to this scheduled session, and the frozen SPEC-v1.0.md snapshot is not in the repository.",
+    "spec_changes_in_period": "unknown (SPEC not readable). PR #1 says it updated the spec Doc (locations.sms_number). PR #2 lists pending Doc follow-ups: add the two sheet_sources columns, name row_id in FR-2a, and reword line 316."
+  },
+  "in_scope": [
+    {
+      "pr": 1,
+      "title": "Opt-out handling (FR-8, Flow 2 step 4)",
+      "url": "https://github.com/adirathodd/review-automation/pull/1",
+      "author": "adirathodd",
+      "merge_commit": "c7c74dd2a516863ef6e334313dd555c69c470c6d",
+      "merge_type": "squash",
+      "base_sha": "5414e139e827cbc2d32df466dbe623d124b45c4d",
+      "merged_at": "2026-11-23T02:15:56Z",
+      "source_commits": ["d2c2273", "2da47eb"],
+      "changed_files": [".env.example", "drizzle/0003_location_sms_number.sql", "drizzle/meta/0003_snapshot.json", "drizzle/meta/_journal.json", "src/db/schema.test.ts", "src/db/schema.ts", "src/optout/optout.test.ts", "src/optout/optout.ts", "src/sms/provider.ts"],
+      "depends_on": [],
+      "previously_audited": false,
+      "audit_status": "not_started"
+    },
+    {
+      "pr": 2,
+      "title": "Google Sheet intake: pollSheet with shared FR-2 row rules (FR-2a)",
+      "url": "https://github.com/adirathodd/review-automation/pull/2",
+      "author": "adirathodd",
+      "merge_commit": "5a85947b587f3bd51648072d8b6ae11115736702",
+      "merge_type": "squash",
+      "base_sha": "c7c74dd2a516863ef6e334313dd555c69c470c6d",
+      "merged_at": "2026-11-23T02:17:21Z",
+      "source_commits": ["0a21c85", "331e9db"],
+      "changed_files": ["drizzle/0004_sheet_source_consent.sql", "drizzle/meta/0004_snapshot.json", "drizzle/meta/_journal.json", "src/db/schema.ts", "src/intake/importCsv.ts", "src/intake/pollSheet.test.ts", "src/intake/pollSheet.ts"],
+      "depends_on": [1],
+      "previously_audited": false,
+      "audit_status": "not_started"
+    }
+  ],
+  "direct_commits_outside_prs": [],
+  "completed_stages": ["scope_inventory"],
+  "findings": [],
+  "fix_prs": [],
+  "validation": [],
+  "merge_order": [],
+  "unresolved": [
+    "SPEC unreachable: attach the Claude Docs connector to the routine's environment, or commit the SPEC (or an up-to-date export) to the repo, e.g. docs/SPEC.md, then rerun."
+  ]
+}
