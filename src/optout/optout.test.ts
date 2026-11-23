@@ -128,6 +128,15 @@ describe("isOptOutMessage", () => {
     "please don't stop", // false positive accepted: missing an opt-out costs more
     "s t o p",
     "STOP 🛑",
+    // A keyword split by a space or punctuation inside a longer message (FR-8 strips both before matching).
+    "un-subscribe me",
+    "Please un subscribe me",
+    "Un-Subscribe!",
+    "re-voke consent",
+    "please s-t-o-p texting",
+    "I want to opt-out now",
+    "can-cel please",
+    "stop-all",
   ];
   const no = [
     "",
@@ -141,6 +150,11 @@ describe("isOptOutMessage", () => {
     "HELP",
     "yes",
     "send the link again",
+    // Adjacent words whose letters contain a keyword only across or inside a word.
+    "we spent the day outside",
+    "options are out there",
+    "the subscription is fine",
+    "can you call me",
   ];
   for (const m of yes) it(`matches ${JSON.stringify(m)}`, () => expect(isOptOutMessage(m)).toBe(true));
   for (const m of no) it(`does not match ${JSON.stringify(m)}`, () => expect(isOptOutMessage(m)).toBe(false));
@@ -218,6 +232,15 @@ describe("handleInboundSms", () => {
     expect(await handleInboundSms(sms, inbound("thanks, great job"))).toEqual({ status: "ignored" });
     expect(await suppressionRows()).toEqual([]);
     expect(sms.sent).toEqual([]);
+  });
+
+  it("a keyword split inside a longer message, which Twilio's filter misses, still opts out and confirms", async () => {
+    const r = await handleInboundSms(sms, inbound("Un-subscribe me please"));
+    expect(r).toEqual({ status: "opted_out", confirmation: "sent" });
+    expect(await isSuppressed(A.locationId, "sms", PHONE)).toBe(true);
+    expect(await isSuppressed(B.locationId, "sms", PHONE)).toBe(true);
+    expect((await customer(A.customerId)).optedOutAt).toBeInstanceOf(Date);
+    expect(sms.sent).toHaveLength(1);
   });
 
   it("STOP to an unknown number still suppresses platform-wide", async () => {
