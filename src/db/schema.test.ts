@@ -507,7 +507,10 @@ describe("audit_log is append-only", () => {
   it("survives deleting the business", async () => {
     await db.insert(s.auditLog).values(entry());
     await client.query("delete from businesses where id = $1", [businessId]);
-    const { rows } = await client.query("select count(*)::int as n from audit_log");
+    // Scoped to this location: append-only rows committed by other test files persist across runs.
+    const { rows } = await client.query("select count(*)::int as n from audit_log where location_id = $1", [
+      locationId,
+    ]);
     expect(rows[0].n).toBe(1);
   });
 });
