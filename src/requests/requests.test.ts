@@ -8,6 +8,7 @@ import { db } from "../db/client";
 import * as s from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import type { InboundSms, SmsProvider } from "../sms/provider";
+import { TwilioSms } from "../sms/twilio";
 import {
   recordClick,
   runReviewRequestJobs,
@@ -436,6 +437,65 @@ describe("send-time checks", () => {
       if (saved !== undefined) process.env.APP_BASE_URL = saved;
     }
     expect((await one(v)).status).toBe("scheduled");
+  });
+});
+
+// The real Twilio adapter against a fake Twilio API: which of its errors may fall back to email (FR-6, FR-8).
+describe("Twilio adapter errors (FR-6, FR-8)", () => {
+  const twilio = (respond: () => Response | Promise<Response>) => {
+    let calls = 0;
+    const sms = new TwilioSms(
+      { accountSid: "AC" + "0".repeat(32), authToken: "t", webhookUrl: `${BASE}/api/sms/inbound` },
+      (async () => {
+        calls++;
+        return respond();
+      }) as unknown as typeof fetch,
+      { sleep: async () => {} },
+    );
+    return { sms, calls: () => calls };
+  };
+  const run = async (sms: SmsProvider) => {
+    await sendDueRequests({ sms, email }, { now: DUE, config });
+    await sendDueRequests({ sms, email }, { now: plus(DUE, 60_000), config });
+  };
+
+  it("falls back to email when Twilio refuses the text (21211 invalid number)", async () => {
+    const t = await makeTenant();
+    await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    await run(twilio(() => new Response(JSON.stringify({ code: 21211 }), { status: 400 })).sms);
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it("does not fall back to email when the Twilio call times out", async () => {
+    const t = await makeTenant();
+    await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    const tw = twilio(() => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    await run(tw.sms);
+    expect(tw.calls()).toBe(1);
+    expect(email.sent).toEqual([]);
+  });
+
+  it("does not fall back to email on a Twilio 500, which may come after the text was queued", async () => {
+    const t = await makeTenant();
+    await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    await run(twilio(() => new Response(JSON.stringify({ code: 20500 }), { status: 500 })).sms);
+    expect(email.sent).toEqual([]);
+  });
+
+  it("records the opt-out and sends no email when Twilio has the recipient opted out (21610)", async () => {
+    const t = await makeTenant();
+    await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    await run(twilio(() => new Response(JSON.stringify({ code: 21610 }), { status: 400 })).sms);
+    expect(email.sent).toEqual([]);
+    const rows = await db.select().from(s.suppressionList).where(eq(s.suppressionList.address, PHONE));
+    expect(rows).toHaveLength(2);
+    await db.delete(s.suppressionList).where(eq(s.suppressionList.address, PHONE));
   });
 });
 
