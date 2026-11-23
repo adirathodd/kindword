@@ -461,6 +461,18 @@ describe("remaining constraints", () => {
     );
   });
 
+  it("rejects a session expiry without a session token, and the reverse", async () => {
+    const base = { locationId, ownerEmail: "o@x.test", tokenExpiresAt: new Date() };
+    await rejects(
+      () => db.insert(s.ownerSessions).values({ ...base, loginTokenHash: "h1", sessionExpiresAt: new Date() }),
+      "session_requires_token",
+    );
+    await rejects(
+      () => db.insert(s.ownerSessions).values({ ...base, loginTokenHash: "h2", sessionTokenHash: "st" }),
+      "session_requires_token",
+    );
+  });
+
   it("rejects a reused login token hash", async () => {
     const session = { locationId, ownerEmail: "o@x.test", loginTokenHash: "h", tokenExpiresAt: new Date() };
     await db.insert(s.ownerSessions).values(session);

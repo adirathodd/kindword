@@ -247,10 +247,16 @@ export const ownerSessions = pgTable(
     ownerEmail: text("owner_email").notNull(),
     loginTokenHash: text("login_token_hash").notNull().unique(),
     tokenExpiresAt: ts("token_expires_at").notNull(),
+    // Set when the sign-in link is used (single use): the hash of a fresh session secret, so the emailed link is never
+    // itself the session credential.
+    sessionTokenHash: text("session_token_hash").unique(),
     sessionExpiresAt: ts("session_expires_at"),
     revokedAt: ts("revoked_at"),
   },
-  (t) => [unique().on(t.id, t.locationId)],
+  (t) => [
+    unique().on(t.id, t.locationId),
+    check("session_requires_token", sql`(${t.sessionTokenHash} is null) = (${t.sessionExpiresAt} is null)`),
+  ],
 );
 
 export const replyDrafts = pgTable(
@@ -267,6 +273,8 @@ export const replyDrafts = pgTable(
     approvedSessionId: uuid("approved_session_id"),
     approvedAt: ts("approved_at"),
     postedAt: ts("posted_at"),
+    // When the draft was written: minutes to approve (audit) and the 48-hour overdue mark (Flow 3 step 5).
+    createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [
     // Purged with its review.
@@ -285,6 +293,7 @@ export const replyDrafts = pgTable(
     check("approved_requires_session", sql`${t.approvedAt} is null or ${t.approvedSessionId} is not null`),
     // Never post without approval.
     check("posted_requires_approval", sql`${t.postedAt} is null or ${t.approvedAt} is not null`),
+    index().on(t.locationId, t.status), // the approval inbox lists a location's drafts by status
     // At most one posted reply per review (guards approve/post races).
     uniqueIndex("one_posted_reply_per_review")
       .on(t.reviewId)
