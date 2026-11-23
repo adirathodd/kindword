@@ -124,6 +124,16 @@ describe("pollSheet", () => {
     expect(await visitsOf()).toHaveLength(3);
   });
 
+  it("imports each row once when several polls of the same sheet run at once", async () => {
+    // Separate pool connections, so the polls really overlap; all read the "already imported" set before any insert.
+    const results = await Promise.all(Array.from({ length: 5 }, () => poll()));
+    const inserted = results.flatMap((r) => (r.ok ? r.rows : [])).filter((x) => x.status === "inserted");
+    expect(inserted.map((x) => x.row).sort()).toEqual([2, 3, 4]);
+    expect(results.flatMap((r) => (r.ok ? r.rows : [])).filter((x) => x.status === "rejected")).toEqual([]);
+    expect(await visitsOf()).toHaveLength(3);
+    expect(await customersOf()).toHaveLength(3);
+  });
+
   it("does not import anything twice after a crash before last_row_id is saved", async () => {
     // Every row commits, then the progress update fails, as if the process died there.
     const crashing = new Proxy(db, {
