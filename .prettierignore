@@ -3,5 +3,5 @@ drizzle/
 package-lock.json
 .claude/
 tsconfig.json
-# Byte-exact export of the SPEC Doc; never reformat.
+# The SPEC (source of truth, kept in sync with Notion); hand-formatted, never reformat.
 docs/SPEC.md
