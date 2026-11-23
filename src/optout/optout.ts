@@ -1,6 +1,6 @@
 // Opt-out handling (SPEC FR-8, Flow 2 step 4). Results, errors and audit rows carry IDs and codes only,
 // never phone numbers, emails or message text.
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses, channel, customers, locations, suppressionList } from "../db/schema";
@@ -111,33 +111,42 @@ export async function handleInboundSms(
   return { status: "opted_out", confirmation: "sent" };
 }
 
-// Unsubscribe link token: "<customerId>.<HMAC>". No address in the URL.
-// shortcut: needs the customer row; a link clicked after offboarding deleted it does nothing. Upgrade to an
-// encrypted (location, email) token if links must outlive customer deletion.
-function sign(customerId: string) {
+// Unsubscribe link token: AES-256-GCM over (location, email), so the URL shows no address, can't be forged,
+// and still works after the customer or location row is deleted (CAN-SPAM: links must work 30 days after sending).
+function key() {
   const secret = process.env.UNSUBSCRIBE_SECRET;
   if (!secret || secret.length < 32) throw new Error("UNSUBSCRIBE_SECRET missing or shorter than 32 chars");
-  return createHmac("sha256", secret).update(`unsubscribe:v1:${customerId}`).digest("base64url");
+  return createHash("sha256").update(`unsubscribe:v1:${secret}`).digest();
 }
 
-export const unsubscribeToken = (customerId: string) => `${customerId}.${sign(customerId)}`;
+export function unsubscribeToken(locationId: string, email: string) {
+  const iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", key(), iv);
+  const body = Buffer.concat([c.update(`${locationId}|${normalize("email", email)}`, "utf8"), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), body]).toString("base64url");
+}
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function readToken(token: string): { locationId: string; email: string } | null {
+  const raw = Buffer.from(token, "base64url");
+  if (raw.length < 29) return null;
+  try {
+    const d = createDecipheriv("aes-256-gcm", key(), raw.subarray(0, 12));
+    d.setAuthTag(raw.subarray(12, 28));
+    const text = Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString("utf8");
+    const i = text.indexOf("|"); // first "|" only: an email's local part may contain one
+    return i > 0 ? { locationId: text.slice(0, i), email: text.slice(i + 1) } : null;
+  } catch {
+    return null; // tampered, truncated or signed with another key; never echo the token
+  }
+}
 
-export async function optOutEmail(token: string, db: Db = defaultDb): Promise<"opted_out" | "invalid" | "unknown"> {
-  const [id, sig] = token.split(".");
-  if (!id || !sig || !UUID.test(id)) return "invalid";
-  const want = Buffer.from(sign(id));
-  const got = Buffer.from(sig);
-  if (got.length !== want.length || !timingSafeEqual(got, want)) return "invalid";
-
+export async function optOutEmail(token: string, db: Db = defaultDb): Promise<"opted_out" | "invalid"> {
+  const t = readToken(token);
+  if (!t) return "invalid";
   return db.transaction(async (tx) => {
-    const [c] = await tx
-      .select({ locationId: customers.locationId, email: customers.normalizedEmail })
-      .from(customers)
-      .where(eq(customers.id, id));
-    if (!c?.email) return "unknown";
-    await optOut(tx, c.locationId, "email", c.email, "customer_email");
-    return "opted_out"; // idempotent: a second click is still "opted_out"
+    // A deleted location gets the platform-wide entry only (a location row would violate its FK).
+    const [loc] = await tx.select({ id: locations.id }).from(locations).where(eq(locations.id, t.locationId));
+    await optOut(tx, loc?.id ?? null, "email", t.email, "customer_email");
+    return "opted_out" as const; // idempotent: a second click is still "opted_out"
   });
 }

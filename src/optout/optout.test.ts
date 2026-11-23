@@ -13,7 +13,7 @@ const PHONE = "+12015550100";
 const EMAIL = "pat@example.test";
 const A_NUMBER = "+12015550190";
 const B_NUMBER = "+12015550191";
-const TEST_ADDRESSES = [PHONE, EMAIL, "+12015550101", "+12015550102", "+12015550199"];
+const TEST_ADDRESSES = [PHONE, EMAIL, "other@example.test", "+12015550101", "+12015550102", "+12015550199"];
 
 // Signature check faked: a request is valid when it carries the right header.
 class FakeSms implements SmsProvider {
@@ -249,8 +249,9 @@ describe("handleInboundSms", () => {
 
 describe("optOutEmail", () => {
   it("unsubscribes the email at that location and platform-wide, once", async () => {
-    const token = unsubscribeToken(A.customerId);
-    expect(token).not.toMatch(/@|example/);
+    const token = unsubscribeToken(A.locationId, "Pat@Example.test");
+    expect(token).not.toMatch(/@|example|pat/i);
+    expect(token).not.toContain(A.locationId);
     expect(await optOutEmail(token)).toBe("opted_out");
 
     const rows = await suppressionRows();
@@ -271,9 +272,24 @@ describe("optOutEmail", () => {
     expect(await auditOf(A.locationId)).toHaveLength(1);
   });
 
+  it("still works after the customer and its business are deleted", async () => {
+    const token = unsubscribeToken(A.locationId, EMAIL);
+    await db.delete(s.customers).where(eq(s.customers.id, A.customerId));
+    expect(await optOutEmail(token)).toBe("opted_out");
+    expect((await suppressionRows()).filter((x) => x.locationId === A.locationId)).toHaveLength(1);
+
+    const gone = unsubscribeToken(B.locationId, "other@example.test");
+    await db.delete(s.businesses).where(eq(s.businesses.id, (await customer(B.customerId)).businessId));
+    expect(await optOutEmail(gone)).toBe("opted_out"); // location gone: platform-wide entry only
+    const rows = await db.select().from(s.suppressionList).where(eq(s.suppressionList.address, "other@example.test"));
+    expect(rows.map((x) => x.locationId)).toEqual([null]);
+  });
+
   it("rejects a tampered or malformed token and stores nothing", async () => {
-    const [id, sig] = unsubscribeToken(A.customerId).split(".");
-    for (const bad of [`${B.customerId}.${sig}`, `${id}.${sig.slice(0, -1)}x`, id, "", "not-a-uuid.abc"]) {
+    const token = unsubscribeToken(A.locationId, EMAIL);
+    const raw = Buffer.from(token, "base64url");
+    raw[raw.length - 1] ^= 1;
+    for (const bad of [raw.toString("base64url"), token.slice(0, 20), token.slice(0, -2), "", "abc", A.customerId]) {
       expect(await optOutEmail(bad)).toBe("invalid");
     }
     expect(await suppressionRows()).toEqual([]);
