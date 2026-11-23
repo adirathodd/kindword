@@ -31,6 +31,7 @@ export type RowResult =
       status: "rejected";
       reason:
         | "attestation_invalid"
+        | "missing_row_id"
         | "invalid_phone"
         | "invalid_email"
         | "invalid_visit_time"
@@ -45,6 +46,9 @@ export type ImportResult =
   | { ok: false; error: "missing_columns"; columns: string[] };
 
 type Reason = RowResult["reason"];
+type Location = typeof locations.$inferSelect;
+// One parsed row. `row` is the number shown to the operator; `rowId` is the Sheet's row ID (sheet source only).
+export type IntakeRow = { row: number; raw: Record<string, string>; rowId?: string };
 
 const text = z.string().transform((v) => v.trim() || undefined);
 const toMethod = (v?: string) => {
@@ -90,25 +94,60 @@ export async function importCsv(
   const missing = COLUMNS.filter((c) => !parsed.meta.fields?.includes(c));
   if (missing.length) return { ok: false, error: "missing_columns", columns: missing };
 
+  const rows = parsed.data.map((raw, i) => ({ row: rowNo(i), raw }));
+  return { ok: true, rows: await importRows(loc, rows, ctx, "csv", db) };
+}
+
+// FR-2's row rules, shared by the CSV and Sheet paths so both apply exactly the same checks.
+export async function importRows(
+  loc: Location,
+  input: IntakeRow[],
+  uploadContext: UploadContext,
+  source: "csv" | "sheet",
+  db: Db = defaultDb,
+): Promise<RowResult[]> {
+  const ctx = UploadContext.parse(uploadContext);
+  const locationId = loc.id;
+
   // The FK also enforces this; checking first rejects the whole upload instead of importing half of it.
   const [att] = await db
     .select({ id: consentAttestations.id })
     .from(consentAttestations)
     .where(and(eq(consentAttestations.id, ctx.attestationId), eq(consentAttestations.businessId, loc.businessId)));
-  if (!att)
-    return {
-      ok: true,
-      rows: parsed.data.map((_, i) => ({ row: rowNo(i), status: "rejected", reason: "attestation_invalid" })),
-    };
+  if (!att) return input.map(({ row }) => ({ row, status: "rejected", reason: "attestation_invalid" }));
+
+  // Sheet rows already imported are skipped before they can claim contacts for in-read dedup; otherwise a repeat
+  // customer's newer row would be skipped as duplicate_in_file on every poll, forever.
+  const imported = new Set(
+    source === "sheet"
+      ? (
+          await db
+            .select({ id: visits.externalVisitId })
+            .from(visits)
+            .where(and(eq(visits.locationId, locationId), eq(visits.source, "sheet")))
+        ).map((v) => v.id)
+      : [],
+  );
 
   const schema = rowSchema(loc.timezone);
-  const seen = new Set<string>(); // normalized phones and emails already accepted from this file
+  const seen = new Set<string>(); // normalized phones and emails (and sheet row IDs) already accepted from this read
   const rows: RowResult[] = [];
   const now = new Date();
 
-  for (const [i, raw] of parsed.data.entries()) {
-    const row = rowNo(i);
+  for (const { row, raw, rowId } of input) {
     const res = (status: RowResult["status"], reason: Reason) => rows.push({ row, status, reason } as RowResult);
+
+    if (source === "sheet") {
+      if (!rowId) {
+        res("rejected", "missing_row_id");
+        continue;
+      }
+      // Already imported: later edits to the row are ignored, as an import never modifies an existing customer.
+      if (imported.has(rowId) || seen.has(`row:${rowId}`)) {
+        res("skipped", imported.has(rowId) ? "duplicate_visit" : "duplicate_in_file");
+        continue;
+      }
+    }
 
     const r = schema.safeParse(raw);
     if (!r.success) {
@@ -188,10 +227,20 @@ export async function importCsv(
               .returning({ id: customers.id })
           )[0].id;
 
-        const externalVisitId = createHash("sha256").update(`${customerId}|${visitAt.toISOString()}`).digest("hex");
+        // The same job already on file from either source (e.g. in a CSV and in the Sheet) is asked about once.
+        const sameJob = await tx
+          .select({ id: visits.id })
+          .from(visits)
+          .where(and(eq(visits.customerId, customerId), eq(visits.visitAt, visitAt)));
+        if (sameJob.length) return ["skipped", "duplicate_visit"];
+
+        const externalVisitId =
+          source === "sheet"
+            ? rowId!
+            : createHash("sha256").update(`${customerId}|${visitAt.toISOString()}`).digest("hex");
         const inserted = await tx
           .insert(visits)
-          .values({ customerId, locationId, visitAt, source: "csv", externalVisitId })
+          .values({ customerId, locationId, visitAt, source, externalVisitId })
           .onConflictDoNothing()
           .returning({ id: visits.id });
         if (!inserted.length) return ["skipped", "duplicate_visit"];
@@ -202,14 +251,18 @@ export async function importCsv(
       // pg error details can echo column values; surface only the code and constraint.
       const err = e as { cause?: { code?: string; constraint?: string }; code?: string; constraint?: string };
       const pg = err.cause ?? err;
-      throw new Error(`importCsv: row ${row} failed (${pg.code ?? "unknown"} ${pg.constraint ?? ""})`.trim());
+      throw new Error(
+        `${source === "csv" ? "importCsv" : "pollSheet"}: row ${row} failed (${pg.code ?? "unknown"} ${pg.constraint ?? ""})`.trim(),
+      );
     }
     res(...outcome);
-    // Only rows that were accepted claim their contacts; a rejected row must not block a later valid one.
-    if (outcome[0] !== "rejected") {
+    // Only rows that were accepted claim their contacts; a rejected row must not block a later valid one. A sheet is
+    // re-read every poll, so there a skipped row must not claim either, or it would block the next row forever.
+    if (outcome[0] === "inserted" || (outcome[0] === "skipped" && source === "csv")) {
       if (phone) seen.add(phone);
       if (email) seen.add(email);
+      if (rowId) seen.add(`row:${rowId}`);
     }
   }
-  return { ok: true, rows };
+  return rows;
 }

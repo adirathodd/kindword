@@ -314,6 +314,9 @@ export const sheetSources = pgTable("sheet_sources", {
     .unique() // one shared sheet per location
     .references(() => locations.id, { onDelete: "cascade" }),
   sheetId: text("sheet_id").notNull(),
-  lastRowId: text("last_row_id"),
+  // Set by the operator, like importCsv's per-upload context; polling refuses to run while either is null.
+  attestationId: uuid("attestation_id").references(() => consentAttestations.id, { onDelete: "set null" }),
+  consentWordingVersion: text("consent_wording_version"),
+  lastRowId: text("last_row_id"), // progress marker only; dedup is by row ID in visits.external_visit_id
   lastReadAt: ts("last_read_at"),
 });

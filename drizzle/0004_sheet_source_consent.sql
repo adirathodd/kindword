@@ -1,0 +1,3 @@
+ALTER TABLE "sheet_sources" ADD COLUMN "attestation_id" uuid;--> statement-breakpoint
+ALTER TABLE "sheet_sources" ADD COLUMN "consent_wording_version" text;--> statement-breakpoint
+ALTER TABLE "sheet_sources" ADD CONSTRAINT "sheet_sources_attestation_id_consent_attestations_id_fk" FOREIGN KEY ("attestation_id") REFERENCES "public"."consent_attestations"("id") ON DELETE set null ON UPDATE no action;
