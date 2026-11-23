@@ -1,0 +1,46 @@
+{
+  "sync_id": "sync-2026-11-23-01",
+  "synced_at": "2026-11-23",
+  "repository": "adirathodd/review-automation",
+  "target_branch": "main",
+  "audited_sha": "09688ec034712e5624d976eb7a638908af5bed2e",
+  "previous_sync": null,
+  "previous_code_audit": "docs/audits/last-audit.json (audit-2026-11-23-02, end a8e3662)",
+  "sources_of_truth": {
+    "spec": "docs/SPEC.md",
+    "status_and_priorities": "Notion: Review & Reputation Automation Service (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
+    "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
+    "note": "Owner decision 2026-11-23: docs/SPEC.md and Notion are the source of truth and are kept in sync. The Claude Doc is no longer updated."
+  },
+  "evidence": "Code read on main; fresh checkout of 09688ec: 272/272 vitest pass (Postgres 16, migrations 0000-0006), eslint and prettier clean",
+  "requirements": {
+    "implemented": ["FR-3", "FR-7", "FR-8", "FR-9", "FR-10", "FR-14"],
+    "partial": ["FR-2", "FR-2a", "FR-5", "FR-6", "FR-13", "FR-19", "FR-22"],
+    "not_implemented": ["FR-1", "FR-11", "FR-12", "FR-15", "FR-16", "FR-17", "FR-18", "FR-20", "FR-23"],
+    "later": ["FR-4", "FR-21"],
+    "noncompliant": []
+  },
+  "spec_changes": [
+    "Header: docs/SPEC.md is the source of truth, kept in sync with Notion",
+    "FR-13 and Flow 3 step 4: inbox lists approved replies waiting to post; home-page sign-in screen with a new-link request (decided 2026-11-23)",
+    "Data model: skip_reason clicked; owner_sessions.session_token_hash; reply_drafts.created_at; sheet_sources.attestation_id and consent_wording_version",
+    "New section: Implementation status (per FR, at 09688ec)",
+    "Decisions needed: added open items for sheet row IDs (A-1, A-2), request languages (FR-7) and reminder staleness (FR-5)"
+  ],
+  "notion_changes": [
+    "Review request SMS/email sending: Done -> In progress (no email adapter, no scheduler)",
+    "30-day purge job: Done -> In progress (no scheduler; ID refresh needs FR-11)",
+    "Inbound opt-out webhook: Done (verified against FR-8)",
+    "Scaffold and CSV / Google Sheet intake: In progress, remaining work noted",
+    "New: Job scheduler and Resend email adapter",
+    "New: Operator setup (FR-1) and operator sign-in",
+    "New: SPEC decisions to make (A-1/A-2, languages, reminder staleness)"
+  ],
+  "open_decisions": ["A-1/A-2 sheet row IDs", "FR-7 request languages", "FR-5 reminder staleness"],
+  "open_observations": [
+    "O-1 no E.164 check on locations.sms_number",
+    "O-2 sheet_sources attestation FK not tenant-scoped"
+  ],
+  "status": "complete_with_documented_discrepancies",
+  "next_sync_starts_after": "09688ec034712e5624d976eb7a638908af5bed2e"
+}
