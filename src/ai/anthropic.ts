@@ -48,7 +48,8 @@ export class AnthropicDraftModel implements DraftModel {
       });
     } catch (e) {
       if (e instanceof Anthropic.RateLimitError) {
-        const after = Number(e.headers?.get?.("retry-after"));
+        const raw = e.headers?.get?.("retry-after")?.trim();
+        const after = raw ? Number(raw) : NaN; // no header: unknown, not 0 seconds
         throw new ModelRateLimitError(Number.isFinite(after) && after >= 0 ? after : null);
       }
       if (e instanceof Anthropic.APIError) throw new DraftModelError(e.status ?? null, e.constructor.name);
