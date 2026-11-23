@@ -159,14 +159,14 @@ Status of each requirement on main at 09688ec (2026-11-23). The requirement text
 | FR-9 | Implemented | 90-day check per location by customer, phone or email |
 | FR-10 | Implemented | No sentiment filter; every non-clicker gets the same reminder |
 | FR-11 | Not implemented | |
-| FR-12 | Not implemented | |
+| FR-12 | Implemented (PR #13) | draftPendingReviews (src/reviews/draft.ts): versioned prompt from the skeleton, tone, approved facts, review language; one draft per review; behind the AI interface (Groq free tier by default, see AI provider). Not yet run by a scheduler or checked on the 30-review sample set |
 | FR-13 | Partial | Inbox, single-use 15-minute link, 30-day location session, operator revoke; nothing sends the link yet; no home-page sign-in screen, daily digest or low-rating email |
 | FR-14 | Implemented | Approve, approve anyway (held drafts, confirmed), edit and approve, reject; nothing posts |
 | FR-15 | Not implemented | |
-| FR-16 | Not implemented | The inbox shows flags and held drafts, but nothing sets them |
+| FR-16 | Implemented (PR #13) | Rule flags (rating, phone and email, English and Spanish keywords) plus model flags from the inbox's vocabulary; post-check; a flagged draft, a failed post-check or a risk check that could not run is held |
 | FR-17 | Not implemented | |
 | FR-18 | Not implemented | |
-| FR-19 | Partial | Append-only audit log for requests, opt-outs, sessions, approvals and purges; drafts and posts not built |
+| FR-19 | Partial | Append-only audit log for requests, opt-outs, sessions, approvals, purges and drafts (PR #13); posts not built |
 | FR-20 | Not implemented | Sends already stop for businesses that are not live |
 | FR-21 | Later | Not built |
 | FR-22 | Partial | purgeExpiredReviews deletes reviews and drafts not refreshed within the window; no scheduler runs it; refreshing review IDs depends on FR-11 |
@@ -184,7 +184,7 @@ The web app takes in customers and serves the owner approval inbox and the revie
 - Database: hosted Postgres (for example Supabase).
 - Jobs: a hosted queue or scheduler (Inngest, Trigger.dev, or the database's scheduled functions).
 - Hosting: Vercel or Render.
-- Texting: Twilio. Email: Resend (Postmark needs manual account approval). AI: the Claude API.
+- Texting: Twilio. Email: Resend (Postmark needs manual account approval). AI: a small open-weight model on Groq's free tier (openai/gpt-oss-20b) behind the AI interface, with the Claude API (Claude Haiku 5.5) as the paid fallback (decided 2026-11-23; see the AI provider note under Integrations).
 - Secrets: the host's secret store. Monitoring: error alerts (for example Sentry) and a daily check that jobs ran.
 
 **Design choices**
@@ -200,7 +200,7 @@ Postgres, one schema. A business has locations, a location has customers and rev
 
 | Table | Key fields | Notes |
 | --- | --- | --- |
-| businesses | id, name, legal\_name, vertical, owner\_name, owner\_phone, owner\_email, owner\_contact\_consent\_ref, languages, tone\_notes, status | status: onboarding, live, paused, offboarded; owner\_phone is stored only with owner\_contact\_consent\_ref (the signed service agreement) |
+| businesses | id, name, legal\_name, vertical, owner\_name, owner\_phone, owner\_email, owner\_contact\_consent\_ref, languages, tone\_notes, approved\_facts, status | status: onboarding, live, paused, offboarded; owner\_phone is stored only with owner\_contact\_consent\_ref (the signed service agreement); approved\_facts are the facts a reply may use (for example hours, the phone or email for taking a complaint offline), set by the operator at onboarding |
 | locations | id, business\_id, name, timezone, review\_link, google\_location\_id, google\_connected\_at, sms\_number | One row per Google Business Profile; sms\_number is the location's Twilio number (E.164, unique), used to map an inbound opt-out text to its location (FR-8) |
 | oauth\_tokens | id, location\_id, encrypted\_refresh\_token, scopes, expires\_at, revoked\_at, status | Encrypted at rest; never logged; status: active, refresh\_failed, revoked |
 | customers | id, location\_id, name, phone, email, normalized\_phone, normalized\_email, language, consent\_method, consent\_wording\_version, consent\_at, consent\_evidence\_ref, attestation\_id, opted\_out\_at | phone is null unless a consent record exists (database check constraint); unique (location\_id, normalized\_phone) and unique (location\_id, normalized\_email) |
@@ -230,7 +230,7 @@ Four outside services carry the product. Access rules and prices change, so each
 | Google Business Profile API | Read new reviews, post approved replies | Access has to be requested and approved by Google, and the owner has to grant access to their profile (verify current requirements and quotas) | Owner approves in the app; operator pastes the reply into Google by hand |
 | Google review link | The link in each request | Public link that opens the review form; the customer writes the review themselves. The system never posts or edits reviews for customers | None needed |
 | Twilio (SMS) | Review requests and the one reminder | Business texting must be registered (10DLC) before sending to US numbers; approval is not instant: Twilio's guidance puts campaign vetting at about 7 to 15 business days and says to contact support after 10 days; the Campaign Registry's typical figures are 2 to 3 business days for a brand and 3 to 5 for a campaign. Budget 3 weeks per client. STOP handling must be on. Campaigns also need public privacy policy and terms URLs (required since June 30, 2026) and an opt-in flow reviewers can verify (FR-23) | Email through Resend |
-| Claude API | Draft replies and message wording | Costs per call; latency is not an issue because drafts are asynchronous | Owner writes the reply, or a template reply for positive reviews |
+| AI model: Groq free tier (openai/gpt-oss-20b) | Draft replies and risk flags (2 calls per review) | Free tier, no card: limits are per model, roughly 30 requests a minute, 1,000 a day and a daily token cap (verify on the Groq console's Limits page); Groq's terms bar training on our inputs; turn on Zero Data Retention; no preview models in production; latency is not an issue because drafts are asynchronous | When the free quota runs out, drafting waits for the next run; switch by configuration to the Claude API (Claude Haiku 5.5, paid, about $0.10 per million input and $0.50 per million output tokens); otherwise the owner writes the reply |
 | Email (Resend) | Review requests without a texting phone, owner sign-in links, daily digest, monthly report | Send from a verified subdomain with SPF, DKIM and DMARC; CAN-SPAM footer with a PO box or registered private mailbox; keep spam complaints under 0.10% | None; failures show on the operator dashboard (owner texts come later) |
 | Intake: CSV and Google Sheet | Customer and visit rows | Owner must supply a consent record for every phone number; the Sheet is shared read-only with our service account (FR-2a); phone numbers must be validated and normalized | Manual entry by operator |
 | Intake: webhook (Later) | Rows from Zapier or Make | Shared secret per business; reject unsigned requests | CSV |
@@ -245,6 +245,11 @@ Four outside services carry the product. Access rules and prices change, so each
 
 - Texting (Twilio 10DLC): plan to register each client business as its own brand and campaign, which needs the client's legal name and tax ID (a client without an EIN is limited to a Sole Proprietor brand: one campaign, low volume of roughly 3,000 messages a day with a hard cap of 1,000 a day to T-Mobile users, and identity verification through the owner's mobile phone). 10DLC fees are passed through in the setup fee. Brand costs about $4.50 one-time, campaign vetting about $15, and about $1.50 to $2 a month per campaign. Confirm Twilio's current rules for software providers before onboarding customer one. Register the campaign description and sample messages exactly as sent, including the reminder. Two points are unverified, so ask Twilio support before the first submission: which use-case label carriers expect for review requests, and whether vetting accepts terms and privacy pages hosted on our domain instead of the client's own site (use the client's site when it has compliant pages).
 - Google Business Profile API: access needs a live business website, a Google Cloud project and an application (reviewed within about 14 days, no sandbox). Do this in week 0, after creating the business's own Google Business Profile listing, which the application needs.
+- AI provider (research 2026-11-23, from public pages and third-party summaries; verify against each provider's current terms before the first pilot): drafts are short and simple, so a small model is enough and v0.1 starts on a free tier. Review text and reviewer names are personal data, so a free tier qualifies only if the provider does not train on our inputs or let people read them.
+  - Groq (chosen): free tier with no card; limits per model (roughly 30 requests a minute and 1,000 a day on the gpt-oss models, plus a daily token cap). Its services agreement bars training on inputs and outputs; inference data is not kept by default (logs up to 30 days unless Zero Data Retention is on); stored in the US. openai/gpt-oss-20b supports strict structured output for the risk check. The free model list changes (Llama models left the free tier in August 2026) and preview models are for evaluation only. Unverified: whether the free tier's terms allow commercial use; confirm before the first pilot, or move to Groq's paid Developer plan (same API).
+  - Cloudflare Workers AI (second free option): 10,000 free Neurons a day across models; does not train on customer content. Needs a Cloudflare account and a small adapter.
+  - Not used: the Gemini API free tier (inputs may be used to improve Google's products and read by human reviewers; only the paid tier excludes this), Mistral's free Experiment plan (trains on inputs by default), and OpenRouter's free models (50 requests a day, and many free endpoints are on providers that may train on prompts).
+  - Paid fallback: the Claude API with Claude Haiku 5.5 (does not train on API data by default), about $0.0005 per review at 2 short calls. Switching is configuration only (DRAFT_PROVIDER, DRAFT_MODEL).
 - Google OAuth: the API offers one scope (business.manage; the older plus.business.manage is deprecated), with no read-only or per-resource variant, so least privilege is enforced in our code, not by the scope. Requirements: one Google client module that exposes only list reviews and post reply; no other endpoint is called anywhere; one encrypted token per location; a test fails the build if another Google method is called; tokens are revoked on offboarding. Reviews are still served by the v4 endpoint.
 
 ## AI reply generation
@@ -294,7 +299,7 @@ Return only the reply text.
 - Track how often owners approve without editing, and review every rejected or heavily edited draft.
 - Any change to the prompt gets a new version number and is re-run on the sample set.
 - Post-check every draft: 2 to 4 sentences, no URL, and no phone number or email other than the approved facts. A draft that fails the check is marked held with a flag.
-- Compare Sonnet 5.5 and Haiku 5.5 on the 30-review set and choose on quality (cost is negligible).
+- Run the 30-review set on openai/gpt-oss-20b (free tier). If quality falls short, compare openai/gpt-oss-120b (also free) and Claude Haiku 5.5 (paid) on the same set and choose on quality.
 
 ## Compliance and policy
 
@@ -377,9 +382,9 @@ Validate before locking: no source measures what our target owners would pay. As
 | --- | --- |
 | Hosting and database | $10–50 |
 | Twilio number, registration and texts | $10–40 |
-| AI usage for reply drafts | $1–20 |
+| AI usage for reply drafts | $0 on the free tier (Claude Haiku 5.5 fallback: about $0.0005 per review, under $1 at pilot scale) |
 | Email sending | $0–20 |
-| Total | About $20–130 |
+| Total | About $20–110 |
 
 At a $99 monthly price per location, 3 pilots cover the running costs. Time is the main cost, not infrastructure. The research brief puts variable cost at roughly $5 to $15 per location per month.
 
@@ -425,6 +430,7 @@ Every blocking decision is made. The employer check must be settled before the f
 - [x] **Pilot pricing.** Lowered 2026-11-22 (proposed): the first two pilots pay no setup fee and $79 a month for 6 months in exchange for a testimonial or case study; standard price $149 setup plus $99 per location per month; validate with the first 10 prospects.
 - [ ] **Owner inbox and reminders.** Decided 2026-11-22 (from your comments): an owner approval inbox with passwordless sign-in and a daily digest; one reminder to non-clickers, up to 2 messages per job; online booking after v0.1.
 - [x] **Public AI disclosure.** Decided: no public AI label; the contract says AI drafts replies and the owner approves each one.
+- [x] **AI provider for v0.1.** Decided 2026-11-23: no heavy model; start on a free tier. Groq's free tier with openai/gpt-oss-20b, behind the AI interface; the Claude API (Claude Haiku 5.5) is the paid fallback. Free tiers that may train on inputs are excluded (see AI provider under Integrations). To do before the first pilot: confirm Groq's free-tier terms allow commercial use, turn on Zero Data Retention, and run the 30-review sample set.
 - [ ] **Employer check.** Open: you will ask Bloomberg. Get approval in writing, including on intellectual property, before the first paying customer. Avoid finance clients at first.
 - [x] **Business basics.** Decided: target NJ clients first and run the pilots as a sole proprietor; form the LLC once there is real revenue (NJ LLC plus New York authority is the likely path, since you work from NYC). To do: EIN, separate bank account, tech errors-and-omissions insurance (ideally with cyber; general liability optional). No lawyer review; the contract and consent wording follow the rules researched here.
 - [ ] **Report data.** Open: ask Google through the Business Profile API contact form what a monthly report may keep. Until answered, reports use a live fetch plus our own metrics.

@@ -5,7 +5,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
-import { ModelRefusalError, type DraftModel, type ModelPrompt } from "../ai/provider";
+import { ModelRateLimitError, ModelRefusalError, type DraftModel, type ModelPrompt } from "../ai/provider";
 import { listInbox } from "../inbox/inbox";
 import {
   MAX_DRAFT_FAILURES,
@@ -222,7 +222,12 @@ describe("draftPendingReviews (FR-12, FR-16)", () => {
     const loc = await makeLocation();
     const id = await review(loc);
     const model = new FakeModel();
-    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({ drafted: 1, held: 0, failed: 0 });
+    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({
+      drafted: 1,
+      held: 0,
+      failed: 0,
+      rateLimited: false,
+    });
 
     const [d] = await draftsOf(id);
     expect(d).toMatchObject({
@@ -258,7 +263,12 @@ describe("draftPendingReviews (FR-12, FR-16)", () => {
       () => "We are sorry to hear this, Pat. Please call us at (201) 555-0142 so we can talk.",
       () => ["personal_details", "property_damage"],
     );
-    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({ drafted: 1, held: 1, failed: 0 });
+    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({
+      drafted: 1,
+      held: 1,
+      failed: 0,
+      rateLimited: false,
+    });
     expect((await draftsOf(id))[0].status).toBe("held");
     expect((await reviewRow(id)).flags).toEqual(["low_rating", "personal_details", "property_damage"]);
     const inbox = await listInbox({ sessionId: "00000000-0000-0000-0000-000000000000", locationId: loc }, { now: NOW });
@@ -303,7 +313,12 @@ describe("draftPendingReviews (FR-12, FR-16)", () => {
       draftPendingReviews(model, { locationId: loc, now: NOW }),
     ]);
     expect(a.drafted + b.drafted).toBe(1);
-    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({ drafted: 0, held: 0, failed: 0 });
+    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({
+      drafted: 0,
+      held: 0,
+      failed: 0,
+      rateLimited: false,
+    });
     expect(await draftsOf(id)).toHaveLength(1);
   });
 
@@ -347,6 +362,7 @@ describe("draftPendingReviews (FR-12, FR-16)", () => {
       drafted: 0,
       held: 0,
       failed: 1,
+      rateLimited: false,
     });
     const failing = new FakeModel(() => new Error("500"));
     expect((await draftPendingReviews(failing, { locationId: loc, now: NOW })).failed).toBe(1);
@@ -363,8 +379,42 @@ describe("draftPendingReviews (FR-12, FR-16)", () => {
     expect(audit.every((a) => a.entity === "review" && a.entityId === id)).toBe(true);
 
     const model = new FakeModel();
-    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({ drafted: 0, held: 0, failed: 0 });
+    expect(await draftPendingReviews(model, { locationId: loc, now: NOW })).toEqual({
+      drafted: 0,
+      held: 0,
+      failed: 0,
+      rateLimited: false,
+    });
     expect(model.replies).toHaveLength(0);
+  });
+
+  it("stops at a rate limit without counting a failure, and drafts on the next run", async () => {
+    const loc = await makeLocation();
+    const a = await review(loc);
+    const b = await review(loc);
+    let calls = 0;
+    const limited = new FakeModel(() => (++calls === 1 ? GOOD : new ModelRateLimitError(60)));
+    expect(await draftPendingReviews(limited, { locationId: loc, now: NOW })).toEqual({
+      drafted: 1,
+      held: 0,
+      failed: 0,
+      rateLimited: true,
+    });
+    expect(limited.replies).toHaveLength(2); // stopped after the limit: nothing more was tried
+    expect((await auditOf(loc)).filter((x) => x.action === "draft_failed")).toHaveLength(0);
+    await draftPendingReviews(new FakeModel(), { locationId: loc, now: NOW });
+    expect((await draftsOf(a)).length + (await draftsOf(b)).length).toBe(2);
+  });
+
+  it("does not hold a draft when only the risk check hit the rate limit; it waits for the next run", async () => {
+    const loc = await makeLocation();
+    const id = await review(loc);
+    const r = await draftPendingReviews(new FakeModel(undefined, () => new ModelRateLimitError(null)), {
+      locationId: loc,
+      now: NOW,
+    });
+    expect(r.rateLimited).toBe(true);
+    expect(await draftsOf(id)).toHaveLength(0);
   });
 
   it("drafts a rating-only review", async () => {

@@ -6,7 +6,7 @@
 import { and, asc, count, eq, notExists, notInArray, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses, locations, replyDrafts, reviews } from "../db/schema";
-import { ModelRefusalError, type DraftModel, type ModelPrompt } from "../ai/provider";
+import { ModelRateLimitError, ModelRefusalError, type DraftModel, type ModelPrompt } from "../ai/provider";
 
 export const PROMPT_VERSION = 1;
 const BATCH = 20;
@@ -154,7 +154,9 @@ export function postCheck(draft: string, approvedFacts: string | null): { ok: bo
   return { ok: reasons.length === 0, reasons };
 }
 
-export type DraftResult = { drafted: number; held: number; failed: number };
+// rateLimited: the provider's quota ran out (e.g. the free tier's daily cap); the run stopped early and the rest wait
+// for the next run. Not counted as failures.
+export type DraftResult = { drafted: number; held: number; failed: number; rateLimited: boolean };
 
 // Drafts replies for reviews that need one. Idempotent: a review gets at most one draft, even when two runs overlap.
 // Businesses that are paused or offboarded are skipped (FR-20).
@@ -164,7 +166,7 @@ export async function draftPendingReviews(
   db: Db = defaultDb,
 ): Promise<DraftResult> {
   const now = o.now ?? new Date();
-  const result: DraftResult = { drafted: 0, held: 0, failed: 0 };
+  const result: DraftResult = { drafted: 0, held: 0, failed: 0, rateLimited: false };
   const pending = await db
     .select({
       reviewId: reviews.id,
@@ -201,6 +203,7 @@ export async function draftPendingReviews(
 
   for (const r of pending) {
     const outcome = await draftOne(model, r, now, db).catch(async (e) => {
+      if (e instanceof ModelRateLimitError) return "rate_limited" as const;
       const reason = e instanceof ModelRefusalError ? "refused" : "model_error";
       await db.insert(auditLog).values({
         locationId: r.locationId,
@@ -212,6 +215,10 @@ export async function draftPendingReviews(
       });
       return "failed" as const;
     });
+    if (outcome === "rate_limited") {
+      result.rateLimited = true;
+      break;
+    }
     if (outcome === "failed") result.failed++;
     else if (outcome === "held") {
       result.drafted++;
@@ -232,7 +239,8 @@ async function draftOne(model: DraftModel, r: Pending, now: Date, db: Db) {
     const allowed = new Set<string>(MODEL_FLAGS);
     for (const f of await model.classifyReview(buildRiskPrompt(r), MODEL_FLAGS))
       if (allowed.has(f)) flags.add(f as Flag);
-  } catch {
+  } catch (e) {
+    if (e instanceof ModelRateLimitError) throw e; // out of quota: draft this review on a later run instead
     flags.add("risk_check_failed"); // fail safe: the owner reads it with extra care
   }
   if (!postCheck(reply, r.approvedFacts).ok) flags.add("post_check_failed");

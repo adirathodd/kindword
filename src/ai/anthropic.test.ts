@@ -1,18 +1,22 @@
-// Unit tests for the Claude API adapter. No network: the SDK's fetch is faked, so the real request shape is checked.
+// Unit tests for the Claude API adapter (paid fallback). No network: the SDK's fetch is faked, so the real request
+// shape is checked.
 import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
-import { ModelRefusalError } from "./provider";
-import { AnthropicDraftModel, DEFAULT_DRAFT_MODEL, DraftModelError, draftModelFromEnv } from "./anthropic";
+import { DraftModelError, ModelRateLimitError, ModelRefusalError } from "./provider";
+import { AnthropicDraftModel } from "./anthropic";
 
 type Call = { url: string; headers: Headers; body: Record<string, unknown> };
 
-function client(responses: Array<{ status: number; body: unknown }>) {
+function client(responses: Array<{ status: number; body: unknown; headers?: Record<string, string> }>) {
   const calls: Call[] = [];
   const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) });
     const r = responses.shift();
     if (!r) throw new Error("unexpected call");
-    return new Response(JSON.stringify(r.body), { status: r.status, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify(r.body), {
+      status: r.status,
+      headers: { "content-type": "application/json", ...r.headers },
+    });
   }) as typeof fetch;
   return { calls, client: new Anthropic({ apiKey: "sk-ant-test", fetch: fetchImpl, maxRetries: 0 }) };
 }
@@ -23,7 +27,7 @@ const message = (content: unknown[], stop_reason = "end_turn") => ({
     id: "msg_1",
     type: "message",
     role: "assistant",
-    model: DEFAULT_DRAFT_MODEL,
+    model: "claude-haiku-5-5",
     content,
     stop_reason,
     stop_sequence: null,
@@ -33,7 +37,7 @@ const message = (content: unknown[], stop_reason = "end_turn") => ({
 const prompt = { system: "SYSTEM", user: "Review (5 stars) from Pat.\n<review>Great.</review>" };
 
 describe("AnthropicDraftModel", () => {
-  it("writes a reply: model, effort, server-side fallbacks, system and user prompt", async () => {
+  it("writes a reply with Claude Haiku 5.5 at low effort", async () => {
     const c = client([
       message([
         { type: "thinking", thinking: "", signature: "sig" },
@@ -42,20 +46,26 @@ describe("AnthropicDraftModel", () => {
       ]),
     ]);
     const m = new AnthropicDraftModel({ client: c.client });
-    expect(m.model).toBe("claude-opus-5-5");
+    expect(m.model).toBe("anthropic:claude-haiku-5-5");
     expect(await m.writeReply(prompt)).toBe("Thanks, Pat! See you soon.");
     const [call] = c.calls;
     expect(call.url).toContain("/v1/messages");
-    expect(call.headers.get("anthropic-beta")).toContain("server-side-fallback-2026-07-01");
     expect(call.body).toMatchObject({
-      model: "claude-opus-5-5",
-      fallbacks: "default",
-      output_config: { effort: "medium" },
+      model: "claude-haiku-5-5",
+      output_config: { effort: "low" },
       system: "SYSTEM",
       messages: [{ role: "user", content: prompt.user }],
     });
     expect(call.body).not.toHaveProperty("thinking");
     expect(call.body).not.toHaveProperty("temperature");
+  });
+
+  it("uses a model override", async () => {
+    const c = client([message([{ type: "text", text: "Hi. Bye." }])]);
+    const m = new AnthropicDraftModel({ client: c.client, model: "claude-sonnet-5-5" });
+    await m.writeReply(prompt);
+    expect(m.model).toBe("anthropic:claude-sonnet-5-5");
+    expect(c.calls[0].body.model).toBe("claude-sonnet-5-5");
   });
 
   it("throws ModelRefusalError on a refusal", async () => {
@@ -72,14 +82,27 @@ describe("AnthropicDraftModel", () => {
     });
   });
 
-  it("wraps API errors with status and class only", async () => {
+  it("turns a 429 into ModelRateLimitError", async () => {
     const c = client([
-      { status: 429, body: { type: "error", error: { type: "rate_limit_error", message: "slow down" } } },
+      {
+        status: 429,
+        body: { type: "error", error: { type: "rate_limit_error", message: "slow down" } },
+        headers: { "retry-after": "30" },
+      },
+    ]);
+    const err = await new AnthropicDraftModel({ client: c.client }).writeReply(prompt).catch((e) => e);
+    expect(err).toBeInstanceOf(ModelRateLimitError);
+    expect(err.retryAfterSeconds).toBe(30);
+  });
+
+  it("wraps other API errors with status and class only", async () => {
+    const c = client([
+      { status: 500, body: { type: "error", error: { type: "api_error", message: "secret detail" } } },
     ]);
     const err = await new AnthropicDraftModel({ client: c.client }).writeReply(prompt).catch((e) => e);
     expect(err).toBeInstanceOf(DraftModelError);
-    expect(err).toMatchObject({ status: 429, kind: "RateLimitError" });
-    expect(err.message).not.toContain("slow down");
+    expect(err).toMatchObject({ status: 500, kind: "InternalServerError" });
+    expect(err.message).not.toContain("secret detail");
   });
 
   it("classifies with a JSON schema limited to the allowed flags", async () => {
@@ -87,7 +110,7 @@ describe("AnthropicDraftModel", () => {
     const m = new AnthropicDraftModel({ client: c.client });
     expect(await m.classifyReview(prompt, ["legal", "injury", "spam"])).toEqual(["legal", "injury"]);
     expect(c.calls[0].body.output_config).toEqual({
-      effort: "medium",
+      effort: "low",
       format: {
         type: "json_schema",
         schema: {
@@ -105,18 +128,5 @@ describe("AnthropicDraftModel", () => {
     await expect(new AnthropicDraftModel({ client: c.client }).classifyReview(prompt, ["legal"])).rejects.toMatchObject(
       { kind: "invalid_classification" },
     );
-  });
-});
-
-describe("draftModelFromEnv", () => {
-  it("defaults to claude-opus-5-5 and accepts an override", () => {
-    expect(draftModelFromEnv({ ANTHROPIC_API_KEY: "sk-ant-x" }).model).toBe("claude-opus-5-5");
-    expect(
-      draftModelFromEnv({ ANTHROPIC_API_KEY: "sk-ant-x", ANTHROPIC_DRAFT_MODEL: " claude-haiku-5-5 " }).model,
-    ).toBe("claude-haiku-5-5");
-  });
-
-  it("rejects a malformed model ID", () => {
-    expect(() => draftModelFromEnv({ ANTHROPIC_DRAFT_MODEL: "x; rm -rf" })).toThrow(/ANTHROPIC_DRAFT_MODEL/);
   });
 });
