@@ -19,36 +19,13 @@ import {
 const id = () => uuid("id").primaryKey().defaultRandom();
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 
-export const businessStatus = pgEnum("business_status", [
-  "onboarding",
-  "live",
-  "paused",
-  "offboarded",
-]);
-export const oauthStatus = pgEnum("oauth_status", [
-  "active",
-  "refresh_failed",
-  "revoked",
-]);
-export const consentMethod = pgEnum("consent_method", [
-  "signed_estimate",
-  "web_form",
-  "booking_form",
-]);
+export const businessStatus = pgEnum("business_status", ["onboarding", "live", "paused", "offboarded"]);
+export const oauthStatus = pgEnum("oauth_status", ["active", "refresh_failed", "revoked"]);
+export const consentMethod = pgEnum("consent_method", ["signed_estimate", "web_form", "booking_form"]);
 export const visitSource = pgEnum("visit_source", ["csv", "sheet"]);
 export const channel = pgEnum("channel", ["sms", "email"]);
-export const requestStatus = pgEnum("request_status", [
-  "scheduled",
-  "sent",
-  "failed",
-  "skipped",
-]);
-export const skipReason = pgEnum("skip_reason", [
-  "stale",
-  "opted_out",
-  "no_consent",
-  "duplicate",
-]);
+export const requestStatus = pgEnum("request_status", ["scheduled", "sent", "failed", "skipped"]);
+export const skipReason = pgEnum("skip_reason", ["stale", "opted_out", "no_consent", "duplicate"]);
 export const draftStatus = pgEnum("draft_status", [
   "draft",
   "awaiting_owner",
@@ -78,10 +55,7 @@ export const businesses = pgTable(
     status: businessStatus("status").notNull().default("onboarding"),
   },
   (t) => [
-    check(
-      "owner_phone_requires_consent",
-      sql`${t.ownerPhone} is null or ${t.ownerContactConsentRef} is not null`,
-    ),
+    check("owner_phone_requires_consent", sql`${t.ownerPhone} is null or ${t.ownerContactConsentRef} is not null`),
   ],
 );
 
@@ -168,14 +142,8 @@ export const customers = pgTable(
         ${t.consentAt} is not null and ${t.consentEvidenceRef} is not null and ${t.attestationId} is not null)`,
     ),
     // Dedup keys must exist whenever the raw value does, or the unique constraints can be bypassed.
-    check(
-      "phone_normalized",
-      sql`(${t.phone} is null) = (${t.normalizedPhone} is null)`,
-    ),
-    check(
-      "email_normalized",
-      sql`(${t.email} is null) = (${t.normalizedEmail} is null)`,
-    ),
+    check("phone_normalized", sql`(${t.phone} is null) = (${t.normalizedPhone} is null)`),
+    check("email_normalized", sql`(${t.email} is null) = (${t.normalizedEmail} is null)`),
     check("has_contact", sql`${t.phone} is not null or ${t.email} is not null`),
     unique().on(t.locationId, t.normalizedPhone),
     unique().on(t.locationId, t.normalizedEmail),
@@ -196,10 +164,7 @@ export const visits = pgTable(
     source: visitSource("source").notNull(),
     externalVisitId: text("external_visit_id").notNull(),
   },
-  (t) => [
-    unique().on(t.locationId, t.source, t.externalVisitId),
-    index().on(t.customerId),
-  ],
+  (t) => [unique().on(t.locationId, t.source, t.externalVisitId), index().on(t.customerId)],
 );
 
 export const reviewRequests = pgTable(
@@ -221,10 +186,7 @@ export const reviewRequests = pgTable(
   (t) => [
     unique().on(t.visitId, t.channel, t.attempt),
     check("attempt_1_or_2", sql`${t.attempt} in (1, 2)`), // request or the one reminder
-    check(
-      "skip_reason_iff_skipped",
-      sql`(${t.status} = 'skipped') = (${t.skipReason} is not null)`,
-    ),
+    check("skip_reason_iff_skipped", sql`(${t.status} = 'skipped') = (${t.skipReason} is not null)`),
     index().on(t.status, t.scheduledFor),
   ],
 );
@@ -242,10 +204,7 @@ export const suppressionList = pgTable(
     source: text("source").notNull(),
   },
   // NULLS NOT DISTINCT so platform-wide (null location) entries are unique too.
-  (t) => [
-    unique().on(t.locationId, t.channel, t.address).nullsNotDistinct(),
-    index().on(t.channel, t.address),
-  ],
+  (t) => [unique().on(t.locationId, t.channel, t.address).nullsNotDistinct(), index().on(t.channel, t.address)],
 );
 
 export const reviews = pgTable(
@@ -320,15 +279,9 @@ export const replyDrafts = pgTable(
       columns: [t.approvedSessionId, t.locationId],
       foreignColumns: [ownerSessions.id, ownerSessions.locationId],
     }).onDelete("cascade"),
-    check(
-      "approved_requires_session",
-      sql`${t.approvedAt} is null or ${t.approvedSessionId} is not null`,
-    ),
+    check("approved_requires_session", sql`${t.approvedAt} is null or ${t.approvedSessionId} is not null`),
     // Never post without approval.
-    check(
-      "posted_requires_approval",
-      sql`${t.postedAt} is null or ${t.approvedAt} is not null`,
-    ),
+    check("posted_requires_approval", sql`${t.postedAt} is null or ${t.approvedAt} is not null`),
     // At most one posted reply per review (guards approve/post races).
     uniqueIndex("one_posted_reply_per_review")
       .on(t.reviewId)

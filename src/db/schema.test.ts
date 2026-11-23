@@ -2,15 +2,7 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client } from "pg";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as s from "./schema";
 
 const client = new Client({ connectionString: process.env.DATABASE_URL });
@@ -55,10 +47,7 @@ beforeAll(async () => {
 afterAll(() => client.end());
 
 async function makeTenant(name: string) {
-  const [b] = await db
-    .insert(s.businesses)
-    .values({ name, vertical: "plumbing" })
-    .returning();
+  const [b] = await db.insert(s.businesses).values({ name, vertical: "plumbing" }).returning();
   const [l] = await db
     .insert(s.locations)
     .values({
@@ -82,42 +71,32 @@ async function makeTenant(name: string) {
 
 beforeEach(async () => {
   await client.query("begin");
-  ({ businessId, locationId, attestationId } =
-    await makeTenant("Test Plumbing"));
+  ({ businessId, locationId, attestationId } = await makeTenant("Test Plumbing"));
   other = await makeTenant("Other HVAC");
 });
 afterEach(() => client.query("rollback"));
 
 describe("customers: phone requires consent", () => {
   it("accepts a phone with a full consent record", async () => {
-    await db
-      .insert(s.customers)
-      .values({ locationId, businessId, ...phone, ...consent() });
+    await db.insert(s.customers).values({ locationId, businessId, ...phone, ...consent() });
   });
 
   it("accepts email only, no consent", async () => {
-    await db
-      .insert(s.customers)
-      .values({
-        locationId,
-        businessId,
-        email: "A@x.test",
-        normalizedEmail: "a@x.test",
-      });
+    await db.insert(s.customers).values({
+      locationId,
+      businessId,
+      email: "A@x.test",
+      normalizedEmail: "a@x.test",
+    });
   });
 
   it("rejects a phone with no consent record", async () => {
-    await rejects(
-      () => db.insert(s.customers).values({ locationId, businessId, ...phone }),
-      "phone_requires_consent",
-    );
+    await rejects(() => db.insert(s.customers).values({ locationId, businessId, ...phone }), "phone_requires_consent");
   });
 
   it("rejects a phone with only an attestation (not a consent record, FR-3)", async () => {
     await rejects(
-      () => db
-        .insert(s.customers)
-        .values({ locationId, businessId, ...phone, attestationId }),
+      () => db.insert(s.customers).values({ locationId, businessId, ...phone, attestationId }),
       "phone_requires_consent",
     );
   });
@@ -131,9 +110,8 @@ describe("customers: phone requires consent", () => {
   ] as const) {
     it(`rejects a phone when ${field} is missing`, async () => {
       await rejects(
-        () => db
-          .insert(s.customers)
-          .values({
+        () =>
+          db.insert(s.customers).values({
             locationId,
             businessId,
             ...phone,
@@ -151,19 +129,20 @@ describe("customers: phone requires consent", () => {
       .values({ locationId, businessId, email: "b@x.test", normalizedEmail: "b@x.test" })
       .returning();
     await rejects(
-      () => client.query(
-        "update customers set phone = $1, normalized_phone = $2 where id = $3",
-        ["2015550100", "+12015550100", c.id],
-      ),
+      () =>
+        client.query("update customers set phone = $1, normalized_phone = $2 where id = $3", [
+          "2015550100",
+          "+12015550100",
+          c.id,
+        ]),
       "phone_requires_consent",
     );
   });
 
   it("rejects a normalized phone without the raw phone (no bypass of dedup or consent)", async () => {
     await rejects(
-      () => db
-        .insert(s.customers)
-        .values({
+      () =>
+        db.insert(s.customers).values({
           locationId,
           businessId,
           normalizedPhone: "+12015550100",
@@ -177,13 +156,10 @@ describe("customers: phone requires consent", () => {
 
 describe("customers: dedup", () => {
   it("rejects a duplicate (location, normalized phone)", async () => {
-    await db
-      .insert(s.customers)
-      .values({ locationId, businessId, ...phone, ...consent() });
+    await db.insert(s.customers).values({ locationId, businessId, ...phone, ...consent() });
     await rejects(
-      () => db
-        .insert(s.customers)
-        .values({
+      () =>
+        db.insert(s.customers).values({
           locationId,
           businessId,
           phone: "201-555-0100",
@@ -195,18 +171,15 @@ describe("customers: dedup", () => {
   });
 
   it("rejects a duplicate (location, normalized email)", async () => {
-    await db
-      .insert(s.customers)
-      .values({
-        locationId,
-        businessId,
-        email: "a@x.test",
-        normalizedEmail: "a@x.test",
-      });
+    await db.insert(s.customers).values({
+      locationId,
+      businessId,
+      email: "a@x.test",
+      normalizedEmail: "a@x.test",
+    });
     await rejects(
-      () => db
-        .insert(s.customers)
-        .values({
+      () =>
+        db.insert(s.customers).values({
           locationId,
           businessId,
           email: "A@X.test",
@@ -252,9 +225,8 @@ describe("suppression_list uniqueness", () => {
 describe("tenant scoping", () => {
   it("rejects a customer whose business does not own the location", async () => {
     await rejects(
-      () => db
-        .insert(s.customers)
-        .values({
+      () =>
+        db.insert(s.customers).values({
           locationId,
           businessId: other.businessId,
           email: "a@x.test",
@@ -266,9 +238,8 @@ describe("tenant scoping", () => {
 
   it("rejects a phone consented under another business's attestation", async () => {
     await rejects(
-      () => db
-        .insert(s.customers)
-        .values({
+      () =>
+        db.insert(s.customers).values({
           locationId,
           businessId,
           ...phone,
@@ -299,26 +270,21 @@ describe("tenant scoping", () => {
 
   it("accepts approval by a session for the draft's own location", async () => {
     const { reviewId, sessionId } = await reviewAndSession(locationId);
-    await db
-      .insert(s.replyDrafts)
-      .values({
-        ...draft,
-        reviewId,
-        locationId,
-        approvedSessionId: sessionId,
-        approvedAt: new Date(),
-      });
+    await db.insert(s.replyDrafts).values({
+      ...draft,
+      reviewId,
+      locationId,
+      approvedSessionId: sessionId,
+      approvedAt: new Date(),
+    });
   });
 
   it("rejects approval by another location's owner session", async () => {
     const { reviewId } = await reviewAndSession(locationId);
-    const { sessionId: otherSession } = await reviewAndSession(
-      other.locationId,
-    );
+    const { sessionId: otherSession } = await reviewAndSession(other.locationId);
     await rejects(
-      () => db
-        .insert(s.replyDrafts)
-        .values({
+      () =>
+        db.insert(s.replyDrafts).values({
           ...draft,
           reviewId,
           locationId,
@@ -332,9 +298,7 @@ describe("tenant scoping", () => {
   it("rejects a draft whose location does not match its review", async () => {
     const { reviewId } = await reviewAndSession(locationId);
     await rejects(
-      () => db
-        .insert(s.replyDrafts)
-        .values({ ...draft, reviewId, locationId: other.locationId }),
+      () => db.insert(s.replyDrafts).values({ ...draft, reviewId, locationId: other.locationId }),
       "reply_drafts_review_fk",
     );
   });
@@ -342,31 +306,23 @@ describe("tenant scoping", () => {
   it("rejects an approval with no session recorded", async () => {
     const { reviewId } = await reviewAndSession(locationId);
     await rejects(
-      () => db
-        .insert(s.replyDrafts)
-        .values({ ...draft, reviewId, locationId, approvedAt: new Date() }),
+      () => db.insert(s.replyDrafts).values({ ...draft, reviewId, locationId, approvedAt: new Date() }),
       "approved_requires_session",
     );
   });
 
   it("deleting a business cascades through approved drafts and sessions", async () => {
     const { reviewId, sessionId } = await reviewAndSession(locationId);
-    await db
-      .insert(s.replyDrafts)
-      .values({
-        ...draft,
-        reviewId,
-        locationId,
-        approvedSessionId: sessionId,
-        approvedAt: new Date(),
-      });
-    await db
-      .insert(s.customers)
-      .values({ locationId, businessId, ...phone, ...consent() });
+    await db.insert(s.replyDrafts).values({
+      ...draft,
+      reviewId,
+      locationId,
+      approvedSessionId: sessionId,
+      approvedAt: new Date(),
+    });
+    await db.insert(s.customers).values({ locationId, businessId, ...phone, ...consent() });
     await client.query("delete from businesses where id = $1", [businessId]);
-    const { rows } = await client.query(
-      "select count(*)::int as n from reply_drafts",
-    );
+    const { rows } = await client.query("select count(*)::int as n from reply_drafts");
     expect(rows[0].n).toBe(0);
   });
 });
@@ -375,7 +331,12 @@ describe("remaining constraints", () => {
   async function visit(externalVisitId = "row-1") {
     const [c] = await db
       .insert(s.customers)
-      .values({ locationId, businessId, email: `${externalVisitId}@x.test`, normalizedEmail: `${externalVisitId}@x.test` })
+      .values({
+        locationId,
+        businessId,
+        email: `${externalVisitId}@x.test`,
+        normalizedEmail: `${externalVisitId}@x.test`,
+      })
       .returning();
     const [v] = await db
       .insert(s.visits)
@@ -403,7 +364,10 @@ describe("remaining constraints", () => {
 
   it("requires skip_reason exactly when status is skipped", async () => {
     const visitId = await visit();
-    await rejects(() => db.insert(s.reviewRequests).values({ ...request(visitId), status: "skipped" }), "skip_reason_iff_skipped");
+    await rejects(
+      () => db.insert(s.reviewRequests).values({ ...request(visitId), status: "skipped" }),
+      "skip_reason_iff_skipped",
+    );
     await rejects(
       () => db.insert(s.reviewRequests).values({ ...request(visitId), skipReason: "stale" }),
       "skip_reason_iff_skipped",
@@ -415,17 +379,25 @@ describe("remaining constraints", () => {
     const visitId = await visit();
     await db.insert(s.reviewRequests).values(request(visitId));
     await db.insert(s.reviewRequests).values({ ...request(visitId), attempt: 2 });
-    await rejects(() => db.insert(s.reviewRequests).values(request(visitId)), "review_requests_visit_id_channel_attempt_unique");
+    await rejects(
+      () => db.insert(s.reviewRequests).values(request(visitId)),
+      "review_requests_visit_id_channel_attempt_unique",
+    );
   });
 
   it("rejects a duplicate (location, source, external visit id)", async () => {
     await visit("row-1");
     const [c] = await db.select().from(s.customers);
     await rejects(
-      () => db.insert(s.visits).values({ customerId: c.id, locationId, visitAt: new Date(), source: "csv", externalVisitId: "row-1" }),
+      () =>
+        db
+          .insert(s.visits)
+          .values({ customerId: c.id, locationId, visitAt: new Date(), source: "csv", externalVisitId: "row-1" }),
       "visits_location_id_source_external_visit_id_unique",
     );
-    await db.insert(s.visits).values({ customerId: c.id, locationId, visitAt: new Date(), source: "sheet", externalVisitId: "row-1" });
+    await db
+      .insert(s.visits)
+      .values({ customerId: c.id, locationId, visitAt: new Date(), source: "sheet", externalVisitId: "row-1" });
   });
 
   it("rejects a rating outside 1 to 5", async () => {
@@ -483,7 +455,10 @@ describe("remaining constraints", () => {
 
   it("rejects a second sheet source for a location", async () => {
     await db.insert(s.sheetSources).values({ locationId, sheetId: "sheet-a" });
-    await rejects(() => db.insert(s.sheetSources).values({ locationId, sheetId: "sheet-b" }), "sheet_sources_location_id_unique");
+    await rejects(
+      () => db.insert(s.sheetSources).values({ locationId, sheetId: "sheet-b" }),
+      "sheet_sources_location_id_unique",
+    );
   });
 
   it("rejects a reused login token hash", async () => {
