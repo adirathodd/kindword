@@ -76,6 +76,7 @@ const FLAG_LABELS: Record<string, string> = {
   profanity: "Profanity",
   spam: "Looks fake or spam",
   post_check_failed: "Draft failed the automatic check (length, link or contact details)",
+  risk_check_failed: "The automatic risk check could not run; read the review carefully",
 };
 const flagLabel = (f: string) => FLAG_LABELS[f] ?? f.replace(/_/g, " ");
 
