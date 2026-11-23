@@ -150,6 +150,91 @@ describe("TwilioSms.send", () => {
     expect(err.message).not.toContain("555"); // never echoes the number
   });
 
+  // SPEC Integrations: "Every outside call is retried with backoff". Only responses that mean Twilio did not take the
+  // message are retried, because Twilio's API has no idempotency key.
+  const seq = (steps: (number | Error)[], calls: number[] = [], headers: Record<string, string> = {}) =>
+    (async () => {
+      const step = steps[calls.length];
+      calls.push(1);
+      if (step instanceof Error) throw step;
+      return new Response(JSON.stringify(step < 300 ? { sid: "SMok" } : { code: step === 429 ? 20429 : 20503 }), {
+        status: step,
+        headers,
+      });
+    }) as unknown as typeof fetch;
+  const noSleep = (sleeps: number[] = []) => ({ sleep: async (ms: number) => void sleeps.push(ms) });
+
+  it.each([429, 503])("retries a %i with backoff and returns the SID of the retried send", async (status) => {
+    const calls: number[] = [];
+    const sleeps: number[] = [];
+    const sms = new TwilioSms(config, seq([status, status, 201], calls), noSleep(sleeps));
+    expect(await sms.send("+12015550190", "+12015550100", "hi")).toBe("SMok");
+    expect(calls).toHaveLength(3);
+    expect(sleeps).toEqual([500, 1000]);
+  });
+
+  it("honors Retry-After, capped so the inbound webhook still answers in time", async () => {
+    const sleeps: number[] = [];
+    const sms = new TwilioSms(config, seq([429, 429, 201], [], { "retry-after": "1" }), noSleep(sleeps));
+    expect(await sms.send("+12015550190", "+12015550100", "hi")).toBe("SMok");
+    expect(sleeps).toEqual([1000, 1000]);
+    const capped: number[] = [];
+    await new TwilioSms(config, seq([429, 201], [], { "retry-after": "60" }), noSleep(capped)).send("+1", "+1", "hi");
+    expect(capped).toEqual([2000]);
+  });
+
+  it("gives up after 3 attempts with the last TwilioSendError", async () => {
+    const calls: number[] = [];
+    const err = await new TwilioSms(config, seq([503, 503, 503, 201], calls), noSleep())
+      .send("+12015550190", "+12015550100", "hi")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(TwilioSendError);
+    expect(err.status).toBe(503);
+    expect(calls).toHaveLength(3);
+  });
+
+  it.each([
+    ["a refusal (400)", 400],
+    ["a 500, which may come after Twilio queued the text", 500],
+    ["a 502", 502],
+  ])("does not retry %s", async (_label, status) => {
+    const calls: number[] = [];
+    await new TwilioSms(config, seq([status, 201], calls), noSleep()).send("+1", "+1", "hi").catch(() => {});
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not retry a timeout or network error (Twilio may already have the text)", async () => {
+    for (const e of [new DOMException("timed out", "TimeoutError"), new TypeError("fetch failed")]) {
+      const calls: number[] = [];
+      const err = await new TwilioSms(config, seq([e, 201], calls), noSleep()).send("+1", "+1", "hi").catch((x) => x);
+      expect(err).toBe(e);
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    [400, true],
+    [404, true],
+    [429, true],
+    [503, true],
+    [500, false],
+    [502, false],
+    [504, false],
+  ])("marks a final status %i as refused=%s (only a refusal may fall back to email)", async (status, refused) => {
+    const err = await new TwilioSms(config, fakeFetch(status, { code: 1 }), noSleep())
+      .send("+1", "+1", "hi")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(TwilioSendError);
+    expect(err.refused).toBe(refused);
+  });
+
+  it("marks 21610 as a recipient Twilio has opted out", async () => {
+    const err = await new TwilioSms(config, fakeFetch(400, { code: 21610 })).send("+1", "+1", "hi").catch((e) => e);
+    expect(err.recipientOptedOut).toBe(true);
+    const other = await new TwilioSms(config, fakeFetch(400, { code: 30003 })).send("+1", "+1", "hi").catch((e) => e);
+    expect(other.recipientOptedOut).toBe(false);
+  });
+
   it("throws on a non-JSON error response", async () => {
     const f = (async () => new Response("bad gateway", { status: 502 })) as unknown as typeof fetch;
     const err = await new TwilioSms(config, f).send("+12015550190", "+12015550100", "hi").catch((e) => e);

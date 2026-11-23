@@ -6,6 +6,26 @@ import type { InboundSms, SmsProvider } from "./provider";
 
 const MAX_BODY_BYTES = 64 * 1024; // Twilio webhooks are a few KB; anything larger is not from Twilio
 const SEND_TIMEOUT_MS = 10_000;
+const MAX_ATTEMPTS = 3;
+const BASE_DELAY_MS = 500;
+const MAX_DELAY_MS = 2_000; // short: the inbound webhook sends its confirmation inline and Twilio waits 15 s at most
+
+// SPEC Integrations: "Every outside call is retried with backoff". Twilio's REST API has no idempotency key, so only
+// responses that mean Twilio did not take the message are retried: 429 (rate limited) and 503 (unavailable). A
+// timeout, a lost connection or another 5xx may come after Twilio queued the text, so those are never retried (a
+// retry could text the customer twice).
+const retryableStatus = (status: number) => status === 429 || status === 503;
+
+function delayFor(attempt: number, retryAfter: string | null) {
+  const seconds = retryAfter === null ? NaN : Number(retryAfter);
+  const ms = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : BASE_DELAY_MS * 2 ** (attempt - 1);
+  return Math.min(ms, MAX_DELAY_MS);
+}
+
+export type TwilioOptions = {
+  sleep?: (ms: number) => Promise<void>;
+  maxAttempts?: number;
+};
 
 export type TwilioConfig = {
   accountSid: string;
@@ -40,12 +60,24 @@ export class TwilioSendError extends Error {
     super(`Twilio send failed: status=${status} code=${code ?? "none"}`);
     this.name = "TwilioSendError";
   }
+
+  // Twilio answered and did not take the message: a 4xx (bad number, opted out, rate limited) or 503. A 500, 502 or
+  // 504 may come after Twilio queued the text, so it is not a refusal and a request must not switch to email (FR-6).
+  get refused() {
+    return (this.status >= 400 && this.status < 500) || this.status === 503;
+  }
+
+  // 21610: Twilio has this recipient opted out (they texted one of its keywords) and blocks every send to them.
+  get recipientOptedOut() {
+    return this.code === 21610;
+  }
 }
 
 export class TwilioSms implements SmsProvider {
   constructor(
     private readonly config: TwilioConfig,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly options: TwilioOptions = {},
   ) {}
 
   async parseInbound(req: Request): Promise<InboundSms | null> {
@@ -77,6 +109,19 @@ export class TwilioSms implements SmsProvider {
   }
 
   async send(from: string, to: string, body: string): Promise<string | void> {
+    const sleep = this.options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const maxAttempts = this.options.maxAttempts ?? MAX_ATTEMPTS;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.sendOnce(from, to, body);
+      } catch (e) {
+        if (!(e instanceof TwilioRetryable) || attempt >= maxAttempts) throw e instanceof TwilioRetryable ? e.error : e;
+        await sleep(delayFor(attempt, e.retryAfter));
+      }
+    }
+  }
+
+  private async sendOnce(from: string, to: string, body: string): Promise<string | void> {
     const { accountSid, authToken } = this.config;
     const res = await this.fetchImpl(
       `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Messages.json`,
@@ -92,9 +137,19 @@ export class TwilioSms implements SmsProvider {
       },
     );
     const json = (await res.json().catch(() => null)) as { sid?: unknown; code?: unknown } | null;
-    if (!res.ok) throw new TwilioSendError(res.status, typeof json?.code === "number" ? json.code : null);
+    if (!res.ok) {
+      const error = new TwilioSendError(res.status, typeof json?.code === "number" ? json.code : null);
+      throw retryableStatus(res.status) ? new TwilioRetryable(error, res.headers.get("retry-after")) : error;
+    }
     return typeof json?.sid === "string" ? json.sid : undefined;
   }
+}
+
+class TwilioRetryable {
+  constructor(
+    readonly error: TwilioSendError,
+    readonly retryAfter: string | null,
+  ) {}
 }
 
 // Reads TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WEBHOOK_URL (or APP_BASE_URL + /api/sms/inbound).

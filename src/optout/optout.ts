@@ -115,7 +115,15 @@ export async function handleInboundSms(
   if (!first) return { status: "opted_out", confirmation: "none" };
   if (msg.providerHandled) return { status: "opted_out", confirmation: "provider" };
   const who = businessName ? `${businessName} texts` : "these texts";
-  await provider.send(msg.to, msg.from, `You're unsubscribed from ${who}. No more messages will be sent.`);
+  try {
+    await provider.send(msg.to, msg.from, `You're unsubscribed from ${who}. No more messages will be sent.`);
+  } catch (e) {
+    // The provider already has the sender opted out (Twilio 21610: they texted one of its keywords and its built-in
+    // reply confirmed it), so the one confirmation went out and this is not a failure (Flow 2 step 4).
+    if ((e as { recipientOptedOut?: unknown } | null)?.recipientOptedOut === true)
+      return { status: "opted_out", confirmation: "provider" };
+    throw e;
+  }
   return { status: "opted_out", confirmation: "sent" };
 }
 

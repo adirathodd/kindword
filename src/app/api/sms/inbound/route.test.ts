@@ -207,6 +207,32 @@ describe("POST /api/sms/inbound", () => {
     expect(sent).toEqual([]);
   });
 
+  it("retries a transient Twilio 503 so the one confirmation still goes out (Flow 2 step 4)", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      if (calls++ === 0) return new Response(JSON.stringify({ code: 20503 }), { status: 503 });
+      const f = new URLSearchParams(String(init.body));
+      sent.push({ from: f.get("From")!, to: f.get("To")!, body: f.get("Body")! });
+      return new Response(JSON.stringify({ sid: "SMout" }), { status: 201 });
+    });
+    const res = await POST(signedPost({ Body: "opt out please" }));
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].body).toContain("unsubscribed");
+    expect((await POST(signedPost({ Body: "opt out please" }))).status).toBe(200); // redelivery sends nothing more
+    expect(sent).toHaveLength(1);
+  });
+
+  it("treats Twilio 21610 on our confirmation as Twilio's own confirmation, not a failure", async () => {
+    // A bare keyword without Advanced Opt-Out: Twilio's default filter already opted the sender out and replied, so
+    // it refuses our confirmation. The opt-out is recorded and the webhook succeeds.
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ code: 21610 }), { status: 400 }));
+    const res = await POST(signedPost({ Body: "STOP" }));
+    expect(res.status).toBe(200);
+    expect(await suppression()).toHaveLength(2);
+    expect(vi.mocked(console.error)).not.toHaveBeenCalled();
+  });
+
   it("returns 503 and touches nothing when Twilio is not configured", async () => {
     vi.stubEnv("TWILIO_AUTH_TOKEN", "");
     const res = await POST(signedPost({ Body: "STOP" }));
