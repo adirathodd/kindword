@@ -38,6 +38,7 @@ export type AccountSession = { sessionId: string; accountId: string; businessId:
 
 export const LIMITS = {
   signUpIp: { max: 5, windowMs: 60 * MINUTE },
+  signUpEmail: { max: 5, windowMs: 60 * MINUTE },
   signInIp: { max: 30, windowMs: 15 * MINUTE },
   signInEmail: { max: 10, windowMs: 15 * MINUTE },
   resetIp: { max: 10, windowMs: 60 * MINUTE },
@@ -141,7 +142,11 @@ export async function signUp(input: SignUpInput, ip: string, deps: Deps, db: Db 
   const weak = passwordProblem(input.password);
   if (weak) return { ok: false, error: weak };
   if (!input.terms) return { ok: false, error: "Accept the terms and privacy policy to continue." };
-  if (!(await allow("signUpIp", ip, now, db))) return { ok: false, limited: true };
+  // FR-24: per IP and per email. Each sign-up emails the address (a link, or "already has an account"), so without
+  // the per-email limit sign-ups from many IPs could flood one owner's inbox. Both are counted on every attempt.
+  const okIp = await allow("signUpIp", ip, now, db);
+  const okEmail = await allow("signUpEmail", email, now, db);
+  if (!okIp || !okEmail) return { ok: false, limited: true };
   if (await deps.breach.isBreached(input.password))
     return { ok: false, error: "That password has appeared in a data breach. Choose a different one." };
 
