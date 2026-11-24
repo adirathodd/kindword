@@ -35,10 +35,11 @@ export function inboxBaseUrl(env: Record<string, string | undefined> = process.e
 }
 
 // Creates a sign-in link for the location's owner (the business's owner_email). Returns the URL to send; only its
-// hash is kept. Each call creates a new link; older unused links stay valid until they expire.
+// hash is kept. Each call creates a new link; older unused links stay valid until they expire. With accountId (the
+// owner's account, FR-24) the session it starts is tied to that account, so a password reset ends it.
 export async function createSignInLink(
   locationId: string,
-  opts: { baseUrl: string; now?: Date },
+  opts: { baseUrl: string; now?: Date; accountId?: string },
   db: Db = defaultDb,
 ): Promise<{ url: string; ownerEmail: string; businessName: string; locationName: string; expiresAt: Date }> {
   const now = opts.now ?? new Date();
@@ -55,7 +56,13 @@ export async function createSignInLink(
   const expiresAt = new Date(now.getTime() + LINK_TTL_MS);
   const [row] = await db
     .insert(ownerSessions)
-    .values({ locationId, ownerEmail, loginTokenHash: hash(token), tokenExpiresAt: expiresAt })
+    .values({
+      locationId,
+      ownerEmail,
+      loginTokenHash: hash(token),
+      tokenExpiresAt: expiresAt,
+      accountId: opts.accountId,
+    })
     .returning({ id: ownerSessions.id });
   await db.insert(auditLog).values({
     locationId,

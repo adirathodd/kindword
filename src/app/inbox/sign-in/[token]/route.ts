@@ -7,7 +7,7 @@ const invalid = () =>
   html(
     400,
     "Link not valid",
-    "<p>This sign-in link has expired or was already used. Open the newest link we emailed you, or ask us for a new one.</p>",
+    '<p>This sign-in link has expired or was already used. Open the newest link we emailed you, or <a href="/account/sign-in/link">get a new link</a>.</p>',
   );
 
 export async function GET(_req: Request, ctx: RouteContext<"/inbox/sign-in/[token]">) {
