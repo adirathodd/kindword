@@ -10,6 +10,8 @@ Nov 22, 2026 · @Adityasinh Rathod
 
 **Changes in v0.4 (2026-11-22 comments):** pricing lowered to $149 setup plus $99 per location per month (pilots: no setup fee and $79 a month for 6 months); online booking listed for after v0.1; a customer row can carry a phone, an email or both; one reminder 3 days later to anyone who has not clicked (up to 2 messages per job); an owner approval inbox with passwordless sign-in replaces one-off approval links, and owner emails become a daily digest plus an immediate email for low ratings.
 
+**Change 2026-11-23 (self-serve signup):** owners can register themselves with email and password (FR-24); a new signup is a business in onboarding status, and nothing sends until the operator finishes setup and switches it to live; owners sign in with email and password, and the emailed sign-in link stays as an alternative; self-serve signup moves out of Later.
+
 ## Overview
 
 Kindword v0.1 is a done-for-you service that asks every customer of a local business for a Google review after their visit, and drafts a reply to every review for the owner to approve. It is run by one person, part-time, for a small number of pilot customers in the NYC/NJ area.
@@ -52,12 +54,12 @@ v0.1 covers one complete loop for a handful of pilot businesses: intake, review 
 
 **In scope**
 
-- Operator-run setup for each business (no self-serve signup).
+- Self-serve signup: an owner registers with email and password, which creates their business in onboarding status. The operator still finishes setup for each business (Flow 1) before anything sends.
 - CSV and Google Sheet intake.
 - Review requests by SMS through Twilio or by email, plus one reminder to anyone who has not clicked.
 - Google Business Profile connection for reading reviews and posting approved replies.
 - AI-drafted replies in English plus the languages the business needs.
-- An owner approval inbox listing every pending draft, reached by an emailed sign-in link (no password).
+- An owner approval inbox listing every pending draft, reached after the owner signs in (email and password, or an emailed sign-in link).
 - A simple operator dashboard and a monthly email report.
 - Consent tracking, opt-out handling and an audit log.
 - Hosted SMS opt-in, SMS terms and privacy pages for each client.
@@ -70,7 +72,8 @@ v0.1 covers one complete loop for a handful of pilot businesses: intake, review 
 - Auto-posting replies without owner approval.
 - Review gating, incentives for reviews, or any filtering of who gets asked.
 - Reviews on platforms other than Google (Yelp, Facebook).
-- Self-serve signup, billing automation and a customer-facing app.
+- Billing automation and a customer-facing app.
+- Fully self-serve onboarding: consent attestation, 10DLC registration and going live stay with the operator.
 - Healthcare clients and any protected health information (see Compliance).
 
 **Assumptions**
@@ -84,12 +87,18 @@ v0.1 covers one complete loop for a handful of pilot businesses: intake, review 
 
 Three kinds of people touch the system. The **owner** is the business owner or manager who approves replies and pays. The **customer** is the person who used the business and gets a text or email. The **operator** is you, who sets up businesses and handles failures.
 
+**Flow 0: signup (owner, self-serve)**
+
+1. The owner opens the sign-up page and enters their name, business name, email and a password, and accepts the terms and privacy policy (the version accepted is recorded).
+2. The system creates the business in onboarding status and the owner's account, and emails a verification link. The owner cannot sign in until the email is verified.
+3. The operator gets an email about the new signup. Signed in, the owner sees that setup is in progress; nothing is imported or sent while the business is in onboarding.
+
 **Flow 1: onboarding (operator, about 1 hour per business)**
 
-1. Create the business and location, and record the Google review link and tone notes (formal or casual, words to avoid, languages).
+1. Pick up the new signup, or create the business for an owner who did not register, then add the location, and record the Google review link and tone notes (formal or casual, words to avoid, languages).
 2. Get the owner's signed attestation describing how each list captured consent (signed estimate, booking form, web form). Only customers with a qualifying written-consent record (see the Texting consent row under Compliance) are texted; everyone else on the list gets email only. Give the owner the consent-language template and the business's hosted opt-in page for new customers. Publish the business's SMS terms and privacy page (FR-23) and submit its 10DLC brand and campaign the same day.
 3. Connect the owner's Google Business Profile (owner grants access or adds the operator as a manager).
-4. Load a first CSV, send a test request to the owner's own phone and email, and send the owner their first sign-in link to the approval inbox.
+4. Load a first CSV, send a test request to the owner's own phone and email, and confirm the owner can sign in to the approval inbox.
 5. Switch the business to live.
 
 **Flow 2: review request (automatic)**
@@ -131,7 +140,7 @@ Priority: **Must** is needed for the first live pilot, **Should** is wanted in v
 | FR-10 | Ask every eligible customer; no filtering by expected sentiment | Must |
 | FR-11 | Check Google for new reviews every 15 minutes, catching up on missed runs; support manual paste as a fallback | Must |
 | FR-12 | Draft a reply to each review in the business's tone and the review's language | Must |
-| FR-13 | Owner approval inbox: one page per location listing every draft awaiting approval, approved replies waiting to post, and replies posted in the last 30 days, reached by a passwordless sign-in link emailed to the owner (single use, expires in 15 minutes, session lasts 30 days, scoped to that location). The app's home page takes a signed-in owner straight to the inbox; a signed-out owner gets a sign-in screen that asks for their email and sends a new link, with the same response whether or not the email belongs to an owner, and rate-limited (decided 2026-11-23); a daily digest email on days with drafts waiting, plus an immediate email for reviews of 2 stars or lower | Must |
+| FR-13 | Owner approval inbox: one page per location listing every draft awaiting approval, approved replies waiting to post, and replies posted in the last 30 days, reached after the owner signs in with their account (FR-24) or by a passwordless sign-in link emailed to the owner (single use, expires in 15 minutes, session lasts 30 days, scoped to that location). A signed-in owner who opens the app goes straight to the inbox; a signed-out owner gets a sign-in screen with email and password, plus an option to email a sign-in link instead, with the same response whether or not the email belongs to an owner, and rate-limited (decided 2026-11-23); a daily digest email on days with drafts waiting, plus an immediate email for reviews of 2 stars or lower | Must |
 | FR-14 | Owner can approve, edit or reject; nothing posts without approval | Must |
 | FR-15 | Post approved replies to Google | Must |
 | FR-16 | Flag risky reviews (rating of 2 or lower, possible private details, legal or medical content) for extra care | Must |
@@ -141,7 +150,8 @@ Priority: **Must** is needed for the first live pilot, **Should** is wanted in v
 | FR-20 | Offboarding: disconnect Google, stop all messages, delete or export customer data on request | Must |
 | FR-22 | Purge review text, reviewer name and anything derived from them (including drafts) within 30 days of fetch; refresh stored review IDs within 30 days | Must |
 | FR-23 | Per-client compliance pages on our domain: an SMS opt-in page (consent box unchecked by default, consent not required for service, links to terms and privacy), SMS terms (program description, message frequency (up to 2 texts per job), "Msg & data rates may apply", HELP and STOP) and a privacy policy stating mobile numbers and consent are never shared or sold for marketing; their URLs go into the client's 10DLC campaign | Must |
-| FR-21 | Native integrations (Jobber, Housecall Pro, ServiceTitan, Square), self-serve signup, billing automation | Later |
+| FR-24 | Owner accounts: self-serve sign-up with name, business name, email and password, recording the terms and privacy version accepted; email verification before first sign-in (single-use link, 24 hours); sign-in with email and password; password reset by emailed link (single use, 15 minutes); passwords at least 12 characters and checked against a breached-password list, stored only as a slow salted hash (Argon2id); sign-up, sign-in and reset give the same response whether or not the email has an account, and are rate-limited per IP and per email; sessions last 30 days, and a password change or reset ends all other sessions; a new business starts in onboarding status, and nothing is imported or sent until the operator switches it to live | Must |
+| FR-21 | Native integrations (Jobber, Housecall Pro, ServiceTitan, Square), billing automation | Later |
 
 ## Implementation status
 
@@ -173,6 +183,7 @@ Status of each requirement on main at 09688ec (2026-11-23). The requirement text
 | FR-21 | Later | Not built |
 | FR-22 | Partial | purgeExpiredReviews deletes reviews and drafts not refreshed within the window; no scheduler runs it; refreshing review IDs depends on FR-11 |
 | FR-23 | Not implemented | Waits on the consent wording and privacy policy |
+| FR-24 | Not implemented | Added 2026-11-23 |
 
 ## Architecture and tech stack
 
@@ -194,7 +205,7 @@ The web app takes in customers and serves the owner approval inbox and the revie
 - One deployable app, not separate services. It is small, and one person has to run it.
 - Each outside service sits behind a small interface in the code so it can be swapped.
 - Every job is idempotent, so a retry cannot text a customer twice.
-- The owner's approval inbox uses passwordless sign-in by emailed link, so there are no owner passwords to manage.
+- Owners sign in with email and password (self-serve accounts, FR-24); the emailed sign-in link stays as an alternative. Passwords are stored only as Argon2id hashes, and no one, including the operator, can see them.
 
 ## Data model
 
@@ -214,6 +225,8 @@ Postgres, one schema. A business has locations, a location has customers and rev
 | audit\_log | id, location\_id, entity, entity\_id, action, actor, detail, at | Append-only; IDs and actions only, no review text or phone numbers; approval events record edited (yes or no) and minutes to approve, so these own metrics survive the 30-day purge of drafts |
 | consent\_attestations | id, business\_id, signed\_at, document\_ref, list\_description | The owner's signed attestation and how each list captured consent |
 | sheet\_sources | id, location\_id, sheet\_id, attestation\_id, consent\_wording\_version, last\_row\_id, last\_read\_at | One shared sheet per location; attestation\_id and consent\_wording\_version are set by the operator and apply to every row read (the sheet is not read until both are set); webhook\_events is deferred with the webhook |
+| owner\_accounts | id, business\_id, name, email, normalized\_email, password\_hash, email\_verified\_at, terms\_version, terms\_accepted\_at, created\_at, disabled\_at | Self-serve owner sign-in (FR-24); unique normalized\_email; password\_hash is Argon2id, never logged; one account per business in v0.1 |
+| account\_tokens | id, account\_id, purpose, token\_hash, expires\_at, used\_at | purpose: verify\_email (24 hours), reset\_password (15 minutes); single use; only the hash is stored |
 | owner\_sessions | id, location\_id, owner\_email, login\_token\_hash, token\_expires\_at, session\_token\_hash, session\_expires\_at, revoked\_at | Passwordless owner sign-in; login token single use, 15 minutes; the session cookie is a separate random secret stored only as session\_token\_hash, never the emailed token; session 30 days, one location only; reply\_drafts.approved\_session\_id points here |
 
 **Rules**
@@ -221,6 +234,7 @@ Postgres, one schema. A business has locations, a location has customers and rev
 - Never store a customer's phone number without a consent record.
 - Store only the review text and reviewer name that Google returns, and purge or refresh that content within 30 days of fetching it (Google policy); do not store health or other sensitive details beyond that text. Drafts and any other field derived from review content follow the same 30-day limit, and no rating averages or review counts from reviews are kept beyond it (until Google confirms what a report may keep).
 - Owner sign-in links store only a hash of the token and expire after 15 minutes; owner sessions expire after 30 days.
+- Owner passwords are stored only as Argon2id hashes; verification and reset tokens store only a hash and are single use.
 - Deleting a business deletes its customers, visits and tokens; the audit log keeps IDs and actions but no personal data.
 
 ## Integrations
@@ -341,6 +355,7 @@ The system holds customer phone numbers and access to each owner's Google profil
 - Request only the Google permission the product needs, and use it only to read reviews and post approved replies (see the OAuth note under Integrations).
 - Owner sign-in links are single use, bound to one location, expire in 15 minutes and store only a hash of the token; sessions last 30 days, show only that location's drafts, and the operator can revoke them.
 - Operator login uses a strong password plus two-factor authentication.
+- Owner accounts (FR-24): passwords hashed with Argon2id; at least 12 characters and checked against a breached-password list; sign-in, sign-up and reset rate-limited and with the same response whether or not the email has an account; session cookies are HttpOnly, Secure and SameSite; a password change or reset ends all other sessions.
 - Phone numbers and message text are not written to application logs.
 - Collect the minimum personal data: name, phone or email, visit time, language, consent. No payment or health details.
 - Retention: delete customer rows 12 months after the last visit, and everything for a business within 30 days of offboarding.
@@ -415,7 +430,7 @@ Each week ends at a gate (the diamonds). If a gate is missed, the next week star
 **Acceptance criteria for each gate**
 
 1. **Week 1.** A CSV and a shared Google Sheet with consent records load; rows with invalid phones, duplicates or no consent are rejected or skipped with a reason. A review request arrives on your phone (or by email if 10DLC is still pending) inside the allowed hours. Replying STOP, revoke or opt out prevents any further text, including retries, the reminder and later imports. A non-clicker gets one reminder after 3 days (tested with a shortened delay) and a clicker gets none (FR-2, FR-2a, FR-3, FR-5, FR-6, FR-8).
-2. **Week 2.** 30 sample reviews produce drafts that follow reply rules 1 to 8. The approval inbox lists every pending draft and approves, edits or rejects each one; nothing posts without approval; a sign-in link cannot be reused or used after 15 minutes, and a session never shows another business's drafts (FR-12, FR-13, FR-14).
+2. **Week 2.** 30 sample reviews produce drafts that follow reply rules 1 to 8. The approval inbox lists every pending draft and approves, edits or rejects each one; nothing posts without approval; a sign-in link cannot be reused or used after 15 minutes, and a session never shows another business's drafts. An owner can register, verify their email, sign in with a password and reset it; a new signup stays in onboarding and sends nothing (FR-12, FR-13, FR-14, FR-24).
 3. **Week 3.** An owner-approved reply posts to a real Google profile, or the manual fallback is written down and working. The dashboard shows failed jobs (FR-11, FR-15, FR-18).
 4. **Week 4.** One pilot business is live with no manual steps per customer, with its opt-in, SMS terms and privacy pages published. The monthly report arrives with the expected values for a test location, the daily digest arrives on a day with waiting drafts, alerts fire on a forced failure, an offboarding dry run revokes Google access and deletes customer data, and a backup restore has been tested (FR-17, FR-19, FR-20, FR-23).
 
@@ -430,7 +445,8 @@ Every blocking decision is made. The employer check must be settled before the f
 - [x] **Google access.** Decided: apply in week 1, after the website and Google Cloud project exist, with a manual-posting fallback (owner approves, operator pastes the reply) if approval is slow.
 - [x] **Intake for v0.1.** Decided: CSV and Google Sheet only; booking-software integrations deferred.
 - [x] **Pilot pricing.** Lowered 2026-11-22 (proposed): the first two pilots pay no setup fee and $79 a month for 6 months in exchange for a testimonial or case study; standard price $149 setup plus $99 per location per month; validate with the first 10 prospects.
-- [ ] **Owner inbox and reminders.** Decided 2026-11-22 (from your comments): an owner approval inbox with passwordless sign-in and a daily digest; one reminder to non-clickers, up to 2 messages per job; online booking after v0.1.
+- [ ] **Owner inbox and reminders.** Decided 2026-11-22 (from your comments): an owner approval inbox with sign-in and a daily digest; one reminder to non-clickers, up to 2 messages per job; online booking after v0.1.
+- [x] **Self-serve signup.** Decided 2026-11-23: owners register themselves with email and password (FR-24); the emailed sign-in link stays as an alternative; a new signup waits in onboarding until the operator finishes setup and switches it to live.
 - [x] **Public AI disclosure.** Decided: no public AI label; the contract says AI drafts replies and the owner approves each one.
 - [x] **AI provider for v0.1.** Decided 2026-11-23: no heavy model; start on a free tier. Groq's free tier with openai/gpt-oss-20b, behind the AI interface; the Claude API (Claude Haiku 5.5) is the paid fallback. Free tiers that may train on inputs are excluded (see AI provider under Integrations). To do before the first pilot: confirm Groq's free-tier terms allow commercial use, turn on Zero Data Retention, and run the 30-review sample set.
 - [ ] **Employer check.** Open: you will ask Bloomberg. Get approval in writing, including on intellectual property, before the first paying customer. Avoid finance clients at first.
@@ -460,6 +476,8 @@ Every blocking decision is made. The employer check must be settled before the f
 | Each client needs its own 10DLC registration | More setup time and cost per customer | Collect the client's legal name and tax ID at onboarding; use email until approved |
 | Client lacks documented written consent or a compliant website | Campaign rejected at vetting; texting exposure | Email only for those customers; hosted opt-in, terms and privacy pages (FR-23); collect consent on estimates going forward |
 | Owner sign-in link forwarded or leaked | Someone else approves replies in the owner's name | Single-use links that expire in 15 minutes; 30-day sessions the operator can revoke; the audit log records which session approved |
+| Owner password reused or guessed | Someone else approves replies or reads customer data in the owner's name | Breached-password check, rate-limited sign-in, 30-day sessions that end on password change, and the audit log records which session approved |
+| Fake or spam signups | Junk accounts, or texts sent for a business that never consented | Email verification; rate-limited sign-up; nothing imports or sends until the operator finishes onboarding and switches the business to live |
 | New York may treat an NJ LLC run from NYC as doing business there | Needs NY authority and publication (over $1,000 in NYC); an unauthorized LLC cannot sue in NY courts | Sole proprietor until real revenue, target NJ clients, then decide on the LLC |
 
 **Approval.** When the decisions above are settled, change the title's version to v1.0 and tell me to start the build. I will not write code before you approve.

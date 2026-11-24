@@ -13,7 +13,8 @@ Solo, nights-and-weekends side business, brand name **Kindword**: a done-for-you
 - Stack: TypeScript + Next.js (App Router), Postgres with Drizzle ORM, hosted queue/scheduler, Twilio (10DLC per client), Resend, Claude API.
 - Intake: CSV and a shared Google Sheet only. The webhook and job-software integrations come later.
 - Google Business Profile API with a manual-posting fallback.
-- Owner approval inbox with passwordless email sign-in and a daily digest. No owner passwords.
+- Self-serve owner signup with email and password (FR-24); the emailed sign-in link stays as an alternative. A new signup waits in onboarding, and nothing sends until the operator switches it to live.
+- Owner approval inbox with a daily digest.
 - One reminder to non-clickers, at most 2 messages per job. Email only when there is no phone with consent or the text fails, never both.
 - No public AI label on replies. The contract discloses AI drafting and the owner approves every reply.
 
