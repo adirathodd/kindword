@@ -60,7 +60,8 @@ h2{font-size:1.1rem;margin:2rem 0 .75rem}article{background:#fff;border:1px soli
 .notice{background:#e8f4ea;border:1px solid #7fbf8a;border-radius:6px;padding:.5rem .75rem}.error{background:#fdecea;border-color:#e08a83}
 form{margin:.5rem 0 0}.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}textarea{width:100%;box-sizing:border-box;min-height:6rem;font:inherit;padding:.5rem}
 button{font:inherit;padding:.45rem .9rem;border-radius:6px;border:1px solid #888;background:#fff;cursor:pointer}button.primary{background:#1f5fa8;border-color:#1f5fa8;color:#fff}
-details{margin-top:.5rem}summary{cursor:pointer;color:#1f5fa8}label{display:flex;gap:.4rem;align-items:flex-start}.empty{color:#555}`;
+details{margin-top:.5rem}summary{cursor:pointer;color:#1f5fa8}label{display:flex;gap:.4rem;align-items:flex-start}.empty{color:#555}
+label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password]{font:inherit;padding:.45rem .6rem;border:1px solid #888;border-radius:6px;width:100%;max-width:24rem;box-sizing:border-box}a{color:#1f5fa8}`;
 
 const FLAG_LABELS: Record<string, string> = {
   low_rating: "Rating of 2 stars or lower",
@@ -143,5 +144,5 @@ export const signedOutPage = () =>
   html(
     401,
     "Sign in to see your replies",
-    "<p>Your sign-in has ended. Open the newest sign-in link we emailed you, or ask us for a new one.</p>",
+    '<p>Your sign-in has ended. <a href="/account/sign-in">Sign in to your account</a>, or open the newest sign-in link we emailed you.</p>',
   );

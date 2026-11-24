@@ -255,6 +255,8 @@ export const ownerSessions = pgTable(
     sessionTokenHash: text("session_token_hash").unique(),
     sessionExpiresAt: ts("session_expires_at"),
     revokedAt: ts("revoked_at"),
+    // Set when the session was opened from a signed-in owner account (FR-24), so a password reset can end it.
+    accountId: uuid("account_id").references(() => ownerAccounts.id, { onDelete: "cascade" }),
   },
   (t) => [
     unique().on(t.id, t.locationId),
@@ -333,3 +335,58 @@ export const sheetSources = pgTable("sheet_sources", {
   lastRowId: text("last_row_id"), // progress marker only; dedup is by row ID in visits.external_visit_id
   lastReadAt: ts("last_read_at"),
 });
+
+// Self-serve owner accounts (SPEC FR-24). One account per business in v0.1. Passwords are stored only as Argon2id
+// hashes; emails, tokens and hashes are never logged.
+export const accountTokenPurpose = pgEnum("account_token_purpose", ["verify_email", "reset_password"]);
+
+export const ownerAccounts = pgTable("owner_accounts", {
+  id: id(),
+  businessId: uuid("business_id")
+    .notNull()
+    .unique()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  normalizedEmail: text("normalized_email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  emailVerifiedAt: ts("email_verified_at"),
+  termsVersion: text("terms_version").notNull(),
+  termsAcceptedAt: ts("terms_accepted_at").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  disabledAt: ts("disabled_at"),
+});
+
+// Email verification (24 hours) and password reset (15 minutes) links: single use, only the hash is stored.
+export const accountTokens = pgTable("account_tokens", {
+  id: id(),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => ownerAccounts.id, { onDelete: "cascade" }),
+  purpose: accountTokenPurpose("purpose").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
+});
+
+// Signed-in owner accounts (30 days). The cookie holds a random secret; only its hash is stored.
+export const accountSessions = pgTable("account_sessions", {
+  id: id(),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => ownerAccounts.id, { onDelete: "cascade" }),
+  sessionTokenHash: text("session_token_hash").notNull().unique(),
+  expiresAt: ts("expires_at").notNull(),
+  revokedAt: ts("revoked_at"),
+});
+
+// Rate-limit counter for sign-up, sign-in and reset. key is a SHA-256 of "<action>:<ip or email>", never the raw value.
+export const authAttempts = pgTable(
+  "auth_attempts",
+  {
+    id: id(),
+    key: text("key").notNull(),
+    at: ts("at").notNull().defaultNow(),
+  },
+  (t) => [index().on(t.key, t.at)],
+);

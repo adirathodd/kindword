@@ -57,6 +57,13 @@
       "when": 1795456177038,
       "tag": "0007_business_approved_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795487384169,
+      "tag": "0008_owner_accounts",
+      "breakpoints": true
     }
   ]
 }
