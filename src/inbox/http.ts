@@ -2,6 +2,7 @@
 // HTML (like the /u unsubscribe page) with every value escaped; review text is untrusted.
 import { escapeHtml as e } from "./auth";
 import type { Inbox, InboxItem } from "./inbox";
+import { BRAND_CSS_VARS } from "../ui/brand";
 
 export const SESSION_COOKIE = "owner_session";
 
@@ -52,16 +53,19 @@ export const html = (status: number, title: string, body: string, extra: Record<
 export const redirect = (location: string, extra: Record<string, string> = {}) =>
   new Response(null, { status: 303, headers: { "Cache-Control": "no-store", Location: location, ...extra } });
 
-const CSS = `body{font-family:system-ui,sans-serif;margin:0;background:#f6f6f4;color:#1b1b1b;line-height:1.5}
-main{max-width:44rem;margin:0 auto;padding:1.5rem 1rem 4rem}h1{font-size:1.4rem;margin:.5rem 0 1rem}
-h2{font-size:1.1rem;margin:2rem 0 .75rem}article{background:#fff;border:1px solid #ddd;border-radius:8px;padding:1rem;margin:0 0 1rem}
-.meta{color:#555;font-size:.9rem}.review{white-space:pre-wrap;margin:.5rem 0}.reply{white-space:pre-wrap;background:#f2f6fb;border-left:3px solid #4a78b5;padding:.5rem .75rem;margin:.5rem 0}
-.flags{background:#fff4e5;border:1px solid #f0b46c;border-radius:6px;padding:.5rem .75rem;margin:.5rem 0}.badge{display:inline-block;font-size:.8rem;font-weight:600;padding:0 .4rem;border-radius:4px;background:#b3261e;color:#fff;margin-left:.4rem}
-.notice{background:#e8f4ea;border:1px solid #7fbf8a;border-radius:6px;padding:.5rem .75rem}.error{background:#fdecea;border-color:#e08a83}
-form{margin:.5rem 0 0}.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}textarea{width:100%;box-sizing:border-box;min-height:6rem;font:inherit;padding:.5rem}
-button{font:inherit;padding:.45rem .9rem;border-radius:6px;border:1px solid #888;background:#fff;cursor:pointer}button.primary{background:#1f5fa8;border-color:#1f5fa8;color:#fff}
-details{margin-top:.5rem}summary{cursor:pointer;color:#1f5fa8}label{display:flex;gap:.4rem;align-items:flex-start}.empty{color:#555}
-label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password]{font:inherit;padding:.45rem .6rem;border:1px solid #888;border-radius:6px;width:100%;max-width:24rem;box-sizing:border-box}a{color:#1f5fa8}`;
+// Brand tokens as CSS variables (src/ui/brand.ts, docs/BRAND.md); no web fonts here: the CSP allows none.
+const CSS = `${BRAND_CSS_VARS}
+body{font-family:var(--k-font);margin:0;background:var(--k-bg);color:var(--k-ink);line-height:1.5}
+main{max-width:44rem;margin:0 auto;padding:1.5rem 1rem 4rem}h1{font-size:1.5rem;font-weight:500;letter-spacing:-0.02em;margin:.5rem 0 1rem}
+h2{font-size:1.1rem;font-weight:500;margin:2rem 0 .75rem}article{background:var(--k-card);border:1px solid var(--k-line);border-radius:var(--k-radius-lg);padding:1rem;margin:0 0 1rem}
+.meta{color:var(--k-muted);font-size:.9rem}.review{white-space:pre-wrap;margin:.5rem 0}.reply{white-space:pre-wrap;background:var(--k-surface);border-left:3px solid var(--k-ink);padding:.5rem .75rem;margin:.5rem 0}
+.flags{background:var(--k-warn-bg);border:1px solid var(--k-warn-line);border-radius:var(--k-radius-md);padding:.5rem .75rem;margin:.5rem 0}.badge{display:inline-block;font-size:.8rem;font-weight:500;padding:0 .4rem;border-radius:var(--k-radius-sm);background:var(--k-alert);color:#fff;margin-left:.4rem}
+.notice{background:var(--k-ok-bg);border:1px solid var(--k-ok-line);border-radius:var(--k-radius-md);padding:.5rem .75rem}.error{background:var(--k-error-bg);border-color:var(--k-error-line)}
+form{margin:.5rem 0 0}.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}textarea{width:100%;box-sizing:border-box;min-height:6rem;font:inherit;color:inherit;padding:.5rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card)}
+button{font:inherit;font-weight:500;padding:.5rem 1rem;border-radius:var(--k-radius-md);border:1px solid var(--k-line);background:var(--k-surface);color:var(--k-ink);cursor:pointer}button.primary{background:var(--k-ink);border-color:var(--k-ink);color:var(--k-ink-on)}
+:focus-visible{outline:2px solid var(--k-ink);outline-offset:2px}
+details{margin-top:.5rem}summary{cursor:pointer;color:var(--k-ink);font-weight:500}label{display:flex;gap:.4rem;align-items:flex-start}.empty{color:var(--k-muted)}
+label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password]{font:inherit;color:inherit;padding:.45rem .6rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card);width:100%;max-width:24rem;box-sizing:border-box}a{color:var(--k-ink)}`;
 
 const FLAG_LABELS: Record<string, string> = {
   low_rating: "Rating of 2 stars or lower",
