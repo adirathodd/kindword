@@ -32,6 +32,7 @@ Solo, nights-and-weekends side business, brand name **Kindword**: a done-for-you
 
 - Build in small steps that match the spec's milestones (Week 1-4 gates). Do one step per session: open a PR with the test results, then stop for review.
 - Lead with the answer and keep explanations short.
+- All UI, emails and customer-facing copy follow `docs/BRAND.md`. Use the tokens in `src/ui/brand.ts`; never hand-write a colour, font or radius.
 - Use no real customer data, send no live texts or emails, and create no outside accounts (Twilio, Google, Resend) until the owner says so. Hosting (Vercel) is set up by the owner; don't change its settings or env vars unless asked. Put each outside service behind a small interface and use fakes in tests.
 - Every job must be idempotent: a retry never sends the same message twice.
 - Don't use Bloomberg equipment, accounts or information for this project.

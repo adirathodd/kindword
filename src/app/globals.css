@@ -1,26 +1,30 @@
 @import "tailwindcss";
 
+/* Kindword brand tokens: the same values as src/ui/brand.ts (brand.test.ts checks). Rules: docs/BRAND.md. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --k-bg: #f7f9f8;
+  --k-surface: #ebf0ee;
+  --k-card: #ffffff;
+  --k-ink: #06525c;
+  --k-muted: #2f737d;
+  --k-ink-on: #f7f9f8;
+  --k-line: rgb(6 82 92 / 0.14);
+  --k-radius-sm: 4px;
+  --k-radius-md: 6px;
+  --k-radius-lg: 8px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-background: var(--k-bg);
+  --color-surface: var(--k-surface);
+  --color-foreground: var(--k-ink);
+  --color-muted: var(--k-muted);
+  --font-sans: var(--font-host-grotesk);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--k-bg);
+  color: var(--k-ink);
+  font-family: var(--font-host-grotesk), system-ui, sans-serif;
 }
