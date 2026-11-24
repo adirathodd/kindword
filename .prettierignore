@@ -5,3 +5,7 @@ package-lock.json
 tsconfig.json
 # The SPEC (source of truth, kept in sync with Notion); hand-formatted, never reformat.
 docs/SPEC.md
+# Vendored design-kit files and the static landing page; the kit checks them unformatted.
+public/landing/
+# Local landing-page drafts.
+design/

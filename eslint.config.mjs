@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     ".claude/**", // other sessions' worktrees
+    "public/landing/**", // vendored design-kit files and the static landing page
+    "design/**", // local landing-page drafts
   ]),
 ]);
 
