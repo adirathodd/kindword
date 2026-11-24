@@ -1,10 +1,12 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx numbers, example.test emails.
+import { generateKeyPairSync } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db, type Db } from "../db/client";
 import * as s from "../db/schema";
 import { importCsv } from "./importCsv";
+import { GoogleSheetsReader, SHEETS_API, TOKEN_URL } from "./googleSheets";
 import { pollSheet, type SheetReader } from "./pollSheet";
 
 const HEADER = ["row_id", "name", "phone", "email", "visit_time", "consent_method", "consent_date", "evidence_ref"];
@@ -232,5 +234,30 @@ describe("pollSheet", () => {
       { row: 2, status: "skipped", reason: "duplicate_visit" },
       { row: 3, status: "inserted", reason: "existing_customer" },
     ]);
+  });
+  it("imports through the Google Sheets reader (fake Google endpoints)", async () => {
+    const sheetId = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd";
+    await db.update(s.sheetSources).set({ sheetId }).where(eq(s.sheetSources.id, t.sourceId));
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    const urls: string[] = [];
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      urls.push(url);
+      if (url === TOKEN_URL) return Response.json({ access_token: "tok", expires_in: 3600 });
+      if (url.startsWith(`${SHEETS_API}/${sheetId}/values/`)) return Response.json({ values: sheet });
+      throw new Error(`unexpected URL ${url}`);
+    }) as typeof fetch;
+    const google = new GoogleSheetsReader(
+      { clientEmail: "intake@kindword-test.iam.gserviceaccount.com", privateKey },
+      { fetchImpl },
+    );
+    const r = await pollSheet(t.sourceId, google);
+    expect(r.ok && r.rows.map((x) => x.status)).toEqual(["inserted", "inserted", "inserted"]);
+    expect(urls).toHaveLength(2);
+    expect((await source()).lastRowId).toBe("3");
   });
 });
