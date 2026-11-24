@@ -390,3 +390,17 @@ export const authAttempts = pgTable(
   },
   (t) => [index().on(t.key, t.at)],
 );
+
+// Landing-page waitlist: owners asking to be emailed back or let onto the platform. One row per email (a repeat
+// updates it). No phone numbers, no review data.
+export const waitlistEntries = pgTable("waitlist_entries", {
+  id: id(),
+  name: text("name").notNull(),
+  businessName: text("business_name").notNull(),
+  email: text("email").notNull(),
+  normalizedEmail: text("normalized_email").notNull().unique(),
+  mapsUrl: text("maps_url").notNull(),
+  businessKind: text("business_kind").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});

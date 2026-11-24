@@ -64,6 +64,13 @@
       "when": 1795487384169,
       "tag": "0008_owner_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795490223823,
+      "tag": "0009_waitlist",
+      "breakpoints": true
     }
   ]
 }

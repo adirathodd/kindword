@@ -42,6 +42,7 @@ export const LIMITS = {
   signInEmail: { max: 10, windowMs: 15 * MINUTE },
   resetIp: { max: 10, windowMs: 60 * MINUTE },
   resetEmail: { max: 5, windowMs: 60 * MINUTE },
+  waitlistIp: { max: 5, windowMs: 60 * MINUTE },
 } as const;
 type Limit = keyof typeof LIMITS;
 
@@ -103,7 +104,13 @@ async function startSession(accountId: string, now: Date, db: Db) {
 const audit = (accountId: string, action: string, actor: string, db: Pick<Db, "insert">) =>
   db.insert(auditLog).values({ entity: "owner_account", entityId: accountId, action, actor });
 
-async function mail(deps: Deps, to: string, subject: string, lines: string[], link?: { url: string; label: string }) {
+export async function mail(
+  deps: Pick<Deps, "email">,
+  to: string,
+  subject: string,
+  lines: string[],
+  link?: { url: string; label: string },
+) {
   const text = [...lines, ...(link ? ["", link.url] : []), "", "If you did not expect this email, you can ignore it."];
   const html = `${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}${
     link ? `<p><a href="${escapeHtml(link.url)}">${escapeHtml(link.label)}</a></p>` : ""
