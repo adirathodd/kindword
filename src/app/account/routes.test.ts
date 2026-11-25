@@ -241,6 +241,27 @@ describe("password reset", () => {
     expect(sent.map((m) => m.to)).toEqual(["p@acct.example.test"]);
   });
 
+  it("answers the same for a known and an unknown email when the email provider fails", async () => {
+    await verifiedAccount("pf@acct.example.test");
+    vi.spyOn(routeDeps, "make").mockImplementation(() => ({
+      email: {
+        send: async () => {
+          throw new Error("provider down");
+        },
+      },
+      breach: { isBreached: async () => false },
+      baseUrl: BASE,
+      operatorEmail: "ops@acct.example.test",
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const known = await resetReq.POST(post({ email: "pf@acct.example.test" }));
+    const unknown = await resetReq.POST(post({ email: "nope@acct.example.test" }));
+    expect(known.status).toBe(200);
+    expect(unknown.status).toBe(200);
+    expect(await known.text()).toBe(await unknown.text());
+    expect(warn.mock.calls.flat().join(" ")).not.toContain("pf@acct.example.test");
+  });
+
   it("sets the new password once, ends every other session including inbox ones, and signs this device in", async () => {
     const { cookie, businessId } = await verifiedAccount("q@acct.example.test");
     const [loc] = await db
