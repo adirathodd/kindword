@@ -148,5 +148,5 @@ export const signedOutPage = () =>
   html(
     401,
     "Sign in to see your replies",
-    '<p>Your sign-in has ended. <a href="/account/sign-in">Sign in to your account</a>, or open the newest sign-in link we emailed you.</p>',
+    '<p>Your sign-in has ended. <a href="/account/sign-in">Sign in to your account</a>, or <a href="/account/sign-in/link">get a sign-in link by email</a>.</p>',
   );

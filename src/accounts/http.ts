@@ -90,7 +90,22 @@ export const signInPage = (email = "", error: string | null = null, status = err
     "Sign in to Kindword",
     `${err(error)}<form method="post">${field("email", "Email", "email", email, "username", ' maxlength="254"')}${pw(
       "current-password",
-    )}<div class="row"><button type="submit" class="primary">Sign in</button></div></form><p class="meta"><a href="/account/reset">Forgot your password?</a> · <a href="/account/register">Create an account</a></p>`,
+    )}<div class="row"><button type="submit" class="primary">Sign in</button></div></form><p class="meta"><a href="/account/sign-in/link">Email me a sign-in link instead</a> · <a href="/account/reset">Forgot your password?</a> · <a href="/account/register">Create an account</a></p>`,
+  );
+
+// FR-13: the passwordless alternative to the password form.
+export const signInLinkPage = (email = "", error: string | null = null) =>
+  html(
+    error ? 400 : 200,
+    "Email me a sign-in link",
+    `${err(error)}<p>Enter the email we have on file for your business. We send a link that opens your review reply inbox without a password.</p><form method="post">${field(
+      "email",
+      "Email",
+      "email",
+      email,
+      "email",
+      ' maxlength="254"',
+    )}<div class="row"><button type="submit" class="primary">Send sign-in link</button></div></form><p class="meta"><a href="/account/sign-in">Sign in with your password</a></p>`,
   );
 
 export const resetRequestPage = (error: string | null = null) =>
