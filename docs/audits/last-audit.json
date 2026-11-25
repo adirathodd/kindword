@@ -1,53 +1,100 @@
 {
-  "audit_id": "audit-2026-11-23-03",
-  "started_at": "2026-11-23T22:19Z",
-  "completed_at": "2026-11-23T23:05Z",
+  "audit_id": "audit-2026-11-24-01",
+  "started_at": "2026-11-24T09:00Z",
+  "completed_at": "2026-11-24T10:00Z",
   "status": "complete_with_documented_issues",
   "target_branch": "main",
+  "repository_note": "GitHub reports the repository moved to adirathodd/kindword; old URLs redirect.",
   "previous_audit": {
-    "audit_id": "audit-2026-11-23-02",
+    "audit_id": "audit-2026-11-23-03",
     "status": "complete_with_documented_issues",
-    "end_sha": "a8e36629b4c80ede533d7da15db18c4341adbe99",
-    "record": "this file before this audit (PR #6)"
+    "end_sha": "9e77f7f3d60e5f38b61daa80a882493a5802ce19",
+    "record": "this file before this audit (PR #18)"
   },
   "baseline": {
-    "sha": "a8e36629b4c80ede533d7da15db18c4341adbe99",
+    "sha": "9e77f7f3d60e5f38b61daa80a882493a5802ce19",
     "inferred": false,
-    "reasoning": "next_audit_starts_after of audit-2026-11-23-02"
+    "reasoning": "next_audit_starts_after of audit-2026-11-23-03"
   },
-  "end_sha": "9e77f7f3d60e5f38b61daa80a882493a5802ce19",
+  "end_sha": "ca05c82fb81bec93db5e562c249793c769e6034a",
   "spec": {
     "file": "docs/SPEC.md",
+    "note": "The Claude Doc could not be read from this session (no Claude Docs connector); docs/SPEC.md at ca05c82 was used, as CLAUDE.md directs.",
     "changes_in_period": [
-      "#11 made docs/SPEC.md the source of truth (with Notion), added FR-13 home-page sign-in, inbox 'approved waiting to post', data-model fields, Implementation status table, 3 open decisions",
-      "#13 edited AI provider (Groq free tier default, Claude Haiku 5.5 fallback), Quality checks, Implementation status (see S1-S4)"
+      "#25 Kindword brand name",
+      "#27 FR-24 self-serve owner accounts, Flow 0, owner_accounts/account_tokens, FR-13 password sign-in, Week 2 gate, risks"
     ]
   },
   "in_scope": [
     {
-      "pr": 5,
-      "title": "Audit fix for #1: opt out on keywords split by spaces or punctuation (FR-8)",
-      "url": "https://github.com/adirathodd/review-automation/pull/5",
+      "pr": 14,
+      "title": "Audit fix for #10: held draft saved unchanged needs Approve anyway; inbox ?done= crash (FR-14)",
+      "url": "https://github.com/adirathodd/review-automation/pull/14",
       "author": "adirathodd",
-      "merge_commit": "121e272",
+      "merge_commit": "8be8295",
       "merge_type": "squash",
-      "base_sha": "a8e3662",
-      "merged_at": "2026-11-23T14:37:44Z",
-      "changed_files": ["src/optout/optout.ts", "src/optout/optout.test.ts"],
-      "depends_on": [1],
+      "base_sha": "9e77f7f",
+      "merged_at": "2026-11-23T22:42:46Z",
+      "changed_files": ["src/inbox/inbox.ts", "src/inbox/http.ts", "tests"],
+      "depends_on": [10],
       "previously_audited": false,
-      "audit_status": "audited (fix PR of the previous audit; re-read, no findings)",
+      "audit_status": "audited (previous audit's fix PR; re-read, no findings)",
       "findings": []
     },
     {
-      "pr": 6,
-      "title": "Record SPEC audit audit-2026-11-23-02",
-      "url": "https://github.com/adirathodd/review-automation/pull/6",
+      "pr": 15,
+      "title": "Audit fix for #9: retry Twilio 429/503; 21610 on the opt-out confirmation is Twilio's own (FR-8)",
+      "url": "https://github.com/adirathodd/review-automation/pull/15",
       "author": "adirathodd",
-      "merge_commit": "581db82",
+      "merge_commit": "515dccd",
       "merge_type": "squash",
-      "base_sha": "a8e3662",
-      "merged_at": "2026-11-23T14:37:56Z",
+      "base_sha": "9e77f7f",
+      "merged_at": "2026-11-23T22:43:16Z",
+      "changed_files": ["src/sms/twilio.ts", "src/optout/optout.ts", "tests"],
+      "depends_on": [9],
+      "previously_audited": false,
+      "audit_status": "audited (previous audit's fix PR; re-read, no findings)",
+      "findings": []
+    },
+    {
+      "pr": 16,
+      "title": "Audit fix for #13: keep drafting through provider outages; tighten post-check and review fence (FR-12, FR-16)",
+      "url": "https://github.com/adirathodd/review-automation/pull/16",
+      "author": "adirathodd",
+      "merge_commit": "f437263",
+      "merge_type": "squash",
+      "base_sha": "9e77f7f",
+      "merged_at": "2026-11-23T22:43:45Z",
+      "changed_files": ["src/reviews/draft.ts", "src/ai/*", "tests"],
+      "depends_on": [13],
+      "previously_audited": false,
+      "audit_status": "audited (previous audit's fix PR; re-read, no findings)",
+      "findings": []
+    },
+    {
+      "pr": 17,
+      "title": "Audit fix for #7: never both channels; record provider opt-outs; held rows no longer starve the batch",
+      "url": "https://github.com/adirathodd/review-automation/pull/17",
+      "author": "adirathodd",
+      "merge_commit": "8c97c0a",
+      "merge_type": "squash",
+      "base_sha": "f437263",
+      "merged_at": "2026-11-23T22:44:09Z",
+      "changed_files": ["src/requests/requests.ts", "src/sms/provider.ts", "src/optout/optout.ts", "tests"],
+      "depends_on": [7, 15],
+      "previously_audited": false,
+      "audit_status": "audited (previous audit's fix PR; re-read, no findings)",
+      "findings": []
+    },
+    {
+      "pr": 18,
+      "title": "Record SPEC audit audit-2026-11-23-03",
+      "url": "https://github.com/adirathodd/review-automation/pull/18",
+      "author": "adirathodd",
+      "merge_commit": "579a384",
+      "merge_type": "squash",
+      "base_sha": "9e77f7f",
+      "merged_at": "2026-11-23T22:44:24Z",
       "changed_files": ["docs/audits/last-audit.json"],
       "depends_on": [],
       "previously_audited": false,
@@ -55,141 +102,134 @@
       "findings": []
     },
     {
-      "pr": 7,
-      "title": "Review requests: SMS/email sending, click-tracked link and one reminder (FR-5, FR-6, FR-7, FR-9, FR-10)",
-      "url": "https://github.com/adirathodd/review-automation/pull/7",
+      "pr": 25,
+      "title": "Put the Kindword brand into docs/SPEC.md",
+      "url": "https://github.com/adirathodd/review-automation/pull/25",
       "author": "adirathodd",
-      "merge_commit": "425b40a",
+      "merge_commit": "6cad870",
       "merge_type": "squash",
-      "base_sha": "581db82",
-      "merged_at": "2026-11-23T15:19:31Z",
-      "changed_files": [
-        "src/requests/*",
-        "src/app/r/[id]/route.ts",
-        "src/app/u/[token]/route.ts",
-        "src/email/provider.ts",
-        "src/sms/provider.ts",
-        "src/db/schema.ts",
-        "drizzle/0005*"
-      ],
-      "depends_on": [1, 5],
-      "previously_audited": false,
-      "audit_status": "audited",
-      "findings": ["F-7-1", "F-7-2", "F-7-3", "F-7-4", "F-7-5"]
-    },
-    {
-      "pr": 8,
-      "title": "30-day purge of review text and drafts (FR-22)",
-      "url": "https://github.com/adirathodd/review-automation/pull/8",
-      "author": "adirathodd",
-      "merge_commit": "3540c06",
-      "merge_type": "squash",
-      "base_sha": "581db82",
-      "merged_at": "2026-11-23T15:19:45Z",
-      "changed_files": ["src/reviews/purge.ts", "src/reviews/purge.test.ts"],
+      "base_sha": "579a384",
+      "merged_at": "2026-11-23T23:18:56Z",
+      "changed_files": ["docs/SPEC.md", "docs/sync/last-sync.json"],
       "depends_on": [],
       "previously_audited": false,
-      "audit_status": "audited",
+      "audit_status": "audited (SPEC naming only)",
       "findings": []
     },
     {
-      "pr": 9,
-      "title": "Inbound SMS opt-out webhook and Twilio adapter (FR-8)",
-      "url": "https://github.com/adirathodd/review-automation/pull/9",
+      "pr": 26,
+      "title": "Add CLAUDE.md with the PR-to-Vercel flow; migrate prod DB on merge",
+      "url": "https://github.com/adirathodd/review-automation/pull/26",
       "author": "adirathodd",
-      "merge_commit": "c657f13",
+      "merge_commit": "052ed0c",
       "merge_type": "squash",
-      "base_sha": "3540c06",
-      "merged_at": "2026-11-23T15:54:35Z",
-      "changed_files": [
-        "src/app/api/sms/inbound/route.ts",
-        "src/app/api/sms/inbound/route.test.ts",
-        "src/sms/twilio.ts",
-        "src/sms/twilio.test.ts",
-        ".env.example"
-      ],
-      "depends_on": [1, 5, 7],
-      "previously_audited": false,
-      "audit_status": "audited",
-      "findings": ["F-9-1", "F-9-2", "F-9-3"]
-    },
-    {
-      "pr": 10,
-      "title": "Owner approval inbox with passwordless sign-in (FR-13, FR-14)",
-      "url": "https://github.com/adirathodd/review-automation/pull/10",
-      "author": "adirathodd",
-      "merge_commit": "09688ec",
-      "merge_type": "squash",
-      "base_sha": "3540c06",
-      "merged_at": "2026-11-23T15:54:51Z",
-      "changed_files": ["src/inbox/*", "src/app/inbox/**", "src/db/schema.ts", "drizzle/0006*"],
+      "base_sha": "6cad870",
+      "merged_at": "2026-11-23T23:45:09Z",
+      "changed_files": [".github/workflows/migrate.yml", "CLAUDE.md"],
       "depends_on": [],
       "previously_audited": false,
-      "audit_status": "audited",
-      "findings": ["F-10-1", "F-10-2"]
-    },
-    {
-      "pr": 11,
-      "title": "Sync SPEC with main 09688ec; make docs/SPEC.md the source of truth",
-      "url": "https://github.com/adirathodd/review-automation/pull/11",
-      "author": "adirathodd",
-      "merge_commit": "fd2f0ac",
-      "merge_type": "squash",
-      "base_sha": "09688ec",
-      "merged_at": "2026-11-23T17:40:16Z",
-      "changed_files": ["docs/SPEC.md", "docs/sync/last-sync.json", ".prettierignore"],
-      "depends_on": [],
-      "previously_audited": false,
-      "audit_status": "audited (SPEC only; no weakened requirements)",
+      "audit_status": "audited (main-only guard, secret scoped to one step, no concurrent runs; no findings)",
       "findings": []
     },
     {
-      "pr": 12,
-      "title": "Add Resend email adapter with idempotent retries (FR-6, FR-13)",
-      "url": "https://github.com/adirathodd/review-automation/pull/12",
+      "pr": 27,
+      "title": "SPEC: self-serve owner signup with email and password (FR-24)",
+      "url": "https://github.com/adirathodd/review-automation/pull/27",
       "author": "adirathodd",
-      "merge_commit": "881b6c4",
+      "merge_commit": "0620026",
       "merge_type": "squash",
-      "base_sha": "fd2f0ac",
-      "merged_at": "2026-11-23T20:15:56Z",
-      "changed_files": [
-        "src/email/resend.ts",
-        "src/email/resend.test.ts",
-        "src/email/provider.ts",
-        "src/requests/requests.ts",
-        "src/requests/requests.test.ts",
-        ".env.example"
-      ],
-      "depends_on": [7],
+      "base_sha": "052ed0c",
+      "merged_at": "2026-11-24T02:42:15Z",
+      "changed_files": ["docs/SPEC.md", "CLAUDE.md"],
+      "depends_on": [],
       "previously_audited": false,
-      "audit_status": "audited",
-      "findings": ["F-12-1", "F-12-2", "F-12-3", "F-12-4"]
+      "audit_status": "audited (SPEC; see S-5, S-6)",
+      "findings": ["S-5", "S-6"]
     },
     {
-      "pr": 13,
-      "title": "Draft AI replies and flag risky reviews (FR-12, FR-16)",
-      "url": "https://github.com/adirathodd/review-automation/pull/13",
+      "pr": 28,
+      "title": "Owner accounts: self-serve sign-up, email + password sign-in, reset (FR-24)",
+      "url": "https://github.com/adirathodd/review-automation/pull/28",
       "author": "adirathodd",
-      "merge_commit": "9e77f7f",
+      "merge_commit": "2b3752d",
       "merge_type": "squash",
-      "base_sha": "fd2f0ac",
-      "merged_at": "2026-11-23T20:16:08Z",
+      "base_sha": "0620026",
+      "merged_at": "2026-11-24T03:08:38Z",
       "changed_files": [
-        "src/reviews/draft.ts",
-        "src/ai/*",
+        "src/accounts/*",
+        "src/app/account/**",
         "src/db/schema.ts",
-        "drizzle/0007*",
+        "drizzle/0008*",
         "src/inbox/http.ts",
-        "docs/SPEC.md",
+        ".env.example",
         "package.json"
       ],
-      "depends_on": [10],
+      "depends_on": [10, 27],
       "previously_audited": false,
       "audit_status": "audited",
-      "findings": ["F-13-1", "F-13-2", "F-13-3", "F-13-4", "F-13-5", "S-1", "S-2", "S-3", "S-4"]
+      "findings": ["F-28-1", "F-28-2", "F-28-3", "A-5", "O-28-1", "O-28-2", "O-28-3", "O-28-4"]
+    },
+    {
+      "pr": 29,
+      "title": "Landing page at / (design option C)",
+      "url": "https://github.com/adirathodd/review-automation/pull/29",
+      "author": "adirathodd",
+      "merge_commit": "02e0bac",
+      "merge_type": "squash",
+      "base_sha": "0620026",
+      "merged_at": "2026-11-24T03:08:22Z",
+      "changed_files": ["public/landing/**", "next.config.ts", "src/app/page.tsx (removed)"],
+      "depends_on": [],
+      "previously_audited": false,
+      "audit_status": "audited (static page; marketing observations only)",
+      "findings": ["O-29-1"]
+    },
+    {
+      "pr": 30,
+      "title": "Brand guide and shared tokens for every page",
+      "url": "https://github.com/adirathodd/review-automation/pull/30",
+      "author": "adirathodd",
+      "merge_commit": "68463e0",
+      "merge_type": "squash",
+      "base_sha": "2b3752d",
+      "merged_at": "2026-11-24T03:16:24Z",
+      "changed_files": [
+        "docs/BRAND.md",
+        "src/ui/brand.ts",
+        "src/inbox/http.ts",
+        "src/app/globals.css",
+        "src/app/layout.tsx"
+      ],
+      "depends_on": [28, 29],
+      "previously_audited": false,
+      "audit_status": "audited (styling only; escaping and CSP unchanged; no findings)",
+      "findings": []
+    },
+    {
+      "pr": 31,
+      "title": "Landing page: drop \"No password needed\"",
+      "url": "https://github.com/adirathodd/review-automation/pull/31",
+      "author": "adirathodd",
+      "merge_commit": "ca05c82",
+      "merge_type": "squash",
+      "base_sha": "2b3752d",
+      "merged_at": "2026-11-24T03:16:36Z",
+      "changed_files": ["public/landing/index.html"],
+      "depends_on": [29],
+      "previously_audited": false,
+      "audit_status": "audited (copy; no findings)",
+      "findings": []
     }
   ],
+  "not_in_scope": [
+    "#32 and #33 are open (unmerged); they belong to a later audit if merged",
+    "PR numbers 19-24 do not exist as merged PRs"
+  ],
   "direct_commits_outside_prs": [],
+  "worktrees": {
+    "audit-pr28": "2b3752d (detached)",
+    "fix-pr28": "fix/audit-2026-11-24-01-pr28-signup-email-limit from ca05c82"
+  },
   "completed_stages": [
     "scope_inventory",
     "worktrees",
@@ -203,312 +243,130 @@
   ],
   "findings": [
     {
-      "id": "F-7-1",
-      "pr": 7,
-      "classification": "introduced_by_pr",
-      "severity": "high",
-      "status": "fixed_in_pr",
-      "fix_pr": 17,
-      "spec": "FR-10; FR-5",
-      "summary": "200+ due rows waiting on a not-live business or a location without sms_number filled every send batch; live tenants' requests went stale."
-    },
-    {
-      "id": "F-7-2",
-      "pr": 7,
+      "id": "F-28-1",
+      "pr": 28,
       "classification": "introduced_by_pr",
       "severity": "medium",
       "status": "fixed_in_pr",
-      "fix_pr": 17,
-      "spec": "FR-8; Flow 2 step 4",
-      "summary": "SMS refused with Twilio 21610 (recipient opted out at the provider) fell back to email and recorded no opt-out."
+      "fix_pr": 34,
+      "spec": "FR-24; Security and privacy: sign-up rate-limited per IP and per email",
+      "summary": "Sign-up was rate-limited per IP only; sign-ups for one email from many IPs emailed that owner without limit.",
+      "verification": "failing route test: 6th sign-up for one email from a new IP returned 200 (expected 429)"
     },
     {
-      "id": "F-7-3",
-      "pr": 7,
-      "also": "F-12-1",
-      "classification": "interaction (#7 fallback, #9 adapter, #12 made email real)",
-      "severity": "high",
-      "status": "fixed_in_pr",
-      "fix_pr": 17,
-      "spec": "FR-6 one channel per request, never both",
-      "summary": "Any SMS exception, incl. a timeout after Twilio took the text, fell back to email."
-    },
-    {
-      "id": "F-7-4",
-      "pr": 7,
+      "id": "F-28-2",
+      "pr": 28,
       "classification": "introduced_by_pr",
       "severity": "low",
-      "status": "unresolved",
-      "spec": "FR-10 vs FR-9",
-      "summary": "A request skipped as duplicate is never re-evaluated when the request it duplicated later fails or goes stale; that customer is never asked.",
-      "reason": "needs a rule for re-opening duplicate skips (design decision)"
+      "status": "unconfirmed",
+      "spec": "FR-24: same response whether or not the email has an account",
+      "summary": "Sign-up for a new email also inserts the business/account and emails the operator, so it takes longer than for an existing email; response time may reveal whether an email has an account.",
+      "reason": "not measured against real Resend latency; a complete fix sends sign-up emails from a job queue (not built)"
     },
     {
-      "id": "F-7-5",
-      "pr": 7,
-      "classification": "introduced_by_pr (schema gap pre-existing)",
-      "severity": "low",
-      "status": "unresolved",
-      "spec": "FR-1, FR-5",
-      "summary": "An invalid locations.timezone throws RangeError and stops scheduling for every tenant.",
-      "reason": "complete fix is IANA validation when FR-1 creates locations (not built)"
-    },
-    {
-      "id": "F-9-1",
-      "pr": 9,
-      "classification": "introduced_by_pr",
-      "severity": "medium",
-      "status": "fixed_in_pr",
-      "fix_pr": 15,
-      "spec": "Integration principles: every outside call is retried with backoff",
-      "summary": "TwilioSms.send never retried; now retries 429/503 (no retry for ambiguous outcomes: no idempotency key)."
-    },
-    {
-      "id": "F-9-2",
-      "pr": 9,
-      "classification": "interaction (#9 with #1/#5 send-after-commit)",
-      "severity": "medium",
-      "status": "partially_fixed",
-      "fix_pr": 15,
-      "spec": "Flow 2 step 4 / FR-8 one confirmation within 5 minutes",
-      "summary": "A transient Twilio error lost the opt-out confirmation. Fixed for 429/503; a timeout still loses it (needs a confirmation outbox/job queue)."
-    },
-    {
-      "id": "F-9-3",
-      "pr": 9,
-      "classification": "interaction",
-      "severity": "low",
-      "status": "fixed_in_pr",
-      "fix_pr": 15,
-      "spec": "Flow 2 step 4",
-      "summary": "Bare STOP without Advanced Opt-Out: Twilio refuses our confirmation with 21610 and the webhook returned 500; now counted as Twilio's confirmation."
-    },
-    {
-      "id": "F-10-1",
-      "pr": 10,
-      "classification": "introduced_by_pr (reachable via #13)",
-      "severity": "medium-high",
-      "status": "fixed_in_pr",
-      "fix_pr": 14,
-      "spec": "AI reply generation, Flags: no one-tap Approve for held drafts",
-      "summary": "Saving a held draft's pre-filled edit form unchanged approved it without the Approve anyway confirmation."
-    },
-    {
-      "id": "F-10-2",
-      "pr": 10,
-      "classification": "introduced_by_pr",
-      "severity": "low",
-      "status": "fixed_in_pr",
-      "fix_pr": 14,
-      "spec": "none (robustness)",
-      "summary": "/inbox?done=constructor|toString|__proto__ threw (500)."
-    },
-    {
-      "id": "F-12-1",
-      "pr": 12,
-      "classification": "interaction",
-      "status": "fixed_in_pr",
-      "fix_pr": 17,
-      "duplicate_of": "F-7-3"
-    },
-    {
-      "id": "F-12-2",
-      "pr": 12,
-      "classification": "interaction (#7 state machine, #12 short retry budget)",
+      "id": "F-28-3",
+      "pr": 28,
+      "classification": "introduced_by_pr (environment)",
       "severity": "medium",
       "status": "unresolved",
-      "spec": "Reliability: jobs run from a queue with retries and backoff",
-      "summary": "A Resend outage longer than ~1.5 s marks the email failed for good; nothing re-queues failed rows.",
-      "reason": "needs the job queue/scheduler (FR-5 partial: no scheduler)"
+      "spec": "FR-24 (sign-up and sign-in must work)",
+      "summary": "Passwords use node:crypto argon2 (Node 24.7+). package.json has no engines field; on Node 22 every hash throws TypeError (verified: 10 tests fail on Node 22.23, all pass on 24.22). CI uses Node 24.",
+      "reason": "the production Node version is a Vercel project setting the owner controls; confirm it is 24.x or add engines.node >=24.7 (owner decision)"
     },
     {
-      "id": "F-12-3",
-      "pr": 12,
-      "classification": "introduced_by_pr",
-      "severity": "low",
-      "status": "unresolved",
-      "spec": "none direct (Resend contract, docs not reachable from this environment)",
-      "summary": "Retry-After over 10 s is capped and retried early; part of F-12-2's design."
-    },
-    {
-      "id": "F-12-4",
-      "pr": 12,
-      "classification": "interaction",
-      "severity": "low",
-      "status": "unresolved",
-      "spec": "FR-9",
-      "summary": "An email whose every attempt timed out may have been delivered but is recorded failed and does not count for the 90-day rule.",
-      "reason": "needs an 'outcome unknown' request state"
-    },
-    {
-      "id": "F-13-1",
-      "pr": 13,
-      "classification": "introduced_by_pr",
-      "severity": "high",
-      "status": "fixed_in_pr",
-      "fix_pr": 16,
-      "spec": "FR-12; Integrations AI model: drafting waits for the next run",
-      "summary": "Outages and config errors (incl. anthropic without key) counted toward the 3-failure limit and abandoned reviews for good."
-    },
-    {
-      "id": "F-13-2",
-      "pr": 13,
-      "classification": "introduced_by_pr",
-      "severity": "medium",
-      "status": "fixed_in_pr",
-      "fix_pr": 16,
-      "spec": "Quality checks: no URL, no phone other than approved facts",
-      "summary": "Post-check missed 7-digit numbers and domains outside a short TLD list."
-    },
-    {
-      "id": "F-13-3",
-      "pr": 13,
-      "classification": "introduced_by_pr",
-      "severity": "low",
-      "status": "fixed_in_pr",
-      "fix_pr": 16,
-      "spec": "Quality checks: 2 to 4 sentences",
-      "summary": "Sentences ending in '!)' or an ellipsis were not counted."
-    },
-    {
-      "id": "F-13-4",
-      "pr": 13,
-      "classification": "introduced_by_pr",
-      "severity": "low-medium",
-      "status": "fixed_in_pr",
-      "fix_pr": 16,
-      "spec": "Prompt skeleton: untrusted <review>",
-      "summary": "One-pass tag stripping let nested tags rebuild '</review>'."
-    },
-    {
-      "id": "F-13-5",
-      "pr": 13,
-      "classification": "introduced_by_pr",
-      "severity": "low",
-      "status": "fixed_in_pr",
-      "fix_pr": 16,
-      "spec": "code contract (ModelRateLimitError)",
-      "summary": "429 without retry-after reported 0 s instead of unknown."
-    },
-    {
-      "id": "S-1",
-      "pr": 13,
-      "classification": "spec_change_to_review",
+      "id": "A-5",
+      "pr": 28,
+      "classification": "spec_ambiguity",
       "status": "documented",
-      "summary": "SPEC edit made the 30-review model comparison conditional ('if quality falls short')."
+      "summary": "'A password change or reset ends all other sessions': the reset ends account sessions and inbox sessions opened from the account, but not inbox sessions from emailed sign-in links (owner_sessions.account_id null). The SPEC does not say whether those count."
     },
     {
-      "id": "S-2",
-      "pr": 13,
-      "classification": "spec_change_to_review",
+      "id": "O-28-1",
+      "pr": 28,
+      "classification": "observation",
       "status": "documented",
-      "summary": "SPEC edit dropped the 'template reply for positive reviews' AI fallback."
+      "summary": "Other unused reset and verify links stay valid after a reset (each is still single use and expires); recommend revoking them on reset."
     },
     {
-      "id": "S-3",
-      "pr": 13,
+      "id": "O-28-2",
+      "pr": 28,
+      "classification": "observation",
+      "status": "documented",
+      "summary": "The breached-password check fails open when Have I Been Pwned is unreachable (marked as a shortcut in code); the SPEC says passwords are checked. Owner decision."
+    },
+    {
+      "id": "O-28-3",
+      "pr": 28,
+      "classification": "observation",
+      "status": "documented",
+      "summary": "Setting owner_accounts.disabled_at does not end inbox sessions already opened from that account."
+    },
+    {
+      "id": "O-28-4",
+      "pr": 28,
+      "classification": "observation (FR-13 partial)",
+      "status": "documented",
+      "summary": "The sign-in screen has no 'email me a sign-in link' option, and a signed-in owner is not sent straight to the inbox ('/' is the landing page; /account lists locations). Still listed as Partial."
+    },
+    {
+      "id": "O-29-1",
+      "pr": 29,
+      "classification": "observation",
+      "status": "documented",
+      "summary": "Landing mock-up text does not name the business (FR-7 requires real texts to); pricing says data is 'deleted on request' while the SPEC says everything within 30 days of offboarding. Marketing copy, not code."
+    },
+    {
+      "id": "S-5",
+      "pr": 27,
       "classification": "spec_inconsistency",
       "status": "documented",
-      "summary": "Implementation status marks FR-12 Implemented although no scheduler runs it; FR-22 is Partial for the same gap."
+      "summary": "FR-24 and Flow 0 say nothing is imported until the business is live, but Flow 1 step 4 loads a first CSV before step 5 switches it to live. importCsv/pollSheet do not check business status (sends do). Owner should pick one."
     },
     {
-      "id": "S-4",
-      "pr": 13,
-      "classification": "spec_change_to_review",
+      "id": "S-6",
+      "pr": 27,
+      "classification": "spec_status_drift",
       "status": "documented",
-      "summary": "The PR recorded the AI provider decision (2026-11-23) itself; confirm against Notion."
+      "summary": "The Implementation status table still says FR-24 Not implemented after #28; open PR #32 (SPEC sync) appears to address it."
     }
   ],
   "observations": [
-    "PR #8: purge meets FR-22 (locks rows, re-checks fetched_at, audits IDs only); no findings.",
-    "PR #10: decide() does not re-check revoked_at (ms window); approve does not enforce MAX_REPLY_CHARS; failed drafts not listed (FR-15).",
-    "PR #9: custom Advanced Opt-Out keywords with OptOutType=STOP but no match are ignored (unconfirmed).",
-    "PR #13: rule flags miss some phrasings ('sue', 'hurts'); audit 'flagged=yes/no' derived from review survives purge (existing convention); one draft per review relies on an advisory lock only.",
-    "PR #7: /r counts link-scanner GETs as clicks (unconfirmed); emails carry unsubscribe link, not 'Reply STOP' (SPEC wording).",
-    "O-1, O-2 from audit-2026-11-23-02 still open; A-1/A-2 now in SPEC open decisions."
+    "On the first Node 24 run, optout.test 'STOP suppresses ... confirms once' failed once, right after a Node 22 run against the same database; it passed in 4 later full runs. Not reproduced, so unconfirmed.",
+    "#14-#17 re-read against FR-6, FR-8, FR-10, FR-12, FR-14, FR-16; they match what audit-2026-11-23-03 verified.",
+    "Still open from earlier audits: F-7-4, F-7-5, F-9-2 (timeout case), F-12-2, F-12-3, F-12-4, S-1..S-4, O-1, O-2."
   ],
   "fix_prs": [
     {
-      "number": 14,
-      "url": "https://github.com/adirathodd/review-automation/pull/14",
-      "branch": "fix/audit-2026-11-23-03-pr10-held-unchanged-edit",
+      "number": 34,
+      "url": "https://github.com/adirathodd/kindword/pull/34",
+      "branch": "fix/audit-2026-11-24-01-pr28-signup-email-limit",
       "base": "main",
-      "base_sha": "9e77f7f",
-      "remediates": [10],
-      "findings": ["F-10-1", "F-10-2"],
+      "base_sha": "ca05c82",
+      "remediates": [28],
+      "findings": ["F-28-1"],
       "depends_on": []
-    },
-    {
-      "number": 15,
-      "url": "https://github.com/adirathodd/review-automation/pull/15",
-      "branch": "fix/audit-2026-11-23-03-pr9-twilio-retries",
-      "base": "main",
-      "base_sha": "9e77f7f",
-      "remediates": [9],
-      "findings": ["F-9-1", "F-9-2", "F-9-3"],
-      "depends_on": []
-    },
-    {
-      "number": 16,
-      "url": "https://github.com/adirathodd/review-automation/pull/16",
-      "branch": "fix/audit-2026-11-23-03-pr13-draft-failures-postcheck",
-      "base": "main",
-      "base_sha": "9e77f7f",
-      "remediates": [13],
-      "findings": ["F-13-1", "F-13-2", "F-13-3", "F-13-4", "F-13-5"],
-      "depends_on": []
-    },
-    {
-      "number": 17,
-      "url": "https://github.com/adirathodd/review-automation/pull/17",
-      "branch": "fix/audit-2026-11-23-03-pr7-send-path",
-      "base": "fix/audit-2026-11-23-03-pr9-twilio-retries (stacked on #15)",
-      "remediates": [7, 12],
-      "findings": ["F-7-1", "F-7-2", "F-7-3", "F-12-1"],
-      "depends_on": [15]
     }
   ],
   "validation": {
-    "environment": "local Postgres 16 (CI uses 17), Node from container; Resend docs unreachable (network policy)",
+    "environment": "local Postgres 16 (CI uses 17); Node 24.22 via npx (container default is Node 22)",
     "main_before_fixes": {
-      "vitest": "365/365 passed"
+      "node22": "420/430 (10 argon2 TypeErrors, F-28-3)",
+      "node24": "430/430 (3 runs; 1 unreproduced failure on the first run)"
     },
-    "pr_14": {
-      "vitest": "371/371",
+    "pr_34": {
+      "vitest": "432/432",
       "prettier": "clean",
       "eslint": "clean",
-      "tsc": "clean"
-    },
-    "pr_15": {
-      "vitest": "383/383",
-      "prettier": "clean",
-      "eslint": "clean",
-      "tsc": "clean"
-    },
-    "pr_16": {
-      "vitest": "378/378",
-      "prettier": "clean",
-      "eslint": "clean",
-      "tsc": "clean"
-    },
-    "pr_17_with_15": {
-      "vitest": "392/392",
-      "prettier": "clean",
-      "eslint": "clean",
-      "tsc": "clean"
-    },
-    "combined_all_four": {
-      "vitest": "411/411",
-      "prettier": "clean",
-      "eslint": "clean",
-      "next_build": "passed"
-    },
-    "regression_tests_fail_before_fix": "verified for every fix PR by reverting production files"
+      "next_build": "passed",
+      "regression_test_fails_before_fix": "verified"
+    }
   },
-  "merge_order": [
-    "#14, #16: independent, any order",
-    "#15 before #17 (#17 is stacked on #15; retarget #17 to main after #15 merges)"
+  "merge_order": ["#34: independent; only fix PR of this audit"],
+  "unresolved": [
+    "F-28-2 (unconfirmed)",
+    "F-28-3 (owner: confirm Vercel Node 24)",
+    "A-5, S-5, S-6 need owner review",
+    "earlier: F-7-4, F-7-5, F-9-2 (timeout), F-12-2, F-12-3, F-12-4, S-1..S-4"
   ],
-  "unresolved": ["F-7-4", "F-7-5", "F-9-2 (timeout case)", "F-12-2", "F-12-3", "F-12-4", "S-1..S-4 need owner review"],
-  "next_audit_starts_after": "9e77f7f3d60e5f38b61daa80a882493a5802ce19"
+  "next_audit_starts_after": "ca05c82fb81bec93db5e562c249793c769e6034a"
 }
