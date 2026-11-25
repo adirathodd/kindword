@@ -1,4 +1,4 @@
-> **Source of truth for intended behavior (with the Notion project page "Kindword (v1.0)", which tracks status and priorities).** Keep this file and Notion in sync; change the SPEC here by PR. Started as an export of the Claude Doc (rev 244, 2026-11-23, https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs), which is no longer updated and may lag. Two diagrams (architecture, build plan) are not included here. Last synced against main 09688ec on 2026-11-23 (see Implementation status and docs/sync/last-sync.json).
+> **Source of truth for intended behavior, kept in sync with the Claude Doc (https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs) (owner decision 2026-11-24).** The Notion project page "Kindword (v1.0)" tracks status and priorities. Every SPEC change lands in both this file (by PR) and the Doc. This file started as an export of Doc rev 244 (2026-11-23); the edits made here since then (PRs #11, #13, #25, #27 and the 2026-11-24 sync) still have to be copied into the Doc (see docs/sync/proposed-spec-changes.md). Two diagrams (architecture, build plan) are not included here. Last synced against main ca05c82 on 2026-11-24 (see Implementation status and docs/sync/last-sync.json).
 
 # SPEC: Kindword (v1.0 MVP, approved 2026-11-22)
 
@@ -155,35 +155,35 @@ Priority: **Must** is needed for the first live pilot, **Should** is wanted in v
 
 ## Implementation status
 
-Status of each requirement on main at 09688ec (2026-11-23). The requirement text above is the intended behavior; this table says how much of it exists. Notion tracks the same status and the remaining work.
+Status of each requirement on main at ca05c82 (2026-11-24). The requirement text above is the intended behavior; this table says how much of it exists. Notion tracks the same status and the remaining work.
 
 | ID | Status | What exists / what is missing |
 | --- | --- | --- |
-| FR-1 | Not implemented | No code creates businesses or locations; no operator UI or operator sign-in |
+| FR-1 | Not implemented | Self-serve sign-up (FR-24) creates a business row with no location. No operator code creates or edits businesses or locations, and there is no operator sign-in |
 | FR-2 | Partial | CSV row rules, consent, normalization and dedup (src/intake/importCsv.ts); no upload entry point calls it |
 | FR-2a | Partial | pollSheet with FR-2's rules against a SheetReader interface; no Google Sheets API reader, no 15-minute schedule |
 | FR-3 | Implemented | Consent fields stored; database check keeps phone null without a consent record |
 | FR-4 | Later | Not built |
 | FR-5 | Partial | Delay, 9 a.m. to 8 p.m. window with daylight saving, 72-hour stale rule, send-time re-checks and one reminder (src/requests); no job scheduler runs them |
-| FR-6 | Partial | Twilio send adapter and SMS-to-email fallback logic; no email adapter, so emails cannot send |
+| FR-6 | Implemented (not live-tested) | Twilio and Resend adapters; SMS first, email only when there is no consented phone or the text definitely failed (never both, #17); CAN-SPAM footer and one-click unsubscribe. Nothing sends until a scheduler runs FR-5's jobs |
 | FR-7 | Implemented | Business name, click-counting /r redirect, "Reply STOP to opt out", no incentives; English and Spanish (see Request languages) |
-| FR-8 | Implemented | /api/sms/inbound with Twilio signature check, phrase matching, location and platform-wide suppression, one confirmation; email unsubscribe at /u; not yet checked against a live Twilio account |
+| FR-8 | Implemented (one failure-path gap) | /api/sms/inbound with Twilio signature check, phrase matching, location and platform-wide suppression, one confirmation; email unsubscribe at /u; Twilio 429/503 retries and 21610 opt-out recording (#15, #17). Open: a Twilio timeout can lose the one confirmation text (audit F-9-2; needs a job queue). Not yet checked against a live Twilio account |
 | FR-9 | Implemented | 90-day check per location by customer, phone or email |
 | FR-10 | Implemented | No sentiment filter; every non-clicker gets the same reminder |
 | FR-11 | Not implemented | |
-| FR-12 | Implemented (PR #13) | draftPendingReviews (src/reviews/draft.ts): versioned prompt from the skeleton, tone, approved facts, review language; one draft per review; behind the AI interface (Groq free tier by default, see AI provider). Not yet run by a scheduler or checked on the 30-review sample set |
-| FR-13 | Partial | Inbox, single-use 15-minute link, 30-day location session, operator revoke; nothing sends the link yet; no home-page sign-in screen, daily digest or low-rating email |
-| FR-14 | Implemented | Approve, approve anyway (held drafts, confirmed), edit and approve, reject; nothing posts |
+| FR-12 | Implemented (#13, #16) | draftPendingReviews (src/reviews/draft.ts): versioned prompt from the skeleton, tone, approved facts, review language; one draft per review; keeps drafting through provider outages (#16); behind the AI interface (Groq free tier by default, see AI provider). Not yet run by a scheduler or checked on the 30-review sample set |
+| FR-13 | Partial | Inbox, single-use 15-minute link, 30-day location session, operator revoke; a signed-in account owner opens each location's inbox from /account (#28). Missing: no page lets an owner request an emailed sign-in link (sendSignInLink has no caller); / is the marketing landing page (#29), so a signed-in owner opening the app does not go straight to the inbox (see D-2); no daily digest or low-rating email |
+| FR-14 | Implemented | Approve, approve anyway (held drafts, confirmed; also required for a held draft saved unchanged, #14), edit and approve, reject; nothing posts |
 | FR-15 | Not implemented | |
 | FR-16 | Implemented (PR #13) | Rule flags (rating, phone and email, English and Spanish keywords) plus model flags from the inbox's vocabulary; post-check; a flagged draft, a failed post-check or a risk check that could not run is held |
 | FR-17 | Not implemented | |
 | FR-18 | Not implemented | |
-| FR-19 | Partial | Append-only audit log for requests, opt-outs, sessions, approvals, purges and drafts (PR #13); posts not built |
+| FR-19 | Partial | Append-only audit log for requests, opt-outs, sessions, approvals, purges, drafts (#13) and owner-account sign-up, verification, sign-in, sign-out and reset (#28); posts not built |
 | FR-20 | Not implemented | Sends already stop for businesses that are not live |
 | FR-21 | Later | Not built |
 | FR-22 | Partial | purgeExpiredReviews deletes reviews and drafts not refreshed within the window; no scheduler runs it; refreshing review IDs depends on FR-11 |
-| FR-23 | Not implemented | Waits on the consent wording and privacy policy |
-| FR-24 | Not implemented | Added 2026-11-23 |
+| FR-23 | Not implemented | Waits on the consent wording and privacy policy. The sign-up page links to /terms and /privacy, which do not exist yet (404) |
+| FR-24 | Partial (#28) | Done: sign-up behind SIGNUP_OPEN, business created in onboarding, operator email on sign-up, 24-hour single-use verification before first sign-in, email and password sign-in, 15-minute single-use reset, Argon2id (node:crypto, needs Node 24.7 or later), 12 to 256 characters, Have I Been Pwned range check, same answers for known and unknown emails, DB-backed rate limits, 30-day HttpOnly SameSite cookies (Secure on https), reset ends every other account and account-opened inbox session. Missing: sign-up is rate-limited per IP but not per email; the breached-password check passes when the service is unreachable (D-4); no password-change feature (D-3); CSV and Sheet import do not refuse a business in onboarding; the terms and privacy pages the sign-up accepts do not exist (FR-23) |
 
 ## Architecture and tech stack
 
@@ -227,7 +227,9 @@ Postgres, one schema. A business has locations, a location has customers and rev
 | sheet\_sources | id, location\_id, sheet\_id, attestation\_id, consent\_wording\_version, last\_row\_id, last\_read\_at | One shared sheet per location; attestation\_id and consent\_wording\_version are set by the operator and apply to every row read (the sheet is not read until both are set); webhook\_events is deferred with the webhook |
 | owner\_accounts | id, business\_id, name, email, normalized\_email, password\_hash, email\_verified\_at, terms\_version, terms\_accepted\_at, created\_at, disabled\_at | Self-serve owner sign-in (FR-24); unique normalized\_email; password\_hash is Argon2id, never logged; one account per business in v0.1 |
 | account\_tokens | id, account\_id, purpose, token\_hash, expires\_at, used\_at | purpose: verify\_email (24 hours), reset\_password (15 minutes); single use; only the hash is stored |
-| owner\_sessions | id, location\_id, owner\_email, login\_token\_hash, token\_expires\_at, session\_token\_hash, session\_expires\_at, revoked\_at | Passwordless owner sign-in; login token single use, 15 minutes; the session cookie is a separate random secret stored only as session\_token\_hash, never the emailed token; session 30 days, one location only; reply\_drafts.approved\_session\_id points here |
+| account\_sessions | id, account\_id, session\_token\_hash, expires\_at, revoked\_at | Owner account sessions (FR-24), 30 days; only the hash of the cookie secret is stored |
+| auth\_attempts | key, at | Rate-limit counter for sign-up, sign-in and reset; key is a SHA-256 hash of the limit name and the IP or email; rows older than 24 hours are deleted |
+| owner\_sessions | id, location\_id, account\_id, owner\_email, login\_token\_hash, token\_expires\_at, session\_token\_hash, session\_expires\_at, revoked\_at | Passwordless owner sign-in; login token single use, 15 minutes; the session cookie is a separate random secret stored only as session\_token\_hash, never the emailed token; session 30 days, one location only; reply\_drafts.approved\_session\_id points here; account\_id is set when an account owner opens the inbox from /account, so a password reset also ends that session |
 
 **Rules**
 
@@ -457,6 +459,13 @@ Every blocking decision is made. The employer check must be settled before the f
 - [ ] **Sheet row IDs (A-1, A-2).** Open (SPEC sync 2026-11-23): the Reliability line says sheet reads "track the last row ID so a row is never imported twice"; main dedups every re-read by row ID and keeps last\_row\_id as a progress marker only. Decide whether to reword that line, and whether the template must require stable, never-reused row IDs (a reused ID makes a new row skip as a duplicate).
 - [ ] **Request languages (FR-7).** Open (SPEC sync 2026-11-23): main has request and reminder wording in English and Spanish and falls back to English for any other language. Decide whether that is the v0.1 rule or whether every language a business lists must be supported.
 - [ ] **Reminder staleness (FR-5).** Open (SPEC sync 2026-11-23): the SPEC defines staleness only for the first request (72 hours after the visit). Main skips a reminder that cannot go out within 72 hours of when it was due. Confirm or set the rule.
+
+- [x] **Source of truth (D-1).** Decided 2026-11-24: the Claude Doc and docs/SPEC.md are always kept in sync; every SPEC change lands in both.
+- [ ] **App entry point (D-2, FR-13).** Open (SPEC sync 2026-11-24): FR-13 says a signed-in owner who opens the app goes straight to the inbox, and a signed-out owner gets a sign-in screen with an emailed-link option. Since #29, / is the marketing landing page, which has no sign-in link. Decide the owner's entry URL (for example /account, redirecting to the inbox when the business has one location) and whether the landing page links to it.
+- [ ] **Password change (D-3, FR-24).** Open (SPEC sync 2026-11-24): FR-24 says "a password change or reset ends all other sessions" but lists no change-password feature. Decide whether v0.1 needs an in-app password change, or only reset.
+- [ ] **Breached-password check outage (D-4, FR-24).** Open (SPEC sync 2026-11-24): main lets the password through when Have I Been Pwned cannot be reached. Decide whether that is acceptable or whether sign-up and reset must refuse (or use a local list) when the check cannot run.
+- [ ] **Sign-up switch (D-5).** Open (SPEC sync 2026-11-24): main shows sign-up only when SIGNUP_OPEN is "true". Decide whether to record this as a requirement (operator-controlled launch of self-serve sign-up).
+- [ ] **Re-opening duplicate skips (F-7-4, FR-9 vs FR-10).** Open (audit 2026-11-23-03): a request skipped as duplicate is never re-evaluated when the request it duplicated later fails or goes stale, so that customer is never asked. Set a rule.
 
 **Risks**
 

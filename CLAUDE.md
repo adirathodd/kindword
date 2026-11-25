@@ -4,8 +4,9 @@ Solo, nights-and-weekends side business, brand name **Kindword**: a done-for-you
 
 ## Source of truth
 
-- `docs/SPEC.md` is the read-only copy of the spec that sessions and scheduled routines read. The real spec is the Claude Doc at https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs. Any other SPEC file or export is an old snapshot; ignore it.
-- Never edit `docs/SPEC.md` by hand. When the Doc changes, re-export it to that file and commit. If the spec looks wrong, incomplete, or conflicts with Google or Twilio policy or the law, stop and say so. Don't work around it. The owner changes the Doc and re-exports.
+- The spec lives in two places that are always kept in sync (owner decision 2026-11-24): `docs/SPEC.md` in the repo, which sessions and scheduled routines read, and the Claude Doc at https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs. Any other SPEC file or export is an old snapshot; ignore it.
+- Every SPEC change lands in both. Change `docs/SPEC.md` by PR and make the same edit in the Doc; if the Doc is edited first, re-export it to `docs/SPEC.md` by PR. A session that cannot write to the Doc lists the edits the Doc still needs in the PR and in Notion, so the owner can apply them.
+- If the spec looks wrong, incomplete, or conflicts with Google or Twilio policy or the law, stop and say so. Don't work around it or change the intended behavior to match the code; the owner decides.
 
 ## Decisions already made (do not reopen unless asked)
 
