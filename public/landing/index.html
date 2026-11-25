@@ -95,6 +95,9 @@
   @media (min-width: 1024px) { .pricing__faq { grid-template-columns: 1fr 1fr; column-gap: var(--gutter); } .pricing__faq > .faq__item { padding-top: 0; } }
   @media (max-width: 1023px) { #flow .panel { --p-h: 360px; } }
   @media (max-width: 639px) { #flow .panel { --p-h: 360px; } #setup .panel { --p-h: 360px; }  }
+  /* "Join the waitlist" links land on the form's first box, clear of the fixed header */
+  #waitlist { scroll-margin-top: calc(var(--nav) + var(--s-5)); }
+  @media (max-width: 639px) { #waitlist { scroll-margin-top: calc(var(--nav) + var(--s-3)); } }
 </style>
 </head>
 <body>
