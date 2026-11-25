@@ -154,6 +154,28 @@ describe("sign-up", () => {
     for (let i = 0; i < 5; i++) await register.POST(post(signUpForm(`r${i}@acct.example.test`)));
     expect((await register.POST(post(signUpForm("r5@acct.example.test")))).status).toBe(429);
   });
+
+  // FR-24: sign-up is rate-limited per IP and per email. Without the per-email limit, sign-ups for one address from
+  // many IPs each email that address ("Someone tried to create..."), so anyone could flood an owner's inbox.
+  it("rate-limits sign-ups per email across IPs, counting case and spacing variants together", async () => {
+    const email = "flood@acct.example.test";
+    for (let i = 0; i < 5; i++) {
+      const variant = i % 2 ? email.toUpperCase() : ` ${email} `;
+      const res = await register.POST(post(signUpForm(variant), { "x-real-ip": `10.3.0.${i}` }));
+      expect(res.status).toBe(200); // the first creates the account; the rest get the "already has one" note
+    }
+    expect(sent.filter((m) => m.to === email)).toHaveLength(5);
+    const res = await register.POST(post(signUpForm(email), { "x-real-ip": "10.4.0.1" }));
+    expect(res.status).toBe(429);
+    expect(sent.filter((m) => m.to === email)).toHaveLength(5); // nothing more reaches the owner
+  });
+
+  it("the per-email sign-up limit does not block other emails from the same IP", async () => {
+    for (let i = 0; i < 5; i++)
+      await register.POST(post(signUpForm("busy@acct.example.test"), { "x-real-ip": `10.5.0.${i}` }));
+    const res = await register.POST(post(signUpForm("other@acct.example.test"), { "x-real-ip": "10.5.0.1" }));
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("verification and sign-in", () => {
