@@ -1,4 +1,4 @@
-> **Source of truth for intended behavior, kept in sync with the Claude Doc (https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs) (owner decision 2026-11-24).** The Notion project page "Kindword (v1.0)" tracks status and priorities. Every SPEC change lands in both this file (by PR) and the Doc. This file started as an export of Doc rev 244 (2026-11-23); the edits made here since then (PRs #11, #13, #25, #27 and the 2026-11-24 sync) still have to be copied into the Doc (see docs/sync/proposed-spec-changes.md). Two diagrams (architecture, build plan) are not included here. Last synced against main ca05c82 on 2026-11-24 (see Implementation status and docs/sync/last-sync.json).
+> **Source of truth for intended behavior, kept in sync with the Claude Doc (https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs) (owner decision 2026-11-24).** The Notion project page "Kindword (v1.0)" tracks status and priorities. Every SPEC change lands in both this file (by PR) and the Doc. This file started as an export of Doc rev 244 (2026-11-23); the edits made here since then (PRs #11, #13, #25, #27 and the 2026-11-24 and 2026-11-25 syncs) still have to be copied into the Doc (see docs/sync/proposed-spec-changes.md). Two diagrams (architecture, build plan) are not included here. Last synced against main b822c46 on 2026-11-25 (see Implementation status and docs/sync/last-sync.json).
 
 # SPEC: Kindword (v1.0 MVP, approved 2026-11-22)
 
@@ -155,13 +155,13 @@ Priority: **Must** is needed for the first live pilot, **Should** is wanted in v
 
 ## Implementation status
 
-Status of each requirement on main at ca05c82 (2026-11-24). The requirement text above is the intended behavior; this table says how much of it exists. Notion tracks the same status and the remaining work.
+Status of each requirement on main at b822c46 (2026-11-25). The requirement text above is the intended behavior; this table says how much of it exists. Notion tracks the same status and the remaining work.
 
 | ID | Status | What exists / what is missing |
 | --- | --- | --- |
 | FR-1 | Not implemented | Self-serve sign-up (FR-24) creates a business row with no location. No operator code creates or edits businesses or locations, and there is no operator sign-in |
 | FR-2 | Partial | CSV row rules, consent, normalization and dedup (src/intake/importCsv.ts); no upload entry point calls it |
-| FR-2a | Partial | pollSheet with FR-2's rules against a SheetReader interface; no Google Sheets API reader, no 15-minute schedule |
+| FR-2a | Partial | pollSheet with FR-2's rules; GoogleSheetsReader reads the first visible tab as our service account with the read-only Sheets scope, no owner OAuth, retries with backoff (#37; not tried against a real sheet). Missing: nothing runs pollSheet every 15 minutes, and no operator surface creates a sheet source. Sheet dates shown in a locale format (for example 11/24/2026) are rejected as invalid (see Sheet template dates) |
 | FR-3 | Implemented | Consent fields stored; database check keeps phone null without a consent record |
 | FR-4 | Later | Not built |
 | FR-5 | Partial | Delay, 9 a.m. to 8 p.m. window with daylight saving, 72-hour stale rule, send-time re-checks and one reminder (src/requests); no job scheduler runs them |
@@ -172,18 +172,18 @@ Status of each requirement on main at ca05c82 (2026-11-24). The requirement text
 | FR-10 | Implemented | No sentiment filter; every non-clicker gets the same reminder |
 | FR-11 | Not implemented | |
 | FR-12 | Implemented (#13, #16) | draftPendingReviews (src/reviews/draft.ts): versioned prompt from the skeleton, tone, approved facts, review language; one draft per review; keeps drafting through provider outages (#16); behind the AI interface (Groq free tier by default, see AI provider). Not yet run by a scheduler or checked on the 30-review sample set |
-| FR-13 | Partial | Inbox, single-use 15-minute link, 30-day location session, operator revoke; a signed-in account owner opens each location's inbox from /account (#28). Missing: no page lets an owner request an emailed sign-in link (sendSignInLink has no caller); / is the marketing landing page (#29), so a signed-in owner opening the app does not go straight to the inbox (see D-2); no daily digest or low-rating email |
+| FR-13 | Partial | Inbox, single-use 15-minute link, 30-day location session, operator revoke; a signed-in account owner opens each location's inbox from /account (#28); "Email me a sign-in link instead" at /account/sign-in/link emails one link per location, same answer for unknown emails, rate-limited per IP and per email (#36). Missing: / is the marketing landing page (#29), so a signed-in owner opening the app does not go straight to the inbox (see D-2); no daily digest or low-rating email. Noncompliant on main: when the email provider fails, a known email gets an error page and an unknown one the normal answer, so the answer is not the same (audit F-36-1; fix in review) |
 | FR-14 | Implemented | Approve, approve anyway (held drafts, confirmed; also required for a held draft saved unchanged, #14), edit and approve, reject; nothing posts |
 | FR-15 | Not implemented | |
 | FR-16 | Implemented (PR #13) | Rule flags (rating, phone and email, English and Spanish keywords) plus model flags from the inbox's vocabulary; post-check; a flagged draft, a failed post-check or a risk check that could not run is held |
 | FR-17 | Not implemented | |
 | FR-18 | Not implemented | |
-| FR-19 | Partial | Append-only audit log for requests, opt-outs, sessions, approvals, purges, drafts (#13) and owner-account sign-up, verification, sign-in, sign-out and reset (#28); posts not built |
+| FR-19 | Partial | Append-only audit log for requests, opt-outs, sessions (including links requested from the sign-in screen, #36), approvals, purges, drafts (#13) and owner-account sign-up, verification, sign-in, sign-out and reset (#28); posts not built |
 | FR-20 | Not implemented | Sends already stop for businesses that are not live |
 | FR-21 | Later | Not built |
 | FR-22 | Partial | purgeExpiredReviews deletes reviews and drafts not refreshed within the window; no scheduler runs it; refreshing review IDs depends on FR-11 |
 | FR-23 | Not implemented | Waits on the consent wording and privacy policy. The sign-up page links to /terms and /privacy, which do not exist yet (404) |
-| FR-24 | Partial (#28) | Done: sign-up behind SIGNUP_OPEN, business created in onboarding, operator email on sign-up, 24-hour single-use verification before first sign-in, email and password sign-in, 15-minute single-use reset, Argon2id (node:crypto, needs Node 24.7 or later), 12 to 256 characters, Have I Been Pwned range check, same answers for known and unknown emails, DB-backed rate limits, 30-day HttpOnly SameSite cookies (Secure on https), reset ends every other account and account-opened inbox session. Missing: sign-up is rate-limited per IP but not per email; the breached-password check passes when the service is unreachable (D-4); no password-change feature (D-3); CSV and Sheet import do not refuse a business in onboarding; the terms and privacy pages the sign-up accepts do not exist (FR-23) |
+| FR-24 | Partial (#28, #34) | Done: sign-up behind SIGNUP_OPEN, business created in onboarding, operator email on sign-up, 24-hour single-use verification before first sign-in, email and password sign-in, 15-minute single-use reset, Argon2id (node:crypto, needs Node 24.7 or later), 12 to 256 characters, Have I Been Pwned range check, same answers for known and unknown emails, DB-backed rate limits, 30-day HttpOnly SameSite cookies (Secure on https), reset ends every other account and account-opened inbox session. Sign-up is rate-limited per IP and per email (#34). Missing: the breached-password check passes when the service is unreachable (D-4); no password-change feature (D-3); CSV and Sheet import do not refuse a business in onboarding; the terms and privacy pages the sign-up accepts do not exist (FR-23); no engines pin for Node 24.7 or later. Noncompliant on main: a password-reset request answers differently for known and unknown emails when the email provider fails (audit F-28-5; fix in review) |
 
 ## Architecture and tech stack
 
@@ -465,6 +465,9 @@ Every blocking decision is made. The employer check must be settled before the f
 - [ ] **Password change (D-3, FR-24).** Open (SPEC sync 2026-11-24): FR-24 says "a password change or reset ends all other sessions" but lists no change-password feature. Decide whether v0.1 needs an in-app password change, or only reset.
 - [ ] **Breached-password check outage (D-4, FR-24).** Open (SPEC sync 2026-11-24): main lets the password through when Have I Been Pwned cannot be reached. Decide whether that is acceptable or whether sign-up and reset must refuse (or use a local list) when the check cannot run.
 - [ ] **Sign-up switch (D-5).** Open (SPEC sync 2026-11-24): main shows sign-up only when SIGNUP_OPEN is "true". Decide whether to record this as a requirement (operator-controlled launch of self-serve sign-up).
+- [ ] **Import while onboarding (S-5, Flow 1 vs FR-24).** Open (SPEC sync 2026-11-25): Flow 1 step 4 loads a first CSV before step 5 switches the business to live, but FR-24 and Flow 0 say nothing is imported until the operator switches it to live. Main imports for any status and sends only for live businesses. Decide which rule holds (for example: imports allowed in onboarding, sends only when live).
+- [ ] **Emailed link before verification (A-6, FR-13 vs FR-24).** Open (audit 2026-11-25-01): FR-24 requires email verification before first sign-in, but an owner with an unverified account can get an emailed sign-in link (the link itself proves the inbox). Decide whether an emailed-link sign-in counts as the first sign-in. In practice no link is sent before the operator adds a location.
+- [ ] **Sheet template dates and tab (FR-2a).** Open (SPEC sync 2026-11-25, audit O-37-1): the Sheet reader reads the first visible tab's displayed values, and the importer accepts only ISO dates (YYYY-MM-DD), so a date cell shown as 11/24/2026 makes the row invalid (visit time) or email-only (consent date). Decide the template rule (for example date columns formatted as plain text YYYY-MM-DD, or accept the US format) and whether the first visible tab is the one read.
 - [ ] **Re-opening duplicate skips (F-7-4, FR-9 vs FR-10).** Open (audit 2026-11-23-03): a request skipped as duplicate is never re-evaluated when the request it duplicated later fails or goes stale, so that customer is never asked. Set a rule.
 
 **Risks**

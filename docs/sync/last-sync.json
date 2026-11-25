@@ -1,86 +1,90 @@
 {
-  "sync_id": "sync-2026-11-24-01",
-  "synced_at": "2026-11-24T03:00Z/2026-11-24T03:30Z",
-  "repository": "adirathodd/review-automation",
+  "sync_id": "sync-2026-11-25-01",
+  "synced_at": "2026-11-25T16:05Z/2026-11-25T16:45Z",
+  "repository": "adirathodd/review-automation (GitHub: adirathodd/kindword)",
   "target_branch": "main",
-  "audited_sha": "ca05c82fb81bec93db5e562c249793c769e6034a",
-  "main_moved_during_run": true,
+  "audited_sha": "b822c46a099252ac527f6dc70c0d50aaa4a0d8f0",
+  "main_moved_during_run": false,
   "previous_sync": {
-    "sync_id": "sync-2026-11-23-01",
-    "audited_sha": "09688ec034712e5624d976eb7a638908af5bed2e",
-    "status": "complete_with_documented_discrepancies"
+    "sync_id": "sync-2026-11-24-01",
+    "audited_sha": "ca05c82fb81bec93db5e562c249793c769e6034a",
+    "status": "complete_with_documented_discrepancies",
+    "rerun": "sync-2026-11-24-02 at the same SHA (Notion log only)"
   },
-  "commits_reviewed": "09688ec..ca05c82: #11, #12-#17 (also covered by audit-2026-11-23-03), #18, #25-#31",
-  "not_used_as_evidence": [],
+  "commits_reviewed": "ca05c82..b822c46: #32 (SPEC sync, docs), #35 (audit record, docs), #34, #37, #36",
+  "not_used_as_evidence": ["open PRs #33, #38, #39, #40, #41"],
   "sources_of_truth": {
     "spec": "docs/SPEC.md and the Claude Doc https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs, always kept in sync (owner decision D-1, 2026-11-24)",
     "status_and_priorities": "Notion: Kindword (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
     "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
-    "doc_status": "Not readable or writable from this session (no Claude Docs connector). Edits the Doc still needs: docs/sync/proposed-spec-changes.md"
+    "doc_status": "Doc link resolves to a Claude Docs document, but its content is readable and writable only through the Claude Docs connector, which this session does not have. Edits the Doc still needs: docs/sync/proposed-spec-changes.md"
   },
   "notion_reviewed": [
     "Kindword (v1.0) project page (to-do lists)",
     "SPEC sync log",
-    "Development log (scheduled feature runs)"
+    "Development log (linked; feature-run notes read via project page)"
   ],
-  "evidence": "Code read on main 2b3752d. Node 24.22.3 + local Postgres 16: 427/427 vitest pass, prettier and eslint clean, next build passes. On Node 22 10 owner-account tests fail (crypto.argon2 missing).",
-  "requirements_reviewed": "FR-1 to FR-24, Flows 0-4, Data model, Security, Reliability",
+  "cross_checked": "audit-2026-11-25-01 (open PR #39): same findings for #34, #36, #37 (F-36-1, F-28-5 fixed in PR #38; F-36-2, A-6, O-37-1, O-37-2, S-7)",
+  "evidence": "Code read on main b822c46 (src/accounts/accounts.ts, src/inbox/linkRequest.ts, src/app/account/sign-in/link/route.ts, src/intake/googleSheets.ts). Node 24.22.3 + local Postgres 16: 461/461 vitest pass, prettier and eslint clean, next build passes.",
+  "requirements_reviewed": "FR-1 to FR-24 (delta re-derived for FR-2a, FR-13, FR-19, FR-24; others unchanged since ca05c82, no code touched them), Flows 0-4, Decisions needed",
   "requirements": {
     "implemented": ["FR-3", "FR-6", "FR-7", "FR-8", "FR-9", "FR-10", "FR-12", "FR-14", "FR-16"],
     "partial": ["FR-2", "FR-2a", "FR-5", "FR-13", "FR-19", "FR-22", "FR-24"],
     "not_implemented": ["FR-1", "FR-11", "FR-15", "FR-17", "FR-18", "FR-20", "FR-23"],
     "later": ["FR-4", "FR-21"],
     "noncompliant": [
-      "FR-13: / is the marketing landing page; a signed-in owner does not go straight to the inbox, and no page sends an emailed sign-in link",
-      "FR-24: sign-up not rate-limited per email; imports not refused for onboarding businesses; accepted terms/privacy pages 404"
+      "FR-13: / is the landing page, signed-in owner does not land in the inbox (D-2); emailed-link request answers differently for known emails when the email provider fails (F-36-1, fix PR #38)",
+      "FR-24: reset request answers differently for known emails on provider failure (F-28-5, fix PR #38); imports not refused in onboarding (S-5, SPEC conflict); /terms and /privacy 404"
     ],
     "status_changes_since_last_sync": {
-      "FR-6": "partial -> implemented (Resend adapter #12, never-both fix #17; not live-tested)",
-      "FR-12": "not implemented -> implemented (#13, #16)",
-      "FR-16": "not implemented -> implemented (#13, #16)",
-      "FR-24": "new -> partial (#28)"
+      "FR-2a": "partial -> partial (Google Sheets reader added #37; no schedule, no operator surface)",
+      "FR-13": "partial -> partial (emailed-link page added #36)",
+      "FR-24": "partial -> partial (per-email sign-up limit #34)"
     }
   },
   "spec_changes": [
-    "CLAUDE.md Source of truth: Doc and docs/SPEC.md kept in sync, every change lands in both",
-    "SPEC header: kept in sync with the Doc; last synced against ca05c82",
-    "Implementation status at ca05c82: FR-1, FR-6, FR-8, FR-12, FR-13, FR-14, FR-19, FR-23, FR-24",
-    "Data model: account_sessions, auth_attempts, owner_sessions.account_id (migration 0008)",
-    "Decisions needed: D-1 decided; D-2 to D-5 and F-7-4 open"
+    "Header: last synced against b822c46 on 2026-11-25",
+    "Implementation status at b822c46: FR-2a, FR-13, FR-19, FR-24 rows",
+    "Decisions needed: S-5 import while onboarding, A-6 emailed link before verification, Sheet template dates and tab (O-37-1)"
   ],
-  "spec_changes_proposed": null,
   "notion_changes": [
-    "Overview, Architecture tables, Decisions made: sign-in text brought in line with FR-24 (approved 2026-11-23)",
-    "SPEC sync after #12 and #13: noted as folded into this sync's proposal",
-    "Scaffold Next.js app, Postgres schema, auth: stays In progress (operator sign-in missing), migrations 0000-0008",
-    "Owner app entry and sign-in screen: stays unchecked, now In progress; remaining work and D-2 recorded",
-    "Job scheduler and Resend email adapter: added audit gaps F-9-2, F-12-2, F-12-4 with acceptance",
-    "Website to-do: landing page placeholders and missing /terms, /privacy noted",
-    "FR-23 to-do: missing /terms and /privacy noted",
-    "New: Owner accounts: finish FR-24 (In progress, 4 gaps)",
-    "New: Decide the SPEC questions from SPEC sync 2026-11-24 (D-1 to D-5, F-7-4)",
-    "New: Apply SPEC sync 2026-11-24 to the SPEC (blocked on D-1)"
+    "CSV / Google Sheet intake: stays In progress; #37 verified; remaining work and acceptance",
+    "Owner app entry and sign-in screen: stays In progress; #36 verified; F-36-1 and D-2 remain",
+    "Owner accounts: finish FR-24: stays In progress; gap (1) closed by #34; new gap (5) F-28-5; S-5 now a SPEC decision",
+    "Decide the SPEC questions from SPEC sync 2026-11-24: S-5, A-6, Sheet template dates added",
+    "Review and merge PR #32: checked (merged 9ba77ea)",
+    "SPEC sync after #12 and #13: checked (done in docs/SPEC.md by #32; Doc part tracked in the Claude Doc to-do)",
+    "Bring the Claude Doc up to date: still open; section 0 added to proposed-spec-changes.md"
   ],
-  "notion_items_marked_done": [],
-  "open_documentation_prs": ["this PR"],
+  "notion_items_marked_done": [
+    "Review and merge PR #32 (merged)",
+    "SPEC sync after #12 and #13 (docs/SPEC.md part merged in #32)"
+  ],
+  "notion_items_created": [],
+  "open_documentation_prs": ["this PR", "#39 audit record (not this routine's)"],
   "open_decisions": [
     "D-2 owner entry URL (FR-13)",
     "D-3 password change (FR-24)",
     "D-4 breached-password check outage (FR-24)",
     "D-5 SIGNUP_OPEN in SPEC",
+    "S-5 import while onboarding",
+    "A-6 emailed link before verification",
+    "Sheet template dates and tab (O-37-1)",
     "A-1/A-2 sheet row IDs",
     "FR-7 request languages",
     "FR-5 reminder staleness",
-    "F-7-4 re-opening duplicate skips"
+    "F-7-4 re-opening duplicate skips",
+    "A-5 reset vs emailed-link inbox sessions (audit-2026-11-24-01)"
   ],
   "open_observations": [
     "O-1 no E.164 check on locations.sms_number",
     "O-2 sheet_sources attestation FK not tenant-scoped",
     "F-7-5 invalid locations.timezone stops scheduling for every tenant (fix with FR-1)",
-    "No engines pin for Node >= 24.7 (crypto.argon2)"
+    "No engines pin for Node >= 24.7 (crypto.argon2)",
+    "F-36-2 / F-28-2 timing difference for known emails (needs job queue)",
+    "O-37-2 CRLF private key rejected"
   ],
   "status": "complete_with_documented_discrepancies",
-  "next_sync_starts_after": "ca05c82fb81bec93db5e562c249793c769e6034a",
-  "main_moves": "2b3752d (full audit) -> ca05c82: #30 brand tokens and #31 landing copy; reviewed, UI/copy only, no requirement status changes",
-  "doc_edits_pending": "docs/sync/proposed-spec-changes.md"
+  "next_sync_starts_after": "b822c46a099252ac527f6dc70c0d50aaa4a0d8f0",
+  "doc_edits_pending": "docs/sync/proposed-spec-changes.md (sections 0-2)"
 }
