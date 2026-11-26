@@ -14,9 +14,9 @@
 //   "owner_email_failed", written by src/notifications/sendFailures.ts). Owner emails are retried on every run, so a
 //   lasting failure fails many times: each location, kind and period (the digest's day, the low-rating email's UTC
 //   day, the report's month) is alerted once, with the number of failed attempts and their error codes.
-// - opt_out_confirmation_failed: the one confirmation text after an opt-out did not go out (audit action
-//   "opt_out_confirmation_failed"). It is not retried (audit F-9-2), so each failure is alerted once. The opt-out
-//   itself is already recorded and honored.
+// - opt_out_confirmation_failed: the one confirmation text after an opt-out was not confirmed sent within the 5-minute
+//   window, so the optout-confirmations job gave up on it (optout_confirmations.status "expired", src/optout/
+//   confirmations.ts). Each such row is alerted once. The opt-out itself is already recorded and honored.
 // Offboarded businesses are left out: nothing sends or polls for them.
 //
 // What the email carries: business and location names and IDs, counts, channels and error codes. Never phone
@@ -30,7 +30,7 @@ import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, isNull, max, ne, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db as defaultDb, type Db } from "../db/client";
-import { auditLog, businesses, locations, oauthTokens } from "../db/schema";
+import { auditLog, businesses, locations, oauthTokens, optOutConfirmations } from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import { escapeHtml as e } from "../inbox/auth";
 import { FAILURE_ACTIONS } from "./sendFailures";
@@ -61,7 +61,7 @@ export type TokenExpiry = Place & { tokenId: string; since: Date | null };
 export type StaleCheck = Place & { lastPolledAt: Date | null; since: Date };
 // One location, kind and period; attempts counts every failed try not yet alerted, errors their distinct codes.
 export type OwnerEmailFailure = Place & { kind: string; period: string; attempts: number; errors: string[] };
-export type ConfirmationFailure = Place & { auditId: string; error: string };
+export type ConfirmationFailure = Place & { confirmationId: string; attempts: number };
 export type Alerts = {
   sendFailed: SendFailure[];
   tokenExpired: TokenExpiry[];
@@ -296,46 +296,41 @@ async function ownerEmailFailures(q: Q): Promise<OwnerEmailFailure[]> {
   return [...groups.values()];
 }
 
-// Opt-out confirmation texts that failed and have no alert yet (the alert row's entity_id is the failure row's id).
+// Opt-out confirmations the job gave up on (expired: not confirmed sent within 5 minutes) with no alert yet. The
+// alert row's entity_id is the confirmation row's id.
 async function confirmationFailures(q: Q): Promise<ConfirmationFailure[]> {
-  const alerted = alias(auditLog, "alerted");
+  const c = optOutConfirmations;
   const rows = await q
     .select({
-      auditId: auditLog.id,
-      detail: auditLog.detail,
-      locationId: auditLog.locationId,
+      confirmationId: c.id,
+      attempts: c.attempts,
+      locationId: c.locationId,
       locationName: locations.name,
       businessName: businesses.name,
     })
-    .from(auditLog)
-    .leftJoin(locations, eq(locations.id, auditLog.locationId))
+    .from(c)
+    .leftJoin(locations, eq(locations.id, c.locationId))
     .leftJoin(businesses, eq(businesses.id, locations.businessId))
     .where(
       and(
-        eq(auditLog.action, FAILURE_ACTIONS.opt_out_confirmation),
+        eq(c.status, "expired"),
         or(isNull(businesses.status), ne(businesses.status, "offboarded")),
         notExists(
           q
             .select({ x: sql`1` })
-            .from(alerted)
+            .from(auditLog)
             .where(
               and(
-                eq(alerted.entity, "audit_log"),
-                eq(alerted.entityId, auditLog.id),
-                eq(alerted.action, ALERT_ACTIONS.confirmation_failed),
+                eq(auditLog.entity, "optout_confirmation"),
+                eq(auditLog.entityId, c.id),
+                eq(auditLog.action, ALERT_ACTIONS.confirmation_failed),
               ),
             ),
         ),
       ),
     )
-    .orderBy(asc(auditLog.at), asc(auditLog.id));
-  return rows.map((r) => ({
-    auditId: r.auditId,
-    error: field(r.detail, "error"),
-    locationId: r.locationId,
-    locationName: r.locationName,
-    businessName: r.businessName,
-  }));
+    .orderBy(asc(c.createdAt), asc(c.id));
+  return rows;
 }
 
 export async function findAlerts(now: Date, q: Q = defaultDb): Promise<Alerts> {
@@ -362,7 +357,7 @@ const hours = (from: Date, to: Date) => Math.floor((to.getTime() - from.getTime(
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const ERROR_LABEL: Record<string, string> = {
   provider_rejected: "refused by the provider",
-  outcome_unknown: "outcome unknown (may have reached the customer; not retried)",
+  outcome_unknown: "outcome unknown (may have reached the customer; no more retries)",
   provider_opted_out: "customer had opted out at the provider (now suppressed)",
 };
 
@@ -424,7 +419,7 @@ export function alertLines(a: Alerts, now: Date) {
       title: `${plural(a.confirmationFailed.length, "opt-out confirmation text")} failed`,
       items: a.confirmationFailed.map(
         (c) =>
-          `${where(c)}: confirmation not sent (${c.error}). The opt-out is recorded and honored; the confirmation is not retried.`,
+          `${where(c)}: confirmation not confirmed sent within 5 minutes (${plural(c.attempts, "attempt")}). The opt-out is recorded and honored; nothing more is sent to that number.`,
       ),
     });
   return sections;
@@ -447,7 +442,7 @@ export function operatorAlertEmail(a: Alerts, to: string, now: Date): EmailMessa
     ...a.tokenExpired.map((t) => `t:${t.tokenId}:${t.since?.toISOString() ?? ""}`),
     ...a.reviewCheckStale.map((s) => `s:${s.locationId}:${s.since.toISOString()}`),
     ...a.ownerEmailFailed.map((f) => `o:${f.locationId}:${f.kind}:${f.period}`),
-    ...a.confirmationFailed.map((c) => `c:${c.auditId}`),
+    ...a.confirmationFailed.map((c) => `c:${c.confirmationId}`),
   ].sort();
   return {
     to,
@@ -515,7 +510,13 @@ export async function sendOperatorAlerts(deps: OperatorAlertDeps, db: Db = defau
           ),
         ),
         ...a.confirmationFailed.map((c) =>
-          row(c.locationId, "audit_log", c.auditId, ALERT_ACTIONS.confirmation_failed, `error=${c.error}`),
+          row(
+            c.locationId,
+            "optout_confirmation",
+            c.confirmationId,
+            ALERT_ACTIONS.confirmation_failed,
+            `attempts=${c.attempts}`,
+          ),
         ),
       ]);
     return {

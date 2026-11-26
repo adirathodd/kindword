@@ -1,14 +1,14 @@
-// Failure records for owner emails and opt-out confirmations: short, safe error codes and best-effort writes.
+// Failure records for owner emails: short, safe error codes and best-effort writes.
 // Runs against the Postgres in DATABASE_URL. Fake data only.
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import { ResendSendError } from "../email/resend";
 import { TwilioSendError } from "../sms/twilio";
-import { failureCode, recordOptOutConfirmationFailure, recordOwnerEmailFailure } from "./sendFailures";
+import { failureCode, recordOwnerEmailFailure } from "./sendFailures";
 
 beforeAll(() => migrate(db, { migrationsFolder: "./drizzle" }));
 afterEach(() => vi.restoreAllMocks());
@@ -57,16 +57,6 @@ describe("records", () => {
     ]);
   });
 
-  it("writes an opt-out confirmation failure with no location when the number is unknown", async () => {
-    const before = new Date(Date.now() - 1000);
-    await recordOptOutConfirmationFailure(null, new TwilioSendError(500, null));
-    const rows = await db
-      .select({ detail: s.auditLog.detail, at: s.auditLog.at })
-      .from(s.auditLog)
-      .where(and(eq(s.auditLog.action, "opt_out_confirmation_failed"), eq(s.auditLog.detail, "error=sms_status_500")));
-    expect(rows.some((r) => r.at >= before)).toBe(true);
-  });
-
   it("swallows a database failure so the send path is unchanged", async () => {
     vi.spyOn(db, "insert").mockImplementation(() => {
       throw new Error("connection reset");
@@ -74,6 +64,5 @@ describe("records", () => {
     await expect(
       recordOwnerEmailFailure({ locationId: randomUUID(), kind: "low_rating", period: "2026-11-25", error: null }),
     ).resolves.toBeUndefined();
-    await expect(recordOptOutConfirmationFailure(null, null)).resolves.toBeUndefined();
   });
 });

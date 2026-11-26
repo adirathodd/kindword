@@ -103,10 +103,22 @@ describe("ResendEmail.send", () => {
     expect(sleeps).toEqual([500, 1000]);
   });
 
-  it("caps a long Retry-After instead of waiting it out", async () => {
-    const { email, sleeps } = adapter([json(429, {}, { "retry-after": "3600" }), json(200, { id: "x" })]);
-    await email.send(message());
-    expect(sleeps).toEqual([10_000]);
+  // F-12-3: a Retry-After longer than the adapter will sleep is not cut short (retrying early only hits the limit
+  // again). The send stops at once and hands the wait to the caller, which defers the row.
+  it("stops on a long Retry-After and reports it instead of retrying early", async () => {
+    const { email, calls, sleeps } = adapter([json(429, {}, { "retry-after": "3600" }), json(200, { id: "x" })]);
+    const err = await email.send(message()).catch((e) => e);
+    expect(err).toBeInstanceOf(ResendSendError);
+    expect(err).toMatchObject({ status: 429, retryable: true, refused: true, retryAfterMs: 3_600_000 });
+    expect(calls).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  it("reports the last Retry-After when every attempt is rate limited", async () => {
+    const limited = () => json(429, {}, { "retry-after": "5" });
+    const { email, sleeps } = adapter([limited(), limited(), limited()]);
+    expect(await email.send(message()).catch((e) => e)).toMatchObject({ status: 429, retryAfterMs: 5000 });
+    expect(sleeps).toEqual([5000, 5000]);
   });
 
   it("does not retry a refused message, and never puts Resend's message text in the error", async () => {

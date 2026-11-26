@@ -1,5 +1,5 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: example.test emails, made-up reviews.
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db/client";
@@ -151,9 +151,9 @@ describe("sendDailyDigests", () => {
     expect(m.text).toContain("2 replies are waiting for your approval at Digest Test Plumbing (Main St), 1 overdue");
     expect(m.text).toContain("- 5-star review, waiting 3 hours");
     expect(m.text).toContain("- 1-star review, waiting 2 days, needs extra care, overdue");
-    expect(m.text).toContain(`Open your reply inbox: ${BASE}/inbox`);
+    expect(m.text).toContain(`Open your reply inbox: ${BASE}/inbox?location=${loc}`);
     expect(m.text).toContain("Nothing is posted until you approve it.");
-    expect(m.html).toContain(`<a href="${BASE}/inbox">`);
+    expect(m.html).toContain(`<a href="${BASE}/inbox?location=${loc}">`);
     for (const body of [m.text, m.html, m.subject]) {
       expect(body).not.toMatch(/Secret|Pat/);
     }
@@ -243,7 +243,13 @@ describe("sendDailyDigests", () => {
   });
 
   it("records a bad time zone as a failure for the UTC day, with the provider's codes kept short", async () => {
-    const loc = await tenant({ timezone: "Not/AZone" });
+    const loc = await tenant();
+    // The locations_timezone_valid trigger (#67) rejects the zone, so bypass it to stand in for a row stored before it.
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`alter table locations disable trigger locations_timezone_valid`);
+      await tx.update(s.locations).set({ timezone: "Not/AZone" }).where(eq(s.locations.id, loc));
+      await tx.execute(sql`alter table locations enable trigger locations_timezone_valid`);
+    });
     await draft(loc);
     expect((await sendDailyDigests({ email, baseUrl: BASE, now: NOW })).failed).toBeGreaterThanOrEqual(1);
     expect((await audit(loc, "owner_email_failed")).map((f) => f.detail)).toEqual([
@@ -278,7 +284,7 @@ describe("sendLowRatingAlerts", () => {
       idempotencyKey: `low-rating/${loc}/${low}`,
     });
     expect(mine[0].text).toContain("A new 2-star review for Digest Test Plumbing (Main St) needs a reply.");
-    expect(mine[0].text).toContain(`${BASE}/inbox`);
+    expect(mine[0].text).toContain(`${BASE}/inbox?location=${loc}`);
     for (const body of [mine[0].text, mine[0].html]) expect(body).not.toMatch(/Secret|Pat/);
     expect(await audit(loc, "low_rating_email_sent")).toMatchObject([{ entity: "review", entityId: low }]);
 

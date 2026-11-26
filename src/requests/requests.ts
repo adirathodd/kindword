@@ -32,6 +32,14 @@ type Customer = typeof customers.$inferSelect;
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const BATCH = 200;
+// F-12-2: an email send that hit a retryable provider error (outage, timeout, 429) goes back to scheduled for a later
+// run instead of failing for good: at most EMAIL_MAX_SENDS sends, 15 min, 30 min, 1 h, 2 h apart (or Resend's longer
+// Retry-After), inside the send window, before the row goes stale, and never later than EMAIL_RETRY_WINDOW_MS after
+// a send that may have reached the customer, because the idempotency key that makes the retry safe lasts 24 hours at
+// Resend. Texts are not retried: Twilio has no idempotency key, so a retry after a timeout could send twice.
+const EMAIL_MAX_SENDS = 5;
+const EMAIL_RETRY_BASE_MS = 15 * 60 * 1000;
+export const EMAIL_RETRY_WINDOW_MS = 20 * HOUR;
 
 export type RequestJobOptions = {
   now?: Date;
@@ -115,6 +123,7 @@ async function askedRecently(tx: Tx, locationId: string, visitId: string, c: Cus
         or(
           inArray(reviewRequests.status, ["scheduled", "sent"]),
           and(eq(reviewRequests.status, "failed"), eq(reviewRequests.outcomeUnknown, true)),
+          isNotNull(reviewRequests.maybeSentAt),
         ),
         or(
           eq(customers.id, c.id),
@@ -276,6 +285,7 @@ export type SendResult = {
   sent: number;
   failed: number;
   deferred: number; // outside the window; moved to the next 9 a.m.
+  retrying: number; // email send hit a retryable provider error; scheduled again for a later run (F-12-2)
   waiting: number; // business not live, or no texting number yet; left as is until it is or the row goes stale
   skipped: Partial<Record<SkipReason, number>>;
   errors?: number; // rows that threw before a claim (e.g. a bad time zone); left scheduled for the next run
@@ -287,6 +297,7 @@ type Claimed = {
   location: typeof locations.$inferSelect;
   businessName: string;
   address: string;
+  staleAt: number;
 };
 
 // Sends every due request and reminder. Each row is claimed (marked sent) and committed before the provider is
@@ -299,7 +310,7 @@ export async function sendDueRequests(
 ): Promise<SendResult> {
   const cfg = o.config ?? sendConfigFromEnv();
   const { now, staleMs, reminderDelayMs } = opts(o);
-  const result: SendResult = { sent: 0, failed: 0, deferred: 0, waiting: 0, skipped: {} };
+  const result: SendResult = { sent: 0, failed: 0, deferred: 0, retrying: 0, waiting: 0, skipped: {} };
   // Rows that can go out now come first. Rows held for a business that is not live, or for a location that cannot
   // text yet, stay due without moving, so ordering by due time alone let 200 of them fill every batch and starve
   // every other tenant's requests until they went stale (FR-5, FR-10: ask every eligible customer).
@@ -318,7 +329,7 @@ export async function sendDueRequests(
     .limit(BATCH);
 
   for (const { id } of due) {
-    const run = db.transaction(async (tx): Promise<Claimed | "deferred" | "waiting" | SkipReason | null> => {
+    const run = db.transaction(async (tx): Promise<Claimed | "deferred" | "waiting" | "failed" | SkipReason | null> => {
       const [row] = await tx
         .select({ rr: reviewRequests, visit: visits, customer: customers, location: locations, business: businesses })
         .from(reviewRequests)
@@ -352,25 +363,41 @@ export async function sendDueRequests(
         dueAt = (sentAt ?? rr.scheduledFor).getTime() + (sentAt ? reminderDelayMs : 0);
       }
       const staleAt = dueAt + staleMs;
-      if (now.getTime() > staleAt) return skip("stale");
+      // A row already tried (F-12-2) that can no longer go out in time fails instead of being skipped: an earlier
+      // send may have reached the customer, and the operator should see it (outcome unknown).
+      const tooLate = (t: number) =>
+        t > staleAt || (rr.maybeSentAt !== null && t > rr.maybeSentAt.getTime() + EMAIL_RETRY_WINDOW_MS);
+      const expire = async () => {
+        if (!rr.sendAttempts) return skip("stale");
+        await failRequest(tx, rr, l.id, rr.maybeSentAt ? "outcome_unknown" : "provider_rejected");
+        return "failed" as const;
+      };
+      if (tooLate(now.getTime())) return expire();
       if (b.status !== "live") return "waiting"; // onboarding, paused or offboarded: nothing goes out (FR-20)
       if (rr.channel === "sms" && !l.smsNumber) return "waiting"; // 10DLC not approved yet
       const address = rr.channel === "sms" ? c.normalizedPhone : c.normalizedEmail;
       if (!address) return skip("no_consent"); // customer rows are never edited by imports, so not expected
       if (!inSendWindow(now, l.timezone)) {
         const next = nextSendTime(now, l.timezone);
-        if (next.getTime() > staleAt) return skip("stale");
+        if (tooLate(next.getTime())) return expire();
         await tx.update(reviewRequests).set({ scheduledFor: next }).where(eq(reviewRequests.id, rr.id));
         return "deferred";
       }
-      await tx.update(reviewRequests).set({ status: "sent", sentAt: now }).where(eq(reviewRequests.id, rr.id));
-      return { rr, customer: c, location: l, businessName: b.name, address };
+      await tx
+        .update(reviewRequests)
+        .set({ status: "sent", sentAt: now, sendAttempts: rr.sendAttempts + 1 })
+        .where(eq(reviewRequests.id, rr.id));
+      return { rr, customer: c, location: l, businessName: b.name, address, staleAt };
     });
     const step = await run.catch(rowError("send_due_requests", id));
 
     if (step === null) continue;
     if (step === "error") {
       result.errors = (result.errors ?? 0) + 1;
+      continue;
+    }
+    if (step === "failed") {
+      result.failed++;
       continue;
     }
     if (step === "deferred" || step === "waiting") {
@@ -381,13 +408,27 @@ export async function sendDueRequests(
       result.skipped[step] = (result.skipped[step] ?? 0) + 1;
       continue;
     }
-    if (await deliver(providers, cfg, step, now, db)) result.sent++;
-    else result.failed++;
+    result[await deliver(providers, cfg, step, now, db)]++;
   }
   return result;
 }
 
-async function deliver(providers: Providers, cfg: SendConfig, s: Claimed, now: Date, db: Db): Promise<boolean> {
+type Failure = "provider_opted_out" | "provider_rejected" | "outcome_unknown";
+async function failRequest(tx: Tx, rr: typeof reviewRequests.$inferSelect, locationId: string, error: Failure) {
+  await tx
+    .update(reviewRequests)
+    .set({ status: "failed", sentAt: null, outcomeUnknown: error === "outcome_unknown" })
+    .where(eq(reviewRequests.id, rr.id));
+  await audit(tx, locationId, rr.id, "failed", `attempt=${rr.attempt};channel=${rr.channel};error=${error}`);
+}
+
+async function deliver(
+  providers: Providers,
+  cfg: SendConfig,
+  s: Claimed,
+  now: Date,
+  db: Db,
+): Promise<"sent" | "failed" | "retrying"> {
   const { rr, customer: c, location: l } = s;
   const attempt = rr.attempt as Attempt;
   const lang = pickLanguage(c.language);
@@ -411,21 +452,53 @@ async function deliver(providers: Providers, cfg: SendConfig, s: Claimed, now: D
             idempotencyKey: `review-request/${rr.id}`,
           });
   } catch (e) {
-    // Provider errors can echo the recipient, so only these two flags are read. Adapters retry transient errors
-    // themselves. `refused`: the provider answered and did not take the message. Anything else (a timeout, a lost
-    // connection, an ambiguous 5xx) may have gone out, so it never falls back to the other channel.
-    const err = e as { refused?: unknown; recipientOptedOut?: unknown } | null;
+    // Provider errors can echo the recipient, so only these flags are read. Adapters retry short blips themselves.
+    // `refused`: the provider answered and did not take the message. Anything else (a timeout, a lost connection, an
+    // ambiguous 5xx) may have gone out, so it never falls back to the other channel. `retryable`: a later try may
+    // work (an outage, a rate limit); `retryAfterMs`: how long the provider asked us to wait.
+    const err = e as {
+      refused?: unknown;
+      recipientOptedOut?: unknown;
+      retryable?: unknown;
+      retryAfterMs?: unknown;
+    } | null;
     // Twilio 21610: the customer texted STOP to the provider. Record the opt-out here too (FR-8: suppression applies
     // to provider callbacks and future imports) and send nothing else.
     const providerOptOut = rr.channel === "sms" && err?.recipientOptedOut === true;
     const refused = providerOptOut || err?.refused === true;
-    const error = providerOptOut ? "provider_opted_out" : refused ? "provider_rejected" : "outcome_unknown";
+    // Once a send may have reached the customer, the row stays "may have gone out" whatever later tries return.
+    const maybeSentAt = rr.maybeSentAt ?? (refused ? null : now);
+    const error: Failure = providerOptOut
+      ? "provider_opted_out"
+      : !refused || maybeSentAt
+        ? "outcome_unknown"
+        : "provider_rejected";
+    const sends = rr.sendAttempts + 1;
+    if (rr.channel === "email" && err?.retryable === true && sends < EMAIL_MAX_SENDS) {
+      const asked = typeof err.retryAfterMs === "number" && err.retryAfterMs > 0 ? err.retryAfterMs : 0;
+      const wait = Math.max(asked, EMAIL_RETRY_BASE_MS * 2 ** (sends - 1));
+      const next = nextSendTime(new Date(now.getTime() + wait), l.timezone);
+      const keyValid = !maybeSentAt || next.getTime() <= maybeSentAt.getTime() + EMAIL_RETRY_WINDOW_MS;
+      if (next.getTime() <= s.staleAt && keyValid) {
+        await db.transaction(async (tx) => {
+          await tx
+            .update(reviewRequests)
+            .set({ status: "scheduled", sentAt: null, scheduledFor: next, maybeSentAt })
+            .where(eq(reviewRequests.id, rr.id));
+          await audit(
+            tx,
+            l.id,
+            rr.id,
+            "retry_scheduled",
+            `attempt=${rr.attempt};channel=email;error=${error};send=${sends}`,
+          );
+        });
+        return "retrying";
+      }
+    }
     await db.transaction(async (tx) => {
-      await tx
-        .update(reviewRequests)
-        .set({ status: "failed", sentAt: null, outcomeUnknown: error === "outcome_unknown" })
-        .where(eq(reviewRequests.id, rr.id));
-      await audit(tx, l.id, rr.id, "failed", `attempt=${rr.attempt};channel=${rr.channel};error=${error}`);
+      if (maybeSentAt) await tx.update(reviewRequests).set({ maybeSentAt }).where(eq(reviewRequests.id, rr.id));
+      await failRequest(tx, rr, l.id, error);
       if (providerOptOut) {
         await optOut(tx, l.id, "sms", s.address, "provider_sms");
         return;
@@ -446,14 +519,14 @@ async function deliver(providers: Providers, cfg: SendConfig, s: Claimed, now: D
         if (fb) await audit(tx, l.id, fb.id, "scheduled", "attempt=1;channel=email;fallback=sms_failed");
       }
     });
-    return false;
+    return "failed";
   }
   await db
     .update(reviewRequests)
     .set({ providerMessageId: messageId || null })
     .where(eq(reviewRequests.id, rr.id));
   await audit(db, l.id, rr.id, "sent", `attempt=${rr.attempt};channel=${rr.channel}`);
-  return true;
+  return "sent";
 }
 
 export async function runReviewRequestJobs(
@@ -468,13 +541,24 @@ export async function runReviewRequestJobs(
   return { scheduled, reminders, sent };
 }
 
-// The redirect link (FR-7): records the first click on a sent message and returns the location's review link.
+// A message whose link may be in the customer's hands: it went out, or its send failed with an unknown outcome
+// (timeout, lost connection, ambiguous 5xx), which clears sent_at but may still have delivered it (F-12-4, #43).
+// Its link must keep working (FR-7, Flow 2: the review link goes through our redirect). A definite refusal and a
+// request never sent stay 404.
+const linkMayHaveGoneOut = or(
+  isNotNull(reviewRequests.sentAt),
+  and(eq(reviewRequests.status, "failed"), eq(reviewRequests.outcomeUnknown, true)),
+  isNotNull(reviewRequests.maybeSentAt), // an email waiting to be retried, or skipped since (F-12-2)
+);
+
+// The redirect link (FR-7): records the first click on a message that may have gone out and returns the location's
+// review link.
 export async function recordClick(requestId: string, now: Date = new Date(), db: Db = defaultDb) {
   if (!z.uuid().safeParse(requestId).success) return null;
   const [hit] = await db
     .update(reviewRequests)
     .set({ clickedAt: sql`coalesce(${reviewRequests.clickedAt}, ${now.toISOString()}::timestamptz)` })
-    .where(and(eq(reviewRequests.id, requestId), isNotNull(reviewRequests.sentAt)))
+    .where(and(eq(reviewRequests.id, requestId), linkMayHaveGoneOut))
     .returning({ visitId: reviewRequests.visitId });
   return hit ? reviewLinkForVisit(hit.visitId, db) : null;
 }
@@ -485,7 +569,7 @@ export async function reviewLinkFor(requestId: string, db: Db = defaultDb) {
   const [rr] = await db
     .select({ visitId: reviewRequests.visitId })
     .from(reviewRequests)
-    .where(and(eq(reviewRequests.id, requestId), isNotNull(reviewRequests.sentAt)));
+    .where(and(eq(reviewRequests.id, requestId), linkMayHaveGoneOut));
   return rr ? reviewLinkForVisit(rr.visitId, db) : null;
 }
 

@@ -8,7 +8,7 @@ import * as s from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import { TwilioSendError } from "../sms/twilio";
 import { ALERT_ACTIONS, REVIEW_CHECK_STALE_MS, sendOperatorAlerts } from "./operatorAlerts";
-import { recordOptOutConfirmationFailure, recordOwnerEmailFailure, type OwnerEmailKind } from "./sendFailures";
+import { recordOwnerEmailFailure, type OwnerEmailKind } from "./sendFailures";
 
 const HOUR = 60 * 60 * 1000;
 const NOW = new Date("2026-11-26T15:00:00Z");
@@ -261,30 +261,44 @@ describe("failed owner emails", () => {
   });
 });
 
+// An opt-out whose one confirmation the optout-confirmations job gave up on (src/optout/confirmations.ts).
+let confirmationN = 0;
+async function expiredConfirmation(locationId: string | null, attempts = 2, status = "expired") {
+  const address = `+1201555${String(1000 + (confirmationN++ % 9000)).padStart(4, "0")}`;
+  const [sup] = await db
+    .insert(s.suppressionList)
+    .values({ locationId, channel: "sms", address: `${address}-${randomUUID()}`, source: "test" })
+    .returning();
+  await db
+    .insert(s.optOutConfirmations)
+    .values({ suppressionId: sup.id, locationId, fromNumber: "+12015550100", status, attempts });
+}
+
 describe("failed opt-out confirmations", () => {
   it("reports each failure once, with the code, the opt-out kept, and no phone number", async () => {
     const { locationId, businessName } = await location();
-    await recordOptOutConfirmationFailure(locationId, new TwilioSendError(500, null));
-    await recordOptOutConfirmationFailure(null, new Error("timeout")); // texted a number no location uses
+    await expiredConfirmation(locationId, 3);
+    await expiredConfirmation(null, 1); // texted a number no location uses
+    await expiredConfirmation(locationId, 1, "sent"); // sent: not a failure
     const email = new FakeEmail();
     expect(await run(email)).toMatchObject({ sent: 1, confirmationFailed: 2 });
     const m = email.sent[0];
     expect(m.subject).toContain("2 opt-out confirmation texts failed");
     expect(m.text).toContain(
-      `${businessName} (Main St, location ${locationId}): confirmation not sent (sms_status_500)`,
+      `${businessName} (Main St, location ${locationId}): confirmation not confirmed sent within 5 minutes (3 attempts)`,
     );
-    expect(m.text).toContain("No location on record: confirmation not sent (Error)");
+    expect(m.text).toContain("No location on record: confirmation not confirmed sent within 5 minutes (1 attempt)");
     expect(m.text).toContain("The opt-out is recorded and honored");
     for (const body of [m.text, m.html, m.subject]) expect(body).not.toMatch(/@|\+1\d{10}/);
     expect(await run(email, at(1))).toMatchObject({ sent: 0 });
 
-    await recordOptOutConfirmationFailure(locationId, new Error("timeout"));
+    await expiredConfirmation(locationId);
     expect(await run(email, at(2))).toMatchObject({ sent: 1, confirmationFailed: 1 });
   });
 
   it("skips offboarded businesses", async () => {
     const off = await location({ status: "offboarded" });
-    await recordOptOutConfirmationFailure(off.locationId, new Error("timeout"));
+    await expiredConfirmation(off.locationId);
     expect(await run(new FakeEmail())).toMatchObject({ sent: 0 });
   });
 });
@@ -366,7 +380,7 @@ describe("review check not run in 3 hours", () => {
     await audit(expired.locationId, "location", expired.locationId, "review_poll_failed", "code=token_revoked", at(-1));
     await failedSend(stale.locationId, "sms", "provider_opted_out");
     await ownerEmailFailed(stale.locationId, "digest", "2026-11-26", at(-1));
-    await recordOptOutConfirmationFailure(expired.locationId, new TwilioSendError(500, null));
+    await expiredConfirmation(expired.locationId);
     const email = new FakeEmail();
     expect(await run(email)).toEqual({
       sent: 1,

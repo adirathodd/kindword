@@ -1,6 +1,6 @@
 // Failure records for sends that operator alerts did not see before (SPEC Reliability: "Alerts go to the operator
-// when a send fails"): owner emails (daily digest, low-rating email, monthly report) and the one opt-out
-// confirmation text. Review-request failures already have their own record (src/requests/requests.ts).
+// when a send fails"): owner emails (daily digest, low-rating email, monthly report). Review-request failures have
+// their own record (src/requests/requests.ts), and opt-out confirmations theirs (optout_confirmations, #72).
 //
 // Each failed attempt writes one audit row with IDs and a short error code only: never an address, a phone number,
 // message text or a provider's message (SPEC hard constraints, FR-19). Writing the row is best effort: a failure here
@@ -13,7 +13,6 @@ import { TwilioSendError } from "../sms/twilio";
 
 export const FAILURE_ACTIONS = {
   owner_email: "owner_email_failed",
-  opt_out_confirmation: "opt_out_confirmation_failed",
 } as const;
 export type OwnerEmailKind = "digest" | "low_rating" | "monthly_report";
 const ACTOR = "system:send_failure";
@@ -41,22 +40,6 @@ export async function recordOwnerEmailFailure(
       actor: ACTOR,
       detail: `kind=${f.kind};period=${f.period};error=${failureCode(f.error)}`,
       ...(f.at ? { at: f.at } : {}),
-    });
-  } catch {
-    // best effort, see above
-  }
-}
-
-// locationId: the location whose number the customer texted, or null when no location uses that number.
-export async function recordOptOutConfirmationFailure(locationId: string | null, error: unknown, db: Db = defaultDb) {
-  try {
-    await db.insert(auditLog).values({
-      locationId,
-      entity: "location",
-      entityId: locationId,
-      action: FAILURE_ACTIONS.opt_out_confirmation,
-      actor: ACTOR,
-      detail: `error=${failureCode(error)}`,
     });
   } catch {
     // best effort, see above

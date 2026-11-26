@@ -57,6 +57,10 @@ export const businesses = pgTable(
     // onboarding; the AI drafter may use nothing else about the business (SPEC: AI reply generation, rule 4).
     approvedFacts: text("approved_facts"),
     status: businessStatus("status").notNull().default("onboarding"),
+    // When the business was switched to offboarded. Set and cleared by a database trigger (migration 0016) whenever
+    // status changes, so no code path can offboard without it. Everything for the business is deleted within 30 days
+    // of this time (SPEC Security, Retention; src/retention/businesses.ts).
+    offboardedAt: ts("offboarded_at"),
   },
   (t) => [
     check("owner_phone_requires_consent", sql`${t.ownerPhone} is null or ${t.ownerContactConsentRef} is not null`),
@@ -71,7 +75,7 @@ export const locations = pgTable(
       .notNull()
       .references(() => businesses.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York
+    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York; trigger locations_timezone_valid (0014)
     reviewLink: text("review_link").notNull(),
     googleLocationId: text("google_location_id").unique(), // one row per Google Business Profile
     googleConnectedAt: ts("google_connected_at"),
@@ -191,6 +195,12 @@ export const reviewRequests = pgTable(
     // A failed send that may still have reached the customer (timeout, lost connection, ambiguous 5xx). Counts as
     // asked for FR-9.
     outcomeUnknown: boolean("outcome_unknown").notNull().default(false),
+    // Email sends that hit a retryable provider error (F-12-2): how many sends were tried, and when the first one that
+    // may have reached the customer was. A retry reuses the Resend idempotency key, which Resend keeps for 24 hours,
+    // so no retry goes out more than EMAIL_RETRY_WINDOW_MS after maybe_sent_at. A row with maybe_sent_at counts as
+    // asked (FR-9) and keeps its link working (FR-7) whatever its status.
+    sendAttempts: smallint("send_attempts").notNull().default(0),
+    maybeSentAt: ts("maybe_sent_at"),
   },
   (t) => [
     unique().on(t.visitId, t.channel, t.attempt),
@@ -215,6 +225,33 @@ export const suppressionList = pgTable(
   },
   // NULLS NOT DISTINCT so platform-wide (null location) entries are unique too.
   (t) => [unique().on(t.locationId, t.channel, t.address).nullsNotDistinct(), index().on(t.channel, t.address)],
+);
+
+// The one opt-out confirmation text (FR-8, Flow 2 step 4) as a durable outbox row, so a send whose outcome is unknown
+// (a Twilio timeout) can be checked and retried by the optout-confirmations job (audit F-9-2). The recipient is read
+// through the suppression row, so no customer phone is stored here; from_number is our own Twilio number.
+// One row per suppression row: a retried webhook can never queue a second confirmation.
+// status: sending (an attempt is in flight or its outcome is unknown), pending (the provider refused it, safe to
+// resend), sent, provider (the provider confirmed it itself, 21610), expired (not sent within 5 minutes).
+export const optOutConfirmations = pgTable(
+  "optout_confirmations",
+  {
+    id: id(),
+    suppressionId: uuid("suppression_id")
+      .notNull()
+      .unique()
+      .references(() => suppressionList.id, { onDelete: "cascade" }),
+    locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
+    fromNumber: text("from_number").notNull(),
+    status: text("status").notNull().default("sending"),
+    attempts: smallint("attempts").notNull().default(1),
+    lastAttemptAt: ts("last_attempt_at").notNull().defaultNow(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("optout_confirmation_status", sql`${t.status} in ('sending', 'pending', 'sent', 'provider', 'expired')`),
+    index().on(t.status),
+  ],
 );
 
 export const reviews = pgTable(
