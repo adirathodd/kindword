@@ -63,6 +63,16 @@ export function sendConfigFromEnv(env: Record<string, string | undefined> = proc
   return { baseUrl, postalAddress };
 }
 
+// F-7-5: one bad row (e.g. a stored time zone Intl rejects) must not abort the run for every other tenant. It is
+// counted and logged by ID and error class only, then retried on the next run.
+const rowError = (job: string, id: string) => (e: unknown) => {
+  console.error(`${job}: row failed id=${id} error=${e instanceof Error ? e.name : "unknown"}`);
+  return "error" as const;
+};
+
+// Rows whose location time zone Postgres does not know go last, so they can never fill a batch and starve others.
+const badZoneLast = sql`case when ${locations.timezone} in (select name from pg_timezone_names) then 0 else 1 end`;
+
 const lockLocation = (tx: Tx, locationId: string) =>
   tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`review_requests:${locationId}`}))`);
 
@@ -119,7 +129,7 @@ async function askedRecently(tx: Tx, locationId: string, visitId: string, c: Cus
   return !!hit;
 }
 
-export type ScheduleResult = { scheduled: number; skipped: Partial<Record<SkipReason, number>> };
+export type ScheduleResult = { scheduled: number; skipped: Partial<Record<SkipReason, number>>; errors?: number };
 
 // Creates the attempt-1 row for every visit that has none: scheduled for the visit time plus the delay, moved into
 // the location's 9 a.m. to 8 p.m. window, or skipped as opted_out, stale or duplicate.
@@ -133,12 +143,13 @@ export async function scheduleReviewRequests(o: RequestJobOptions = {}, db: Db =
   const pending = await db
     .select({ id: visits.id, locationId: visits.locationId })
     .from(visits)
+    .innerJoin(locations, eq(locations.id, visits.locationId))
     .where(notExists(hasRequest))
-    .orderBy(asc(visits.visitAt))
+    .orderBy(badZoneLast, asc(visits.visitAt))
     .limit(BATCH);
 
   for (const p of pending) {
-    const outcome = await db.transaction(async (tx) => {
+    const run = db.transaction(async (tx) => {
       await lockLocation(tx, p.locationId); // serializes FR-9 checks per location
       const [row] = await tx
         .select({ visit: visits, customer: customers, location: locations })
@@ -188,7 +199,12 @@ export async function scheduleReviewRequests(o: RequestJobOptions = {}, db: Db =
       );
       return skip ?? "scheduled";
     });
+    const outcome = await run.catch(rowError("schedule_review_requests", p.id));
     if (outcome === null) continue;
+    if (outcome === "error") {
+      result.errors = (result.errors ?? 0) + 1;
+      continue;
+    }
     if (outcome === "scheduled") result.scheduled++;
     else result.skipped[outcome] = (result.skipped[outcome] ?? 0) + 1;
   }
@@ -197,7 +213,10 @@ export async function scheduleReviewRequests(o: RequestJobOptions = {}, db: Db =
 
 // Creates the one reminder (attempt 2) for every request sent at least reminderDelayMs ago whose link nobody
 // clicked, on the same channel. Never a second reminder, never more than 2 messages per job (FR-5).
-export async function scheduleReminders(o: RequestJobOptions = {}, db: Db = defaultDb): Promise<{ scheduled: number }> {
+export async function scheduleReminders(
+  o: RequestJobOptions = {},
+  db: Db = defaultDb,
+): Promise<{ scheduled: number; errors?: number }> {
   const { now, reminderDelayMs } = opts(o);
   const sibling = db
     .select({ x: sql`1` })
@@ -207,6 +226,7 @@ export async function scheduleReminders(o: RequestJobOptions = {}, db: Db = defa
     .select({ id: reviewRequests.id, visitId: reviewRequests.visitId, locationId: visits.locationId })
     .from(reviewRequests)
     .innerJoin(visits, eq(visits.id, reviewRequests.visitId))
+    .innerJoin(locations, eq(locations.id, visits.locationId))
     .where(
       and(
         eq(reviewRequests.attempt, 1),
@@ -215,12 +235,13 @@ export async function scheduleReminders(o: RequestJobOptions = {}, db: Db = defa
         notExists(sibling),
       ),
     )
-    .orderBy(asc(reviewRequests.sentAt))
+    .orderBy(badZoneLast, asc(reviewRequests.sentAt))
     .limit(BATCH);
 
   let scheduled = 0;
+  let errors = 0;
   for (const d of due) {
-    const id = await db.transaction(async (tx) => {
+    const run = db.transaction(async (tx) => {
       await lockLocation(tx, d.locationId);
       const rows = await tx.select().from(reviewRequests).where(eq(reviewRequests.visitId, d.visitId));
       const first = rows.find((r) => r.id === d.id);
@@ -244,9 +265,11 @@ export async function scheduleReminders(o: RequestJobOptions = {}, db: Db = defa
       if (rr) await audit(tx, d.locationId, rr.id, "scheduled", `attempt=2;channel=${first.channel}`);
       return rr?.id ?? null;
     });
-    if (id) scheduled++;
+    const id = await run.catch(rowError("schedule_reminders", d.id));
+    if (id === "error") errors++;
+    else if (id) scheduled++;
   }
-  return { scheduled };
+  return errors ? { scheduled, errors } : { scheduled };
 }
 
 export type SendResult = {
@@ -255,6 +278,7 @@ export type SendResult = {
   deferred: number; // outside the window; moved to the next 9 a.m.
   waiting: number; // business not live, or no texting number yet; left as is until it is or the row goes stale
   skipped: Partial<Record<SkipReason, number>>;
+  errors?: number; // rows that threw before a claim (e.g. a bad time zone); left scheduled for the next run
 };
 
 type Claimed = {
@@ -287,13 +311,14 @@ export async function sendDueRequests(
     .innerJoin(businesses, eq(businesses.id, locations.businessId))
     .where(and(eq(reviewRequests.status, "scheduled"), lte(reviewRequests.scheduledFor, now)))
     .orderBy(
+      badZoneLast,
       sql`case when ${businesses.status} = 'live' and (${reviewRequests.channel} = 'email' or ${locations.smsNumber} is not null) then 0 else 1 end`,
       asc(reviewRequests.scheduledFor),
     )
     .limit(BATCH);
 
   for (const { id } of due) {
-    const step = await db.transaction(async (tx): Promise<Claimed | "deferred" | "waiting" | SkipReason | null> => {
+    const run = db.transaction(async (tx): Promise<Claimed | "deferred" | "waiting" | SkipReason | null> => {
       const [row] = await tx
         .select({ rr: reviewRequests, visit: visits, customer: customers, location: locations, business: businesses })
         .from(reviewRequests)
@@ -341,8 +366,13 @@ export async function sendDueRequests(
       await tx.update(reviewRequests).set({ status: "sent", sentAt: now }).where(eq(reviewRequests.id, rr.id));
       return { rr, customer: c, location: l, businessName: b.name, address };
     });
+    const step = await run.catch(rowError("send_due_requests", id));
 
     if (step === null) continue;
+    if (step === "error") {
+      result.errors = (result.errors ?? 0) + 1;
+      continue;
+    }
     if (step === "deferred" || step === "waiting") {
       result[step]++;
       continue;
