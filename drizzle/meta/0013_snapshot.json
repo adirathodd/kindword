@@ -1,5 +1,5 @@
 {
-  "id": "0ed3919c-ce91-480d-a2d5-2fed19ec26f5",
+  "id": "c1ac72d0-4b1f-454f-bc93-c27e25bc2637",
   "prevId": "a5998108-5ef7-49c8-9dc2-ab0fd1939cab",
   "version": "7",
   "dialect": "postgresql",
@@ -809,8 +809,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.operator_sessions": {
-      "name": "operator_sessions",
+    "public.optout_confirmations": {
+      "name": "optout_confirmations",
       "schema": "",
       "columns": {
         "id": {
@@ -820,17 +820,44 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "session_token_hash": {
-          "name": "session_token_hash",
+        "suppression_id": {
+          "name": "suppression_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location_id": {
+          "name": "location_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "from_number": {
+          "name": "from_number",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "totp_step": {
-          "name": "totp_step",
-          "type": "bigint",
+        "status": {
+          "name": "status",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'sending'"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "last_attempt_at": {
+          "name": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
         "created_at": {
           "name": "created_at",
@@ -838,41 +865,70 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "optout_confirmations_status_index": {
+          "name": "optout_confirmations_status_index",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "optout_confirmations_suppression_id_suppression_list_id_fk": {
+          "name": "optout_confirmations_suppression_id_suppression_list_id_fk",
+          "tableFrom": "optout_confirmations",
+          "tableTo": "suppression_list",
+          "columnsFrom": [
+            "suppression_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "optout_confirmations_location_id_locations_id_fk": {
+          "name": "optout_confirmations_location_id_locations_id_fk",
+          "tableFrom": "optout_confirmations",
+          "tableTo": "locations",
+          "columnsFrom": [
+            "location_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "operator_sessions_session_token_hash_unique": {
-          "name": "operator_sessions_session_token_hash_unique",
+        "optout_confirmations_suppression_id_unique": {
+          "name": "optout_confirmations_suppression_id_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "session_token_hash"
-          ]
-        },
-        "operator_sessions_totp_step_unique": {
-          "name": "operator_sessions_totp_step_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "totp_step"
+            "suppression_id"
           ]
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "optout_confirmation_status": {
+          "name": "optout_confirmation_status",
+          "value": "\"optout_confirmations\".\"status\" in ('sending', 'pending', 'sent', 'provider', 'expired')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.owner_accounts": {
