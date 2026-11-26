@@ -1,0 +1,1 @@
+ALTER TABLE "businesses" ADD COLUMN "offboarded_at" timestamp with time zone;

@@ -110,8 +110,22 @@
     {
       "idx": 15,
       "version": "7",
-      "when": 1795715038927,
-      "tag": "0015_operator_sessions",
+      "when": 1795714979102,
+      "tag": "0015_business_offboarded_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795714979817,
+      "tag": "0016_business_offboarded_at_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795715198995,
+      "tag": "0017_operator_sessions",
       "breakpoints": true
     }
   ]

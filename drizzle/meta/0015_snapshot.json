@@ -1,5 +1,5 @@
 {
-  "id": "86948918-e2cc-4fda-9fd3-6f2478c0f248",
+  "id": "22c53749-633e-4093-af9c-a912c7f476f6",
   "prevId": "9b2ca29a-5558-4ed1-be93-12cf80a26975",
   "version": "7",
   "dialect": "postgresql",
@@ -362,6 +362,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'onboarding'"
+        },
+        "offboarded_at": {
+          "name": "offboarded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -802,72 +808,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "location_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.operator_sessions": {
-      "name": "operator_sessions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "session_token_hash": {
-          "name": "session_token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "totp_step": {
-          "name": "totp_step",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "operator_sessions_session_token_hash_unique": {
-          "name": "operator_sessions_session_token_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "session_token_hash"
-          ]
-        },
-        "operator_sessions_totp_step_unique": {
-          "name": "operator_sessions_totp_step_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "totp_step"
           ]
         }
       },
