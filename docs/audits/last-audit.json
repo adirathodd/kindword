@@ -1,241 +1,410 @@
 {
-  "audit_id": "audit-2026-11-26-01",
-  "started_at": "2026-11-26T03:50Z",
-  "completed_at": "2026-11-26T04:30Z",
+  "audit_id": "audit-2026-11-26-02",
+  "started_at": "2026-11-26T09:45Z",
+  "completed_at": "2026-11-26T10:20Z",
   "status": "complete_with_documented_issues",
   "target_branch": "main",
   "repository_note": "GitHub reports the repository as adirathodd/kindword; adirathodd/review-automation redirects.",
   "previous_audit": {
-    "audit_id": "audit-2026-11-25-01",
+    "audit_id": "audit-2026-11-26-01",
     "status": "complete_with_documented_issues",
-    "end_sha": "b822c46a099252ac527f6dc70c0d50aaa4a0d8f0",
-    "record": "this file before this audit (PR #39)"
+    "end_sha": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2",
+    "record": "this file before this audit (PR #42)"
   },
   "baseline": {
-    "sha": "b822c46a099252ac527f6dc70c0d50aaa4a0d8f0",
+    "sha": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2",
     "inferred": false,
-    "reasoning": "next_audit_starts_after of audit-2026-11-25-01"
+    "reasoning": "next_audit_starts_after of audit-2026-11-26-01"
   },
-  "end_sha": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2",
+  "end_sha": "f3d6d49fcfdc0ba3424542329ee46d854db43292",
   "spec": {
     "file": "docs/SPEC.md",
-    "note": "docs/SPEC.md unchanged in the period (git diff b822c46..0d0c648 -- docs/SPEC.md is empty). The Claude Doc was not read (no Claude Docs connector in this session). This audit does not edit the SPEC.",
-    "changes_in_period": []
+    "note": "The Claude Doc was not read (no Claude Docs connector in this session). This audit does not edit the SPEC.",
+    "changes_in_period": [
+      "#42 sync at 0d0c648",
+      "#45 FR-23 status and sms_opt_ins row",
+      "#44 FR status for schedules, D-9..D-12",
+      "#47 Doc sync note",
+      "#53 FR-17 status",
+      "#58 FR-11/FR-19/FR-24 status after #54, #55"
+    ]
   },
   "in_scope": [
     {
-      "pr": 38,
-      "title": "Audit fix for #36: same answer when the email provider fails (FR-13, FR-24)",
-      "url": "https://github.com/adirathodd/kindword/pull/38",
+      "pr": 42,
+      "title": "SPEC sync and audit record at main 0d0c648 (audit-2026-11-26-01, sync-2026-11-26-01)",
+      "url": "https://github.com/adirathodd/kindword/pull/42",
       "author": "adirathodd",
-      "merge_commit": "1ec9131647ff638e8fb8db3f575586e8338cfe4f",
+      "merge_commit": "3c1377d3485b0496dfead8a01a873aa86dd37656",
       "merge_type": "squash",
-      "merged_at": "2026-11-26T03:40:36Z",
+      "merged_at": "2026-11-25T23:07:23-05:00",
       "changed_files": [
-        "src/accounts/accounts.ts",
-        "src/app/account/routes.test.ts",
-        "src/app/account/sign-in/link/route.test.ts",
-        "src/inbox/linkRequest.ts"
+        "docs/SPEC.md",
+        "docs/audits/last-audit.json",
+        "docs/sync/last-sync.json",
+        "docs/sync/proposed-spec-changes.md"
       ],
-      "depends_on": [36, 28],
-      "previously_audited": "authored by audit-2026-11-25-01; re-read after merge",
-      "audit_status": "audited (no findings; closes F-36-1 and F-28-5)",
+      "previously_audited": false,
+      "audit_status": "audited (docs and audit record only; no findings)",
       "findings": []
     },
     {
-      "pr": 39,
-      "title": "Record SPEC audit audit-2026-11-25-01",
-      "url": "https://github.com/adirathodd/kindword/pull/39",
+      "pr": 43,
+      "title": "Count sends with an unknown outcome toward the 90-day rule (F-12-4)",
+      "url": "https://github.com/adirathodd/kindword/pull/43",
       "author": "adirathodd",
-      "merge_commit": "f262ab3ceed9f0ef6ac6fc61705dd2723184baee",
+      "merge_commit": "3166329dd4c7125bcfbcb4609b3906ae636cbeb5",
       "merge_type": "squash",
-      "merged_at": "2026-11-26T03:40:47Z",
-      "changed_files": ["docs/audits/last-audit.json"],
-      "depends_on": [],
+      "merged_at": "2026-11-25T23:07:55-05:00",
+      "changed_files": [
+        "drizzle/0010_review_request_outcome_unknown.sql",
+        "drizzle/meta/_journal.json",
+        "src/db/schema.ts",
+        "src/email/resend.test.ts",
+        "src/email/resend.ts",
+        "src/requests/requests.test.ts",
+        "src/requests/requests.ts",
+        "drizzle/meta/*_snapshot.json"
+      ],
       "previously_audited": false,
-      "audit_status": "audited (audit record only; no findings)",
-      "findings": []
+      "audit_status": "audited (verified finding F-43-1, pre-existing from #7, exposed by #43; fixed in #60)",
+      "findings": ["F-43-1", "O-43-1"]
     },
     {
-      "pr": 40,
-      "title": "Daily digest and low-rating owner emails (FR-13)",
-      "url": "https://github.com/adirathodd/kindword/pull/40",
+      "pr": 45,
+      "title": "FR-23: SMS opt-in, terms and privacy pages + /terms and /privacy (DRAFT wording)",
+      "url": "https://github.com/adirathodd/kindword/pull/45",
       "author": "adirathodd",
-      "merge_commit": "2c653587c422bb6eddb7a026a6a02fa87c9d76c3",
+      "merge_commit": "33bea94ff3d6d404731c81f831c1e43241b467e4",
       "merge_type": "squash",
-      "merged_at": "2026-11-26T03:41:01Z",
-      "changed_files": ["src/notifications/ownerEmails.ts", "src/notifications/ownerEmails.test.ts"],
-      "depends_on": [],
-      "previously_audited": false,
-      "audit_status": "audited (one verified low-severity finding, unresolved pending decision D-2)",
-      "findings": ["F-40-1", "A-7", "A-8", "O-40-1", "O-40-2"]
-    },
-    {
-      "pr": 41,
-      "title": "Google review polling behind a ReviewSource interface (FR-11)",
-      "url": "https://github.com/adirathodd/kindword/pull/41",
-      "author": "adirathodd",
-      "merge_commit": "75a478230722f268bc59699324eeb7aa4c5d74da",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T03:41:18Z",
+      "merged_at": "2026-11-25T23:14:27-05:00",
       "changed_files": [
         ".env.example",
-        "src/google/businessProfile.ts",
-        "src/google/businessProfile.test.ts",
-        "src/google/tokenCrypto.ts",
-        "src/google/tokenCrypto.test.ts",
-        "src/reviews/poll.ts",
-        "src/reviews/poll.test.ts"
+        "docs/SPEC.md",
+        "drizzle/0011_sms_opt_ins.sql",
+        "drizzle/meta/_journal.json",
+        "src/accounts/accounts.ts",
+        "src/app/account/register/route.ts",
+        "src/app/privacy/route.ts",
+        "src/app/sms/[locationId]/privacy/route.ts",
+        "src/app/sms/[locationId]/route.ts",
+        "src/app/sms/[locationId]/terms/route.ts",
+        "src/app/terms/route.ts",
+        "src/compliance/compliance.test.ts",
+        "src/compliance/compliance.ts",
+        "src/db/schema.ts",
+        "src/inbox/http.ts",
+        "drizzle/meta/*_snapshot.json"
       ],
-      "depends_on": [],
       "previously_audited": false,
-      "audit_status": "audited (no verified bugs)",
-      "findings": ["A-7", "A-8", "O-41-1", "O-41-2", "O-41-3"]
+      "audit_status": "audited (no verified bugs; ambiguity A-45-1; SPEC status drift S-9)",
+      "findings": ["A-45-1", "S-9"]
     },
     {
-      "pr": 33,
-      "title": "Landing page: waitlist instead of setup-call request",
-      "url": "https://github.com/adirathodd/kindword/pull/33",
+      "pr": 46,
+      "title": "Keep job runs going when one location has a bad time zone (F-7-5, part 2)",
+      "url": "https://github.com/adirathodd/kindword/pull/46",
       "author": "adirathodd",
-      "merge_commit": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2",
+      "merge_commit": "3d3a32ed6a8e61c9e707acb316cad54c3e14b701",
       "merge_type": "squash",
-      "merged_at": "2026-11-26T03:48:09Z",
-      "changed_files": [
-        "drizzle/0009_waitlist.sql",
-        "drizzle/meta/0009_snapshot.json",
-        "drizzle/meta/_journal.json",
-        "public/landing/index.html",
-        "src/accounts/accounts.ts",
-        "src/app/api/waitlist/route.ts",
-        "src/app/api/waitlist/route.test.ts",
-        "src/db/schema.ts",
-        "src/waitlist/waitlist.ts"
-      ],
-      "depends_on": [],
+      "merged_at": "2026-11-25T23:14:40-05:00",
+      "changed_files": ["src/requests/requests.test.ts", "src/requests/requests.ts"],
       "previously_audited": false,
-      "audit_status": "audited (no verified bugs; SPEC gap S-8)",
-      "findings": ["S-8"]
+      "audit_status": "audited (no verified bugs; observation O-46-1)",
+      "findings": ["O-46-1"]
+    },
+    {
+      "pr": 44,
+      "title": "Run background jobs on Vercel Schedules + Queues with retries (FR-2a, FR-5, FR-6, FR-11, FR-12, FR-13, FR-22)",
+      "url": "https://github.com/adirathodd/kindword/pull/44",
+      "author": "adirathodd",
+      "merge_commit": "56b017b47365f59c329013a7d37cded42c779ed9",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T04:19:26+00:00",
+      "changed_files": [
+        "docs/SPEC.md",
+        "package-lock.json",
+        "package.json",
+        "src/app/api/jobs/route.ts",
+        "src/jobs/dispatch.test.ts",
+        "src/jobs/jobs.ts",
+        "src/jobs/run.test.ts",
+        "vercel.json"
+      ],
+      "previously_audited": false,
+      "audit_status": "audited (no verified bugs; D-9, D-11, D-12 already recorded in SPEC)",
+      "findings": []
+    },
+    {
+      "pr": 47,
+      "title": "Record the full Claude Doc sync (Doc rev 268, main 33bea94)",
+      "url": "https://github.com/adirathodd/kindword/pull/47",
+      "author": "adirathodd",
+      "merge_commit": "175a4e6f6459d1b557175a2c48ed0f6dcfe6ee62",
+      "merge_type": "squash",
+      "merged_at": "2026-11-25T23:27:43-05:00",
+      "changed_files": ["docs/SPEC.md", "docs/sync/proposed-spec-changes.md"],
+      "previously_audited": false,
+      "audit_status": "audited (docs only; no findings)",
+      "findings": []
+    },
+    {
+      "pr": 48,
+      "title": "Use the real contact address and domain (hello@kindword.fun)",
+      "url": "https://github.com/adirathodd/kindword/pull/48",
+      "author": "adirathodd",
+      "merge_commit": "47c816461636498033dcbb9433e463c51b115b62",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T05:04:52+00:00",
+      "changed_files": ["public/landing/index.html", "src/compliance/compliance.ts"],
+      "previously_audited": false,
+      "audit_status": "audited (contact address; SPEC status not updated, S-9)",
+      "findings": ["S-9"]
+    },
+    {
+      "pr": 50,
+      "title": "Say in .env.example that EMAIL_FROM_ADDRESS is a plain address",
+      "url": "https://github.com/adirathodd/kindword/pull/50",
+      "author": "adirathodd",
+      "merge_commit": "71b9d4a06bf03a725b80654dbd9c834b23e79830",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T00:34:38-05:00",
+      "changed_files": [".env.example"],
+      "previously_audited": false,
+      "audit_status": "audited (.env.example comment only; no findings)",
+      "findings": []
+    },
+    {
+      "pr": 52,
+      "title": "Fix two intermittent opt-out tests that matched short strings against random IDs",
+      "url": "https://github.com/adirathodd/kindword/pull/52",
+      "author": "adirathodd",
+      "merge_commit": "cc14a415d71a39799c73278cf8136662771e67f1",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T01:02:30-05:00",
+      "changed_files": ["src/optout/optout.test.ts"],
+      "previously_audited": false,
+      "audit_status": "audited (test-only; assertions narrowed to text fields, not weakened; no findings)",
+      "findings": []
+    },
+    {
+      "pr": 53,
+      "title": "Monthly report email to the owner (FR-17, Flow 4)",
+      "url": "https://github.com/adirathodd/kindword/pull/53",
+      "author": "adirathodd",
+      "merge_commit": "286b9a2b3f2514364673328a65c0a7a365f670d0",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T01:03:10-05:00",
+      "changed_files": [
+        "docs/SPEC.md",
+        "src/google/businessProfile.test.ts",
+        "src/google/businessProfile.ts",
+        "src/jobs/dispatch.test.ts",
+        "src/jobs/jobs.ts",
+        "src/notifications/ownerEmails.ts",
+        "src/reports/monthly.test.ts",
+        "src/reports/monthly.ts",
+        "vercel.json"
+      ],
+      "previously_audited": false,
+      "audit_status": "audited (no verified bugs; latent O-53-1)",
+      "findings": ["O-53-1", "O-53-2"]
+    },
+    {
+      "pr": 54,
+      "title": "Operator alerts: failed sends, expired Google access, review check not run in 3 hours (SPEC Reliability)",
+      "url": "https://github.com/adirathodd/kindword/pull/54",
+      "author": "adirathodd",
+      "merge_commit": "127044ccc64e88174d94f3e1d3d4e9dad441eaeb",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T01:21:09-05:00",
+      "changed_files": [
+        ".env.example",
+        "src/jobs/dispatch.test.ts",
+        "src/jobs/jobs.ts",
+        "src/notifications/operatorAlerts.test.ts",
+        "src/notifications/operatorAlerts.ts",
+        "vercel.json"
+      ],
+      "previously_audited": false,
+      "audit_status": "audited (no verified bugs; O-40-1 applies again)",
+      "findings": ["O-40-1"]
+    },
+    {
+      "pr": 55,
+      "title": "Pin Node 24 for the app, local dev and Vercel (FR-24 gap 4)",
+      "url": "https://github.com/adirathodd/kindword/pull/55",
+      "author": "adirathodd",
+      "merge_commit": "6d6e3f0ee901ea771a8059997daa5748ef76cade",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T01:21:22-05:00",
+      "changed_files": [".nvmrc", "package-lock.json", "package.json", "src/runtime.test.ts"],
+      "previously_audited": false,
+      "audit_status": "audited (no findings)",
+      "findings": []
+    },
+    {
+      "pr": 58,
+      "title": "SPEC status after #54 (operator alerts) and #55 (Node pin)",
+      "url": "https://github.com/adirathodd/kindword/pull/58",
+      "author": "adirathodd",
+      "merge_commit": "f00bf71304a7a22624884e8f4ce6ea9aeffec6b2",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T01:33:16-05:00",
+      "changed_files": ["docs/SPEC.md", "docs/sync/proposed-spec-changes.md"],
+      "previously_audited": false,
+      "audit_status": "audited (docs only; leaves S-9 in place)",
+      "findings": ["S-9"]
+    },
+    {
+      "pr": 57,
+      "title": "Delete customer rows 12 months after the last visit (SPEC Security, Retention)",
+      "url": "https://github.com/adirathodd/kindword/pull/57",
+      "author": "adirathodd",
+      "merge_commit": "f3d6d49fcfdc0ba3424542329ee46d854db43292",
+      "merge_type": "squash",
+      "merged_at": "2026-11-26T01:34:27-05:00",
+      "changed_files": [
+        "src/intake/importCsv.test.ts",
+        "src/intake/importCsv.ts",
+        "src/intake/pollSheet.test.ts",
+        "src/jobs/dispatch.test.ts",
+        "src/jobs/jobs.ts",
+        "src/retention/customers.test.ts",
+        "src/retention/customers.ts"
+      ],
+      "previously_audited": false,
+      "audit_status": "audited (no verified bugs; ambiguity A-57-1)",
+      "findings": ["A-57-1"]
     }
   ],
-  "not_in_scope": [],
+  "not_in_scope": ["open, unmerged PRs #49 (FR-15), #51 (FR-1 WIP), #59 (offboarded purge): next cycle if merged"],
   "direct_commits_outside_prs": [],
   "worktrees": {
-    "audit-pr38": "1ec9131 (base b822c46)",
-    "audit-pr39": "f262ab3 (base 1ec9131)",
-    "audit-pr40": "2c65358 (base f262ab3)",
-    "audit-pr41": "75a4782 (base 2c65358)",
-    "audit-pr33": "0d0c648 (base 75a4782)"
+    "audit-pr43": "3166329 (base 3c1377d): new redirect tests fail there (2 of 3), reproducing F-43-1; removed after use"
   },
+  "per_pr_method": "Each code PR was reviewed as its own diff (git show <merge>) against its parent and traced through callers on main at f3d6d49; a worktree was created only where a reproduction needed the PR's own tree (#43).",
   "completed_stages": [
     "scope_inventory",
-    "worktrees",
     "audit",
     "verification",
-    "remediation (none needed: no safely fixable verified bug)",
+    "remediation",
     "validation",
-    "fix_prs (none)",
+    "fix_prs",
     "mergeability",
     "report"
   ],
   "findings": [
     {
-      "id": "F-40-1",
-      "pr": 40,
-      "classification": "introduced_by_pr (interacts with the one-location owner session from #7/#28)",
-      "severity": "low",
-      "status": "unresolved (needs owner decision, tied to D-2)",
-      "spec": "FR-13 / Flow 3 step 3: the digest links to the owner's approval inbox, which is one page per location",
-      "summary": "digestEmail and lowRatingEmail link every location's email to /inbox. /inbox takes the location only from the session cookie (src/app/inbox/route.ts), and an owner session covers one location. For a business with two or more locations, an owner signed in to location A who opens location B's digest or low-rating email sees A's inbox, without B's waiting drafts.",
-      "verification": "code trace: ownerEmails.ts inboxUrl() ignores the location; ownerEmails.test.ts asserts the exact URL `${BASE}/inbox`; /inbox reads only the cookie; /account/inbox/[locationId] is POST-only, so no per-location GET link exists to point at",
-      "reason_not_fixed": "a correct link needs a per-location entry URL (for example a GET /account/inbox/<locationId> that switches the session, or /account for multi-location businesses), which is the open entry-point decision D-2. Pilots are single-location, where the link is correct."
+      "id": "F-43-1",
+      "pr": "43 (introduced by #7)",
+      "classification": "pre_existing (introduced by #7), exposed by #43",
+      "severity": "medium",
+      "status": "fixed in #60 (unmerged)",
+      "spec": "FR-7: the message includes the Google review link through our redirect, which counts clicks; Flow 2 step 3",
+      "summary": "A send whose outcome is unknown (timeout, lost connection, ambiguous 5xx) is marked failed with outcome_unknown and sent_at cleared, but may have reached the customer. recordClick and reviewLinkFor required sent_at, so that customer's link returned 404 instead of the review form.",
+      "verification": "new tests in src/requests/requests.test.ts fail on main f3d6d49 and at 3166329 (worktree), pass with the fix",
+      "fix": "redirect accepts sent_at not null OR (status failed AND outcome_unknown)"
     },
     {
-      "id": "A-7",
-      "pr": "40, 41",
-      "classification": "spec_ambiguity (interaction of #40 and #41)",
+      "id": "O-43-1",
+      "pr": 43,
+      "classification": "observation (low)",
       "status": "documented",
-      "summary": "If the owner replies to a review directly on Google, the next poll sets reviews.has_reply=true, but the existing draft stays awaiting_owner/held: it keeps appearing in every daily digest and is marked overdue after 48 hours, and once FR-15 exists an approval would replace the owner's own Google reply. Flow 3 step 5 says a draft stays until the owner acts; the SPEC does not say whether replying on Google counts. The low-rating alert already treats such a review as answered. Recommend a rule (for example: mark such drafts superseded and drop them from the digest)."
+      "summary": "askedRecently dates an outcome-unknown failure by scheduled_for because sent_at is cleared. A request held while its business was not live can go out up to 72 hours after scheduled_for, so its 90-day window can end up to 3 days early. Recommend keeping the attempt time (for example a separate attempted_at) if exact windows matter."
     },
     {
-      "id": "A-8",
-      "pr": "40, 41",
+      "id": "O-46-1",
+      "pr": 46,
+      "classification": "observation (unconfirmed)",
+      "status": "documented",
+      "summary": "sendDueRequests catches errors per row only before the claim. If the failure-path transaction in deliver() throws (database error after a provider error), the whole run throws, the row stays sent with no failed record, and the rest of the batch waits for the queue retry. Not a double send; rare."
+    },
+    {
+      "id": "A-45-1",
+      "pr": "45, 57",
+      "classification": "spec_ambiguity",
+      "status": "documented (owner to decide; SPEC not edited)",
+      "summary": "sms_opt_ins rows hold a phone number and are kept indefinitely: retention (12 months after the last visit) covers customer rows only and #57 keeps opt-in rows on purpose. Decide how long consent evidence is kept (TCPA record-keeping vs minimum data) and add it to the Data model and privacy pages. A lawyer should check the period."
+    },
+    {
+      "id": "A-57-1",
+      "pr": 57,
       "classification": "spec_ambiguity",
       "status": "documented",
-      "summary": "FR-24 and Flow 0 say nothing is imported or sent while a business is in onboarding. pollReviews reads reviews for onboarding businesses and the owner emails go to them (only offboarded is excluded). Flow 1 connects Google and checks the inbox during onboarding, so reading reviews looks intended, but the SPEC does not say whether owner digest and low-rating emails count as 'sent'. Related to A-6 (an unverified self-signup owner_email would receive them)."
+      "summary": "Same question as A-45-1 from the retention side; #57's PR raises it. Recorded once as A-45-1."
+    },
+    {
+      "id": "S-9",
+      "pr": "48, 58",
+      "classification": "spec_status_drift",
+      "status": "documented (SPEC not edited)",
+      "summary": "Implementation status FR-23 still says the support address is a placeholder (hello@kindword.example); #48 set CONTACT_EMAIL to hello@kindword.fun. src/compliance/compliance.ts still calls it a placeholder in a comment. Next SPEC sync should update the row (Doc and docs/SPEC.md)."
+    },
+    {
+      "id": "O-53-1",
+      "pr": 53,
+      "classification": "latent bug (not reproducible yet: FR-15 not built)",
+      "status": "documented",
+      "summary": "The monthly report counts replies posted from reply_drafts.posted_at. Drafts are purged with their review within 30 days (FR-22, purge at 29 days), so a reply posted early in a month can be gone before the report on the 1st. The Data model says own metrics survive the purge through the audit log (as approvals already do). Recommend FR-15 (#49) write a posted audit row and the report count those."
+    },
+    {
+      "id": "O-53-2",
+      "pr": 53,
+      "classification": "observation",
+      "status": "documented",
+      "summary": "Link clicks in the report can exceed requests sent: a click on an outcome-unknown send (now possible with #60) counts as a click but the send does not count as sent. Acceptable (real click); noted for reading the figures."
     },
     {
       "id": "O-40-1",
-      "pr": 40,
+      "pr": "40, 54",
       "classification": "observation (unconfirmed, performance)",
       "status": "documented",
-      "summary": "The low-rating query does a NOT EXISTS against audit_log by entity/entity_id/action; audit_log is indexed only on (location_id, at) and gets a row per location per poll (96 a day). Not measured; fine at pilot scale. Consider an index on (entity, entity_id, action) when owner emails run on a schedule."
-    },
-    {
-      "id": "O-40-2",
-      "pr": 40,
-      "classification": "observation (unconfirmed)",
-      "status": "documented",
-      "summary": "The low-rating idempotency key is the sorted review IDs cut to 256 characters (about 7 UUIDs). If a send's outcome is lost and new low-rated reviews arrive within 24 hours, the retry can reuse the earlier key with a different body; Resend answers 409, which resend.ts retries, so that location's alert keeps failing until the key expires. Rare; not reproduced against Resend."
-    },
-    {
-      "id": "O-41-1",
-      "pr": 41,
-      "classification": "observation (unconfirmed)",
-      "status": "documented",
-      "summary": "A 401 from the reviews list with a freshly minted access token (the refresh token itself still worked) is reported as token_revoked, so poll marks the token refresh_failed and stops polling until someone reconnects. Google normally signals scope or permission problems with 403, so this is unlikely; not checked against the real API (no outside accounts allowed)."
-    },
-    {
-      "id": "O-41-2",
-      "pr": 41,
-      "classification": "observation (unconfirmed)",
-      "status": "documented",
-      "summary": "For reviews Google auto-translates, the v4 comment field can hold '(Translated by Google) ... (Original) ...'. poll stores it as-is and leaves reviews.language null, so the draft (FR-12, rule 1: reply in the review's language) relies on the model picking the original language. Needs a check against a real profile."
-    },
-    {
-      "id": "O-41-3",
-      "pr": 41,
-      "classification": "test gap (drift prevention)",
-      "status": "documented",
-      "summary": "SPEC Provider notes: 'no other endpoint is called anywhere; a test fails the build if another Google method is called'. businessProfile.test.ts checks only that module's own calls. A repo-wide check (no file other than src/google/businessProfile.ts references mybusiness*.googleapis.com or businessprofile*.googleapis.com) would enforce 'anywhere'. No violation exists today (grep: only businessProfile.ts and the Sheets reader, which uses the Sheets API)."
-    },
-    {
-      "id": "S-8",
-      "pr": 33,
-      "classification": "spec_gap",
-      "status": "documented (owner to decide; SPEC not edited)",
-      "summary": "#33 adds a public waitlist (waitlist_entries: name, business name, email, Google Maps link, business kind; operator notice email). The SPEC's Scope, Data model and retention rules do not mention a waitlist, so the table has no stated retention or deletion rule (Security: collect the minimum personal data; retention rules cover customers only). Recommend adding waitlist_entries to the Data model with a retention period, and the landing page waitlist to Scope. Doc and docs/SPEC.md both need the edit."
+      "summary": "operatorAlerts.sendFailures also runs NOT EXISTS on audit_log by entity/entity_id/action, which has no index. Fine at pilot scale."
     }
   ],
   "observations": [
-    "#38 re-read after merge: both send failures are caught and give the usual answer; nothing logged but a fixed message. F-36-1 and F-28-5 are closed.",
-    "#40 traced: one digest per location per local day from 8 a.m. (DST from the zone database), only awaiting_owner/held drafts, overdue at 48 hours (same OVERDUE_MS as the inbox), no review text/names/reply text in either email, offboarded businesses and disabled accounts skipped, advisory lock + audit row + provider idempotency key; low-rating alert for rating <= 2, unanswered, once per review.",
-    "#41 traced: only the token endpoint and the v4 reviews list are called (test enforces it for this module), averageRating/totalReviewCount ignored, refresh moves fetched_at so FR-22 purge keeps live reviews and drops deleted ones, invalid_grant marks the token refresh_failed, refresh tokens AES-256-GCM with the location as associated data, errors carry status and code only.",
-    "#33 traced: same-origin check, per-IP limit, server-side Maps URL check, HTML escaped in the operator email, generated migration 0009 is additive (backward-compatible).",
-    "Still open from earlier audits: F-36-2, O-37-1, A-6, S-7, F-28-2, F-28-3, A-5, S-5, F-7-4, F-7-5, F-9-2 (timeout), F-12-2, F-12-3, F-12-4, S-1..S-4. S-7 (stale Implementation status) is resolved by sync-2026-11-26-01 in the same PR (#42); D-6, D-7, D-8 in docs/SPEC.md record A-7, A-8, S-8, and F-40-1 is listed with D-2."
+    "#43: refused = !retryable || 429 in both adapters; only outcome_unknown counts toward FR-9; DB check keeps outcome_unknown only on failed rows; migration 0010 additive.",
+    "#45: opt-in box unchecked, consent statement names the business, number, not-a-condition, frequency, rates, HELP/STOP; rows only on checked box and valid number; no logging; 404 once offboarded; migration 0011 additive with phone and wording checks.",
+    "#46: per-row catch rolls back only that row; bad zones sorted last in all three scans.",
+    "#44: handleCallback retry option matches @vercel/queue 0.11 types; maxDeliveries 6 in vercel.json equals MAX_DELIVERIES; config errors are not retried; logs carry counts and codes only.",
+    "#53: figures from Google kept in memory only; audit row holds month only; no review text, names or reply text in the email; idempotent (lock, audit row, key).",
+    "#54: no personal data in the alert email; each failure, token failure and stale period alerted once; offboarded businesses excluded, matching poll.ts.",
+    "#57: importer and purge share the per-location lock and the same cutoff (<=); suppression rows kept; cascade removes visits and requests.",
+    "#52: assertions narrowed to the fields that can carry personal data; not weakened.",
+    "Still open from earlier audits: F-40-1, A-7 (D-6), A-8 (D-7), S-8 (D-8), O-40-2, O-41-1, O-41-2, O-41-3, F-36-2, O-37-1, A-6, F-28-2, F-28-3, A-5, S-5, F-7-4, F-7-5 part 1, F-9-2, F-12-2, F-12-3, S-1..S-4. F-12-4 closed by #43."
   ],
-  "fix_prs": [],
+  "fix_prs": [
+    {
+      "pr": 60,
+      "url": "https://github.com/adirathodd/kindword/pull/60",
+      "branch": "claude/cool-meitner-b68fzc",
+      "base": "main @ f3d6d49",
+      "remediates": [43],
+      "findings": ["F-43-1"],
+      "depends_on": [],
+      "state": "open, not merged"
+    }
+  ],
   "validation": {
     "environment": "local Postgres 16 (CI uses 17); Node 24.22 from /opt/node24",
     "main_at_end_sha": {
-      "vitest": "520/520 passed",
+      "vitest": "594/594 passed"
+    },
+    "fix_pr_60": {
+      "vitest": "597/597 passed",
       "prettier": "clean",
       "eslint": "clean",
-      "next_build": "passed"
-    },
-    "per_pr_worktrees": {
-      "pr38": "src/app/account + src/inbox: 48/48",
-      "pr40": "src/notifications: 12/12",
-      "pr41": "src/google + src/reviews/poll.test.ts: 23/23",
-      "pr33": "src/app/api/waitlist: 22/22"
+      "next_build": "passed",
+      "regression": "2 new outcome-unknown tests fail without the fix (main and 3166329 worktree), pass with it"
     }
   },
-  "merge_order": ["this audit-record PR only (docs only; no fix PRs this cycle)"],
+  "merge_order": ["#60 (independent)", "this audit-record PR (docs only; independent of #60)"],
   "unresolved": [
-    "F-40-1 (needs D-2 decision)",
-    "A-7, A-8, S-8 need owner review",
-    "O-40-1, O-40-2, O-41-1, O-41-2 (unconfirmed)",
-    "O-41-3 (recommended guard test)",
-    "earlier: F-36-2, O-37-1, A-6, S-7, F-28-2, F-28-3, A-5, S-5, F-7-4, F-7-5, F-9-2 (timeout), F-12-2, F-12-3, F-12-4, S-1..S-4"
+    "A-45-1 (owner and lawyer decision)",
+    "S-9 (next SPEC sync)",
+    "O-43-1, O-46-1, O-53-1, O-53-2, O-40-1 (observations)",
+    "earlier items listed in observations"
   ],
-  "next_audit_starts_after": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2"
+  "next_audit_starts_after": "f3d6d49fcfdc0ba3424542329ee46d854db43292"
 }
