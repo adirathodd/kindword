@@ -97,6 +97,7 @@
   @media (max-width: 639px) { #flow .panel { --p-h: 360px; } #setup .panel { --p-h: 360px; }  }
   /* "Join the waitlist" links land on the form's first box, clear of the fixed header */
   #waitlist { scroll-margin-top: calc(var(--nav) + var(--s-5)); }
+  #waitlist:focus { outline: none; }
   @media (max-width: 639px) { #waitlist { scroll-margin-top: calc(var(--nav) + var(--s-3)); } }
 </style>
 </head>
@@ -387,5 +388,46 @@
 <script type="module" src="/landing/assets/system.js"></script>
 <script type="module" src="/landing/assets/motion/motion.js"></script>
 <script type="module" src="/landing/assets/layout/layout.js"></script>
+<script>
+/* "Join the waitlist" links glide to the form (about half a second) instead of jumping. Reduced motion: the plain jump.
+   The stop is the form's top less its scroll-margin-top (below the fixed header). A wheel, touch or key stops the glide. */
+(() => {
+  const form = document.getElementById('waitlist');
+  if (!form) return;
+  const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  let run = 0;
+  const stop = () => { run++; };
+  ['wheel', 'touchstart', 'keydown'].forEach(e => addEventListener(e, stop, { passive: true }));
+  document.addEventListener('click', e => {
+    const a = e.target.closest?.('a[href="#waitlist"]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    e.preventDefault();
+    if (location.hash !== '#waitlist') history.pushState(null, '', '#waitlist');
+    /* as the plain jump does: the focus leaves the link (so the phone's bar can step away) and Tab goes to the first box */
+    form.tabIndex = -1;
+    form.focus({ preventScroll: true });
+    /* the stop is read again each frame, so a section that changes height on the way does not move it */
+    const target = () => {
+      const margin = parseFloat(getComputedStyle(form).scrollMarginTop) || 0;
+      const max = document.documentElement.scrollHeight - innerHeight;
+      return Math.min(max, Math.max(0, form.getBoundingClientRect().top + scrollY - margin));
+    };
+    const from = scrollY;
+    const dist = Math.abs(target() - from);
+    if (dist < 2) return;
+    const dur = Math.min(700, 400 + dist / 20);
+    const id = ++run;
+    const t0 = performance.now();
+    const step = now => {
+      if (id !== run) return;
+      const t = Math.min(1, (now - t0) / dur);
+      scrollTo(0, from + (target() - from) * ease(t));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+})();
+</script>
 </body>
 </html>
