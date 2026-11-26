@@ -32,6 +32,7 @@ export const JOB_MAX_AGE_MS: Record<string, number> = {
   "review-requests": HOUR,
   reviews: HOUR,
   "operator-alerts": HOUR,
+  "optout-confirmations": HOUR,
   "owner-digest": 3 * HOUR,
   "monthly-report": 3 * HOUR,
   purge: 26 * HOUR,
