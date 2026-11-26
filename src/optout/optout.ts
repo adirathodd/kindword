@@ -3,9 +3,18 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
-import { auditLog, businesses, channel, customers, locations, suppressionList } from "../db/schema";
+import {
+  auditLog,
+  businesses,
+  channel,
+  customers,
+  locations,
+  optOutConfirmations,
+  suppressionList,
+} from "../db/schema";
 import { normalizePhone } from "../intake/normalize";
 import type { SmsProvider } from "../sms/provider";
+import { confirmationText, recordSendError } from "./confirmations";
 
 type Channel = (typeof channel.enumValues)[number];
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -102,28 +111,51 @@ export async function handleInboundSms(
   const from = normalizePhone(msg.from);
   if (!from) return { status: "ignored" }; // not a US number, so never one we texted
 
-  const { first, businessName } = await db.transaction(async (tx) => {
+  const { first, businessName, confirmationId } = await db.transaction(async (tx) => {
     const [loc] = await tx
       .select({ id: locations.id, businessName: businesses.name })
       .from(locations)
       .innerJoin(businesses, eq(businesses.id, locations.businessId))
       .where(eq(locations.smsNumber, normalizePhone(msg.to) ?? msg.to));
-    return { first: await optOut(tx, loc?.id ?? null, "sms", from, "customer_sms"), businessName: loc?.businessName };
+    const locationId = loc?.id ?? null;
+    const first = await optOut(tx, locationId, "sms", from, "customer_sms");
+    if (!first || msg.providerHandled) return { first, businessName: loc?.businessName, confirmationId: null };
+    // The confirmation is recorded with the opt-out (audit F-9-2), already claimed as this request's attempt, so the
+    // optout-confirmations job retries it if this send never finishes. Keyed by the suppression row that `first`
+    // was decided by, so a retried webhook cannot queue a second one.
+    const [sup] = await tx
+      .select({ id: suppressionList.id })
+      .from(suppressionList)
+      .where(
+        and(
+          locationId ? eq(suppressionList.locationId, locationId) : isNull(suppressionList.locationId),
+          eq(suppressionList.channel, "sms"),
+          eq(suppressionList.address, from),
+        ),
+      );
+    const [row] = await tx
+      .insert(optOutConfirmations)
+      .values({ suppressionId: sup.id, locationId, fromNumber: msg.to })
+      .onConflictDoNothing()
+      .returning({ id: optOutConfirmations.id });
+    return { first, businessName: loc?.businessName, confirmationId: row?.id ?? null };
   });
 
-  // Sent after commit: a crash here loses the confirmation but can never send two.
+  // Sent after commit, so the opt-out holds whatever happens to the text.
   if (!first) return { status: "opted_out", confirmation: "none" };
   if (msg.providerHandled) return { status: "opted_out", confirmation: "provider" };
-  const who = businessName ? `${businessName} texts` : "these texts";
+  if (!confirmationId) return { status: "opted_out", confirmation: "none" }; // `first` makes this unreachable
   try {
-    await provider.send(msg.to, msg.from, `You're unsubscribed from ${who}. No more messages will be sent.`);
+    await provider.send(msg.to, msg.from, confirmationText(businessName));
   } catch (e) {
+    await recordSendError(confirmationId, e, db);
     // The provider already has the sender opted out (Twilio 21610: they texted one of its keywords and its built-in
     // reply confirmed it), so the one confirmation went out and this is not a failure (Flow 2 step 4).
     if ((e as { recipientOptedOut?: unknown } | null)?.recipientOptedOut === true)
       return { status: "opted_out", confirmation: "provider" };
-    throw e;
+    throw e; // the row stays open; the optout-confirmations job resolves it within 5 minutes
   }
+  await db.update(optOutConfirmations).set({ status: "sent" }).where(eq(optOutConfirmations.id, confirmationId));
   return { status: "opted_out", confirmation: "sent" };
 }
 

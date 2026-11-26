@@ -270,3 +270,29 @@ describe("twilioConfigFromEnv", () => {
     }
   });
 });
+
+describe("TwilioSms.sentSince", () => {
+  const list = (status: number, json: unknown, urls: string[] = []) =>
+    new TwilioSms(config, (async (url: string) => {
+      urls.push(url);
+      return new Response(JSON.stringify(json), { status, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch);
+  const since = new Date("2026-11-26T15:00:00.700Z");
+
+  it("lists From/To and finds a message created in or after the opt-out's second", async () => {
+    const urls: string[] = [];
+    const sms = list(200, { messages: [{ date_created: "Thu, 26 Nov 2026 15:00:00 +0000" }] }, urls);
+    expect(await sms.sentSince("+12015550190", "+12015550100", since)).toBe(true);
+    const q = new URL(urls[0]).searchParams;
+    expect([q.get("From"), q.get("To")]).toEqual(["+12015550190", "+12015550100"]);
+  });
+
+  it("ignores an earlier text, such as the review request the customer replied STOP to", async () => {
+    const sms = list(200, { messages: [{ date_created: "Thu, 26 Nov 2026 14:59:59 +0000" }] });
+    expect(await sms.sentSince("+12015550190", "+12015550100", since)).toBe(false);
+  });
+
+  it("throws on an error response, so the outcome stays unknown and nothing is sent", async () => {
+    await expect(list(500, { code: 20500 }).sentSince("+1", "+1", since)).rejects.toThrow("status=500 code=20500");
+  });
+});
