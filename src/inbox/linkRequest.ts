@@ -88,7 +88,14 @@ export async function requestSignInLinks(
     const links = [];
     for (const l of mine)
       links.push({ name: l.name, ...(await createSignInLink(l.id, { baseUrl: deps.baseUrl, now, accountId }, db)) });
-    await deps.email.send(signInLinkEmail(b.businessName, links));
+    // FR-13: the same response whether or not the email belongs to an owner, including when the email provider
+    // fails (only a known email reaches this send, so a thrown error would answer differently). The unsent links
+    // are single use and expire in 15 minutes; the owner can ask again. No address or error text is logged.
+    try {
+      await deps.email.send(signInLinkEmail(b.businessName, links));
+    } catch {
+      console.warn("sign-in link email not sent");
+    }
   }
   return { ok: true };
 }

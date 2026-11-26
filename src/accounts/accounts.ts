@@ -300,6 +300,9 @@ export async function requestReset(emailInput: string, ip: string, deps: Deps, d
     .select({ id: ownerAccounts.id })
     .from(ownerAccounts)
     .where(and(eq(ownerAccounts.normalizedEmail, email), isNull(ownerAccounts.disabledAt)));
+  // FR-24: the same response whether or not the email has an account, including when the email provider fails
+  // (only an existing account reaches this send). The unsent link is single use and expires in 15 minutes; the owner
+  // can ask again. No address or error text is logged.
   if (a)
     await mail(
       deps,
@@ -310,7 +313,7 @@ export async function requestReset(emailInput: string, ip: string, deps: Deps, d
         url: `${deps.baseUrl}/account/reset/${await newToken(a.id, "reset_password", now, db)}`,
         label: "Choose a new password",
       },
-    );
+    ).catch(() => console.warn("password reset email not sent"));
   return { ok: true as const };
 }
 

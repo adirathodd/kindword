@@ -222,6 +222,29 @@ describe("email me a sign-in link", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("gives the same answer for a known and an unknown email when the email provider fails", async () => {
+    await business("down@link.example.test", ["Main", "Shore"]);
+    let attempts = 0;
+    vi.spyOn(routeDeps, "make").mockImplementation(() => ({
+      email: {
+        send: async () => {
+          attempts++;
+          throw new Error("provider down");
+        },
+      },
+      breach: { isBreached: async () => false },
+      baseUrl: BASE,
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const unknown = await ask("nobody@link.example.test");
+    const known = await ask("down@link.example.test");
+    expect(known.status).toBe(200);
+    expect(unknown.status).toBe(200);
+    expect(await known.text()).toBe(await unknown.text());
+    expect(attempts).toBe(1);
+    expect(warn.mock.calls.flat().join(" ")).not.toContain("down@link.example.test");
+  });
+
   it("rejects a malformed email without sending", async () => {
     const res = await ask("not an email");
     expect(res.status).toBe(400);
