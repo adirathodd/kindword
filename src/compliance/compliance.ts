@@ -14,7 +14,7 @@ export const SMS_TERMS_VERSION = "2026-11-25.2-draft";
 // Shown on every policy page; change with the versions above.
 const EFFECTIVE = "November 25, 2026 (draft)";
 // shortcut: placeholder until the owner picks a real support address; change it here before 10DLC submission.
-export const CONTACT_EMAIL = "hello@kindword.example";
+export const CONTACT_EMAIL = "hello@kindword.fun";
 
 export type Program = { locationId: string; businessId: string; name: string };
 
