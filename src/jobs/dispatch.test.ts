@@ -26,6 +26,9 @@ vi.mock("../requests/requests", async (orig) => ({
 }));
 vi.mock("../reviews/poll", () => ({ pollReviews: track("pollReviews", { locations: 0, newReviews: 0, failed: [] }) }));
 vi.mock("../reviews/draft", () => ({ draftPendingReviews: track("draftPendingReviews", { drafted: 0 }) }));
+vi.mock("../reviews/post", () => ({
+  postApprovedReplies: track("postApprovedReplies", { posted: 0, failed: [], waiting: [] }),
+}));
 vi.mock("../notifications/ownerEmails", () => ({
   sendLowRatingAlerts: track("sendLowRatingAlerts", { sent: 0, failed: 0 }),
   sendDailyDigests: track("sendDailyDigests", { sent: 0, failed: 0 }),
@@ -91,7 +94,7 @@ describe("dispatch", () => {
   it.each([
     ["sheet-intake", ["pollSheet"]],
     ["review-requests", ["runReviewRequestJobs"]],
-    ["reviews", ["pollReviews", "draftPendingReviews", "sendLowRatingAlerts"]],
+    ["reviews", ["pollReviews", "draftPendingReviews", "postApprovedReplies", "sendLowRatingAlerts"]],
     ["owner-digest", ["sendDailyDigests"]],
     ["purge", ["purgeExpiredReviews"]],
   ])("%s calls its job code", async (job, expected) => {

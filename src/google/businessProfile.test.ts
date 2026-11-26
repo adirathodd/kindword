@@ -220,6 +220,112 @@ describe("BusinessProfileClient.listReviews", () => {
   });
 });
 
+describe("BusinessProfileClient.postReply (FR-15)", () => {
+  const REVIEW_ID = "AbC-12_x";
+  const replyUrl = `${REVIEWS_API}/${LOC}/reviews/${REVIEW_ID}/reply`;
+  // Token grant, then the given responses for the reply call in order (the last one repeats).
+  function poster(...responses: (() => Response)[]) {
+    let n = 0;
+    return fakeFetch((c) =>
+      c.url === TOKEN_URL
+        ? json(200, { access_token: "at-1", expires_in: 3600 })
+        : responses[Math.min(n++, responses.length - 1)](),
+    );
+  }
+  const ok = () => json(200, { comment: "Thanks!", updateTime: "2026-11-26T10:00:00Z" });
+  const post = (impl: typeof fetch, over: { location?: string; reviewId?: string; comment?: string } = {}) =>
+    client(impl).postReply(
+      { googleLocationId: over.location ?? LOC, refreshToken: "rt" },
+      over.reviewId ?? REVIEW_ID,
+      over.comment ?? "Thanks for choosing us!",
+    );
+
+  it("PUTs the reply text to the review's v4 reply endpoint", async () => {
+    const g = poster(ok);
+    await post(g.impl);
+    const put = g.calls.find((c) => c.url !== TOKEN_URL)!;
+    expect(put.method).toBe("PUT");
+    expect(put.url).toBe(replyUrl);
+    expect(put.headers.Authorization).toBe("Bearer at-1");
+    expect(put.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(put.body!)).toEqual({ comment: "Thanks for choosing us!" });
+  });
+
+  it("retries a transient failure (the reply PUT is idempotent: Google keeps one reply per review)", async () => {
+    const g = poster(
+      () => json(503, {}),
+      () => json(429, {}),
+      ok,
+    );
+    await post(g.impl);
+    expect(g.calls.filter((c) => c.url === replyUrl)).toHaveLength(3);
+  });
+
+  it("maps Google's answers to safe codes", async () => {
+    const cases: [() => Response, string, boolean][] = [
+      [() => json(400, { error: { message: "Thanks for choosing us!" } }), "rejected", false],
+      [() => json(403, {}), "no_access", false],
+      [() => json(404, {}), "not_found", false],
+      [() => json(401, {}), "token_revoked", false],
+      [() => json(500, {}), "http_error", true],
+      [() => new Response("not json", { status: 200 }), "bad_response", true],
+    ];
+    for (const [res, code, retryable] of cases)
+      await expect(post(poster(res).impl)).rejects.toMatchObject({ code, retryable });
+  });
+
+  it("reports a revoked grant as token_revoked", async () => {
+    const g = fakeFetch((c) => (c.url === TOKEN_URL ? json(400, { error: "invalid_grant" }) : ok()));
+    await expect(post(g.impl)).rejects.toMatchObject({ code: "token_revoked", retryable: false });
+    expect(g.calls.every((c) => c.url === TOKEN_URL)).toBe(true);
+  });
+
+  it("refuses a bad location, review ID or reply text before calling Google", async () => {
+    const g = poster(ok);
+    for (const location of ["accounts/1/locations/2/../../x", "locations/2", ""])
+      await expect(post(g.impl, { location })).rejects.toMatchObject({ code: "invalid_location", retryable: false });
+    for (const reviewId of ["", "a/b", "../x", "a?b", "a b", "x".repeat(257)])
+      await expect(post(g.impl, { reviewId })).rejects.toMatchObject({ code: "invalid_review", retryable: false });
+    for (const comment of ["", "   ", "é".repeat(2049)])
+      // 2,049 two-byte characters is over 4,096 bytes
+      await expect(post(g.impl, { comment })).rejects.toMatchObject({ code: "invalid_reply", retryable: false });
+    expect(g.calls).toHaveLength(0);
+  });
+
+  it("accepts a reply of exactly 4,096 bytes", async () => {
+    const g = poster(ok);
+    await post(g.impl, { comment: "é".repeat(2048) });
+    expect(g.calls.filter((c) => c.url === replyUrl)).toHaveLength(1);
+  });
+
+  it("never puts the reply text, tokens or the client secret in an error", async () => {
+    const g = poster(() => json(400, { error: { message: "Thanks for choosing us! rt test-client-secret" } }));
+    const err = (await post(g.impl).catch((e) => e)) as GoogleReviewsError;
+    expect(err).toBeInstanceOf(GoogleReviewsError);
+    expect(`${err.message} ${err.stack}`).not.toMatch(/Thanks for choosing|test-client-secret|at-1/);
+  });
+
+  it("calls only the token endpoint, the v4 reviews list (GET) and a review's reply (PUT) (least privilege)", async () => {
+    const g = fakeFetch((c) => {
+      if (c.url === TOKEN_URL) return json(200, { access_token: "at", expires_in: 3600 });
+      return c.method === "PUT" ? ok() : json(200, { reviews: [review("a")] });
+    });
+    const c = client(g.impl);
+    await c.listReviews({ googleLocationId: LOC, refreshToken: "rt" });
+    await c.postReply({ googleLocationId: LOC, refreshToken: "rt" }, "a", "Thanks!");
+    const list = /^https:\/\/mybusiness\.googleapis\.com\/v4\/accounts\/\d+\/locations\/\d+\/reviews\?/;
+    const reply = /^https:\/\/mybusiness\.googleapis\.com\/v4\/accounts\/\d+\/locations\/\d+\/reviews\/[\w-]+\/reply$/;
+    for (const call of g.calls) {
+      const allowed =
+        (call.url === TOKEN_URL && call.method === "POST") ||
+        (list.test(call.url) && call.method === "GET") ||
+        (reply.test(call.url) && call.method === "PUT");
+      expect(allowed, `${call.method} ${call.url}`).toBe(true);
+    }
+    expect(g.calls.some((x) => x.method === "PUT")).toBe(true);
+  });
+});
+
 describe("googleOAuthConfigFromEnv", () => {
   it("reads the OAuth client and names what is missing without echoing values", () => {
     expect(
