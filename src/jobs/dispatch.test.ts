@@ -33,6 +33,9 @@ vi.mock("../notifications/ownerEmails", () => ({
 vi.mock("../reviews/purge", () => ({
   purgeExpiredReviews: track("purgeExpiredReviews", { reviews: 0, drafts: 0, cutoff: new Date() }),
 }));
+vi.mock("../reports/monthly", () => ({
+  sendMonthlyReports: track("sendMonthlyReports", { sent: 0, failed: 0, waiting: 0 }),
+}));
 vi.mock("../notifications/operatorAlerts", async (orig) => ({
   ...(await orig<object>()),
   sendOperatorAlerts: track("sendOperatorAlerts", {
@@ -42,9 +45,6 @@ vi.mock("../notifications/operatorAlerts", async (orig) => ({
     expiredTokens: 0,
     failedSends: 0,
   }),
-}));
-vi.mock("../reports/monthly", () => ({
-  sendMonthlyReports: track("sendMonthlyReports", { sent: 0, failed: 0, waiting: 0 }),
 }));
 
 const { JobFailedError, MAX_DELIVERIES, retryPolicy, runScheduled } = await import("./jobs");
