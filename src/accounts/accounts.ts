@@ -45,6 +45,9 @@ export const LIMITS = {
   resetEmail: { max: 5, windowMs: 60 * MINUTE },
   waitlistIp: { max: 5, windowMs: 60 * MINUTE },
   smsOptInIp: { max: 10, windowMs: 60 * MINUTE },
+  // Operator sign-in (src/operator/auth.ts): per IP only, so no one can lock the operator out from elsewhere; the
+  // authenticator code makes guessing hopeless anyway.
+  operatorSignInIp: { max: 10, windowMs: 15 * MINUTE },
 } as const;
 type Limit = keyof typeof LIMITS;
 

@@ -1,6 +1,7 @@
 // Data model from docs/SPEC.md ("Data model"). Hard constraints live here as DB constraints.
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   foreignKey,
   index,
@@ -380,6 +381,18 @@ export const accountSessions = pgTable("account_sessions", {
     .notNull()
     .references(() => ownerAccounts.id, { onDelete: "cascade" }),
   sessionTokenHash: text("session_token_hash").notNull().unique(),
+  expiresAt: ts("expires_at").notNull(),
+  revokedAt: ts("revoked_at"),
+});
+
+// Operator sessions (SPEC Security: operator login uses a strong password plus two-factor authentication). One
+// operator, configured by env (src/operator/auth.ts). totp_step is the authenticator-code time step that opened the
+// session: unique, so a code is used once.
+export const operatorSessions = pgTable("operator_sessions", {
+  id: id(),
+  sessionTokenHash: text("session_token_hash").notNull().unique(),
+  totpStep: bigint("totp_step", { mode: "number" }).notNull().unique(),
+  createdAt: ts("created_at").notNull().defaultNow(),
   expiresAt: ts("expires_at").notNull(),
   revokedAt: ts("revoked_at"),
 });

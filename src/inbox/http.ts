@@ -65,7 +65,7 @@ form{margin:.5rem 0 0}.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:cen
 button{font:inherit;font-weight:500;padding:.5rem 1rem;border-radius:var(--k-radius-md);border:1px solid var(--k-line);background:var(--k-surface);color:var(--k-ink);cursor:pointer}button.primary{background:var(--k-ink);border-color:var(--k-ink);color:var(--k-ink-on)}
 :focus-visible{outline:2px solid var(--k-ink);outline-offset:2px}
 details{margin-top:.5rem}summary{cursor:pointer;color:var(--k-ink);font-weight:500}label{display:flex;gap:.4rem;align-items:flex-start}.empty{color:var(--k-muted)}
-label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password],input[type=tel]{font:inherit;color:inherit;padding:.45rem .6rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card);width:100%;max-width:24rem;box-sizing:border-box}a{color:var(--k-ink)}`;
+label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password],input[type=tel],select{font:inherit;color:inherit;padding:.45rem .6rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card);width:100%;max-width:24rem;box-sizing:border-box}a{color:var(--k-ink)}`;
 
 const FLAG_LABELS: Record<string, string> = {
   low_rating: "Rating of 2 stars or lower",
