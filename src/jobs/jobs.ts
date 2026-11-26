@@ -13,6 +13,8 @@
 // - owner-digest: per-location advisory lock, one audit row per local day, idempotency key.
 // - purge: deletes under row locks; a rerun finds nothing left.
 // - operator-alerts: one advisory lock, one audit row per alerted problem, idempotency key.
+// - optout-confirmations: each attempt is claimed by a guarded update; an unknown outcome is checked with Twilio
+//   before any resend; nothing is sent after 5 minutes (src/optout/confirmations.ts).
 //
 // Results are counts and short codes only: never phone numbers, emails, message text, review text or names.
 import { isNotNull, and } from "drizzle-orm";
@@ -28,6 +30,8 @@ import { sendMonthlyReports } from "../reports/monthly";
 import { sendOperatorAlerts } from "../notifications/operatorAlerts";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
 import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
+import { sendPendingConfirmations } from "../optout/confirmations";
+import { purgeOffboardedBusinesses } from "../retention/businesses";
 import { purgeExpiredCustomers } from "../retention/customers";
 import { draftPendingReviews } from "../reviews/draft";
 import { pollReviews } from "../reviews/poll";
@@ -149,7 +153,8 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
     }),
 
   // FR-22: daily, with a one-day margin inside the 30-day limit. Then the SPEC Security retention rule: customers
-  // whose last visit is more than 12 months old, deleted under the importer's per-location lock.
+  // whose last visit is more than 12 months old, deleted under the importer's per-location lock, and businesses
+  // offboarded 29 days ago or more (everything within 30 days of offboarding).
   purge: () =>
     steps({
       purge: async () => {
@@ -157,6 +162,7 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
         return { reviews: r.reviews, drafts: r.drafts };
       },
       customers: async () => ({ customers: (await purgeExpiredCustomers()).customers }),
+      businesses: async () => ({ businesses: (await purgeOffboardedBusinesses()).businesses }),
     }),
 
   // FR-17: hourly; each location gets last month's report on the first run at or after DIGEST_HOUR local time on
@@ -194,7 +200,22 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
         return { ...(await sendOperatorAlerts({ email: email(), operatorEmail })) };
       },
     }),
+
+  // FR-8, Flow 2 step 4 (audit F-9-2): the inbound webhook publishes this job with a 100 s delay when its confirmation
+  // send fails; the 15-minute schedule only marks anything left over as expired.
+  "optout-confirmations": () =>
+    steps({
+      send: async () => {
+        const r = await sendPendingConfirmations(new TwilioSms(configure(() => twilioConfigFromEnv())));
+        if (r.open > 0) throw new ConfirmationsOpenError();
+        return { ...r };
+      },
+    }),
 };
+
+// Thrown while an opt-out confirmation is still open inside its 5 minutes, so retryPolicy redelivers in 30 s, then
+// 1 and 2 min, and every confirmation is sent or expired within its window.
+export class ConfirmationsOpenError extends Error {}
 
 // The message a static schedule publishes (Vercel Schedules, topic target). Only `name` is used: it is the
 // schedule's key in vercel.json, which matches a key of JOBS.

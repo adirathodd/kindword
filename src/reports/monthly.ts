@@ -7,7 +7,9 @@
 //   data).
 // - From our own records: review requests and reminders sent, link clicks, opt-outs at this location, replies the
 //   owner approved (and the median time to approve, from the audit log, which is not purged) and replies posted.
-//   We do not track delivery receipts yet, so "delivered" is not reported.
+//   "Delivered" counts the requests and reminders sent in the month that the carrier (Twilio status callback) or
+//   Resend confirmed delivered (src/requests/delivery.ts). It is left out while it is 0, which is also what a
+//   deployment without delivery receipts set up would show, so a 0 never reads as "nothing arrived".
 // Without a Google connection (manual-fallback mode) the report has our own figures only.
 //
 // The email carries no review text, reviewer names or reply text. Who gets it is the same as the daily digest
@@ -18,13 +20,14 @@
 // the month. One report per location per month, idempotent like the other owner emails: a per-location advisory
 // lock, an audit row (month=YYYY-MM, no figures) checked before sending and written in the same transaction, and a
 // stable provider idempotency key. The hourly monthly-report job runs it (src/jobs/jobs.ts, vercel.json).
-import { and, count, countDistinct, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, count, countDistinct, eq, exists, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, locations, oauthTokens, reviewRequests, suppressionList, visits } from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import { GoogleReviewsError, type GoogleReview, type ReviewSource } from "../google/businessProfile";
 import { decryptRefreshToken } from "../google/tokenCrypto";
 import { escapeHtml as e } from "../inbox/auth";
+import { DELIVERED_ACTION } from "../requests/delivery";
 import { DIGEST_HOUR, inboxUrl, lockLocation, recipients, type Recipient } from "../notifications/ownerEmails";
 
 const ACTOR = "system:monthly_report";
@@ -95,6 +98,7 @@ export function reportPeriod(now: Date, timeZone: string, sendHour = DIGEST_HOUR
 export type OwnFigures = {
   requestsSent: number;
   remindersSent: number;
+  delivered: number | null; // null: no delivery receipts for this month's sends (see the header)
   linkClicks: number;
   optOuts: number;
   repliesApproved: number;
@@ -140,9 +144,35 @@ export async function ownFigures(db: Pick<Db, "select">, locationId: string, sta
           lt(reviewRequests.sentAt, end),
         ),
       );
-  const [[requests], [reminders], [clicks], [optOuts], approvals, [posted]] = await Promise.all([
+  const [[requests], [reminders], [delivered], [clicks], [optOuts], approvals, [posted]] = await Promise.all([
     sentIn(1),
     sentIn(2),
+    // Sent in the month (request or reminder) and confirmed delivered, whenever the receipt came in.
+    db
+      .select({ n: count() })
+      .from(reviewRequests)
+      .innerJoin(visits, eq(visits.id, reviewRequests.visitId))
+      .where(
+        and(
+          eq(visits.locationId, locationId),
+          eq(reviewRequests.status, "sent"),
+          gte(reviewRequests.sentAt, start),
+          lt(reviewRequests.sentAt, end),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(auditLog)
+              .where(
+                and(
+                  eq(auditLog.locationId, locationId), // uses the (location_id, at) index
+                  eq(auditLog.entity, "review_request"),
+                  eq(auditLog.entityId, reviewRequests.id),
+                  eq(auditLog.action, DELIVERED_ACTION),
+                ),
+              ),
+          ),
+        ),
+      ),
     db
       .select({ n: count() })
       .from(reviewRequests)
@@ -196,6 +226,7 @@ export async function ownFigures(db: Pick<Db, "select">, locationId: string, sta
   return {
     requestsSent: requests.n,
     remindersSent: reminders.n,
+    delivered: delivered.n > 0 ? delivered.n : null,
     linkClicks: clicks.n,
     optOuts: optOuts.n,
     repliesApproved: approvals.length,
@@ -245,6 +276,7 @@ export function monthlyReportEmail(
   const ownLines = [
     `Review requests sent: ${own.requestsSent}`,
     `Reminders sent: ${own.remindersSent}`,
+    ...(own.delivered === null ? [] : [`Requests and reminders delivered: ${own.delivered}`]),
     `Review link clicks: ${own.linkClicks}`,
     `Customers who opted out: ${own.optOuts}`,
     `Replies you approved: ${own.repliesApproved}`,

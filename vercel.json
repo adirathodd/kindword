@@ -12,6 +12,7 @@
     "owner-digest": { "schedule": "0 * * * *", "topic": "jobs" },
     "purge": { "schedule": "30 6 * * *", "topic": "jobs" },
     "monthly-report": { "schedule": "10 * * * *", "topic": "jobs" },
-    "operator-alerts": { "schedule": "*/15 * * * *", "topic": "jobs" }
+    "operator-alerts": { "schedule": "*/15 * * * *", "topic": "jobs" },
+    "optout-confirmations": { "schedule": "*/15 * * * *", "topic": "jobs" }
   }
 }

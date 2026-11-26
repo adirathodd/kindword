@@ -10,7 +10,8 @@ import { GET as termsGet } from "../app/sms/[locationId]/terms/route";
 import { GET as privacyGet } from "../app/sms/[locationId]/privacy/route";
 import { GET as kwTerms } from "../app/terms/route";
 import { GET as kwPrivacy } from "../app/privacy/route";
-import { OPT_IN_WORDING_VERSION } from "./compliance";
+import { OPT_IN_WORDING_VERSION, SMS_TERMS_VERSION } from "./compliance";
+import { CUSTOMER_RETENTION_MONTHS } from "../retention/customers";
 import { TERMS_VERSION } from "../accounts/accounts";
 
 const BASE = "https://reviews.example.test";
@@ -99,6 +100,40 @@ describe("per-location pages", () => {
     ])
       expect(body).toContain(t);
     expect(body).not.toMatch(/share[^.]*for (their )?marketing purposes/i);
+  });
+});
+
+// SPEC Security, Retention: both privacy pages state the periods the purge jobs use, and nothing that contradicts them.
+describe("privacy pages state the SPEC retention periods", () => {
+  const stale = [
+    /while the business uses Kindword, and deleted on request or when it leaves/i,
+    /When it stops, or when you ask/i,
+  ];
+
+  it("per-client SMS privacy page", async () => {
+    const body = await (await get(privacyGet, live)).text();
+    expect(CUSTOMER_RETENTION_MONTHS).toBe(12);
+    expect(body).toContain("deleted 12 months after your last visit");
+    expect(body).toContain("everything we hold for it is deleted within 30 days");
+    expect(body).toContain("A record of an opt-out is kept, even after a deletion");
+    expect(body).toContain(`href="/sms/${live}"`); // the opt-in sign-up it keeps
+    for (const r of stale) expect(body).not.toMatch(r);
+  });
+
+  it("Kindword privacy policy", async () => {
+    const body = await kwPrivacy().text();
+    expect(body).toContain("Review text, reviewer names and reply drafts: deleted within 30 days of fetching");
+    expect(body).toContain("deleted 12 months after the customer's last visit");
+    expect(body).toContain("including its customers and owner accounts, is deleted within 30 days");
+    expect(body).toContain("Opt-out records are kept, even after a deletion");
+    for (const r of stale) expect(body).not.toMatch(r);
+  });
+
+  it("both pages carry the new versions", async () => {
+    expect(SMS_TERMS_VERSION).toBe("2026-11-26-draft");
+    expect(TERMS_VERSION).toBe("2026-11-26-draft");
+    expect(await (await get(privacyGet, live)).text()).toContain(`Version ${SMS_TERMS_VERSION}`);
+    expect(await kwPrivacy().text()).toContain(`Version ${TERMS_VERSION}`);
   });
 });
 
