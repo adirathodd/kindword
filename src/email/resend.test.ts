@@ -98,6 +98,7 @@ describe("ResendEmail.send", () => {
     const err = await email.send(message()).catch((e) => e);
     expect(err).toBeInstanceOf(ResendSendError);
     expect(err).toMatchObject({ status: 0, code: "timeout", retryable: true });
+    expect(err.refused).toBe(false); // may have been accepted
     expect(calls).toHaveLength(3);
     expect(sleeps).toEqual([500, 1000]);
   });
@@ -115,6 +116,7 @@ describe("ResendEmail.send", () => {
     const err = await email.send(message()).catch((e) => e);
     expect(err).toBeInstanceOf(ResendSendError);
     expect(err).toMatchObject({ status: 422, code: "validation_error", retryable: false });
+    expect(err.refused).toBe(true);
     expect(String(err.message)).not.toContain("sam@example.test");
     expect(calls).toHaveLength(1);
   });
