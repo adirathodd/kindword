@@ -1,7 +1,7 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only; Google is a fake ReplyPoster.
 import { and, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import { GoogleReviewsError, type ReplyPoster, type ReviewSourceLocation } from "../google/businessProfile";
@@ -26,6 +26,7 @@ class FakePoster implements ReplyPoster {
 }
 
 const businessIds: string[] = [];
+const locationIds: string[] = [];
 let n = 0;
 async function location(
   opts: {
@@ -49,6 +50,7 @@ async function location(
       googleLocationId,
     })
     .returning();
+  locationIds.push(l.id);
   const token = opts.token ?? "active";
   if (token !== "none")
     await db.insert(s.oauthTokens).values({
@@ -116,9 +118,18 @@ const auditOf = (draftId: string) =>
     .select()
     .from(s.auditLog)
     .where(and(eq(s.auditLog.entity, "reply_draft"), eq(s.auditLog.entityId, draftId)));
-const run = (poster: ReplyPoster, now = NOW) => postApprovedReplies({ poster, tokenSecret: SECRET, now });
+const run = (poster: ReplyPoster, extra: Partial<Parameters<typeof postApprovedReplies>[0]> = {}) =>
+  postApprovedReplies({ poster, tokenSecret: SECRET, now: NOW, ...extra });
 
 beforeAll(() => migrate(db, { migrationsFolder: "./drizzle" }));
+// Drafts a test leaves approved would otherwise fill the next test's batch.
+afterEach(async () => {
+  if (locationIds.length)
+    await db
+      .update(s.replyDrafts)
+      .set({ status: "rejected" })
+      .where(and(eq(s.replyDrafts.status, "approved"), inArray(s.replyDrafts.locationId, locationIds)));
+});
 afterAll(async () => {
   if (businessIds.length) await db.delete(s.businesses).where(inArray(s.businesses.id, businessIds));
 });
@@ -183,13 +194,15 @@ describe("postApprovedReplies", () => {
     );
   });
 
-  it("skips locations that are offboarded or not connected, leaving their drafts approved", async () => {
+  it("posts only for live businesses with a connected location, leaving other drafts approved", async () => {
     const offboarded = await draft(await location({ status: "offboarded" }));
+    const onboarding = await draft(await location({ status: "onboarding" }));
+    const paused = await draft(await location({ status: "paused" }));
     const revoked = await draft(await location({ token: "revoked" }));
     const none = await draft(await location({ token: "none" }));
     const poster = new FakePoster();
     await run(poster);
-    for (const d of [offboarded, revoked, none]) {
+    for (const d of [offboarded, onboarding, paused, revoked, none]) {
       expect(poster.for(d.googleReviewId)).toEqual([]);
       expect((await draftRow(d.draftId)).status).toBe("approved");
     }
@@ -225,7 +238,7 @@ describe("postApprovedReplies", () => {
 
   it("marks a draft failed when Google refuses it for good", async () => {
     const l = await location();
-    const cases = ["rejected", "not_found", "invalid_reply", "invalid_review"] as const;
+    const cases = ["rejected", "invalid_reply", "invalid_review"] as const;
     const drafts = await Promise.all(cases.map((c) => draft(l, { googleReviewId: `${c}x${Date.now()}` })));
     const poster = new FakePoster(
       new Map(drafts.map((d, i) => [d.googleReviewId, { error: new GoogleReviewsError(400, cases[i], false) }])),
@@ -254,5 +267,76 @@ describe("postApprovedReplies", () => {
     const res = await run(poster);
     expect((await draftRow(d.draftId)).status).toBe("approved");
     expect(res.waiting).toContainEqual({ draftId: d.draftId, code: "error" });
+  });
+
+  it("finishes a post that reached Google but was never recorded, instead of calling it the owner's reply", async () => {
+    const l = await location();
+    const d = await draft(l, { googleReviewId: `LOST${Date.now()}` });
+    // Google stored the reply, but the answer never arrived (timeout).
+    const poster = new FakePoster(
+      new Map([[d.googleReviewId, { error: new GoogleReviewsError(0, "timeout", true), times: 1 }]]),
+    );
+    await run(poster);
+    expect((await draftRow(d.draftId)).status).toBe("approved");
+    // The next poll sees our reply on Google.
+    await db.update(s.reviews).set({ hasReply: true }).where(eq(s.reviews.id, d.reviewId));
+    const res = await run(poster);
+    expect(await draftRow(d.draftId)).toMatchObject({ status: "posted", postedAt: NOW });
+    expect(res.failed.map((f) => f.draftId)).not.toContain(d.draftId);
+    expect(poster.for(d.googleReviewId)).toHaveLength(2); // the same text again: Google keeps one reply
+    expect((await auditOf(d.draftId)).filter((a) => a.action === "reply_post_attempt")).toHaveLength(2);
+  });
+
+  it("keeps a draft approved when Google answers 404 (lost access looks the same as a deleted review)", async () => {
+    const l = await location();
+    const d = await draft(l, { googleReviewId: `GONE${Date.now()}` });
+    const poster = new FakePoster(
+      new Map([[d.googleReviewId, { error: new GoogleReviewsError(404, "not_found", false) }]]),
+    );
+    const res = await run(poster);
+    expect((await draftRow(d.draftId)).status).toBe("approved");
+    expect(res.waiting).toContainEqual({ draftId: d.draftId, code: "not_found" });
+  });
+
+  it("skips locations whose poll failed in this run", async () => {
+    const l = await location();
+    const d = await draft(l);
+    const poster = new FakePoster();
+    const res = await run(poster, { skipLocationIds: new Set([l.locationId]) });
+    expect(poster.for(d.googleReviewId)).toEqual([]);
+    expect((await draftRow(d.draftId)).status).toBe("approved");
+    expect(res.waiting).toContainEqual({ draftId: d.draftId, code: "poll_failed" });
+  });
+
+  it("stops starting new posts when the time budget is used up", async () => {
+    const l = await location();
+    const a = await draft(l);
+    const b = await draft(l);
+    let t = 0;
+    const poster = new FakePoster();
+    const res = await run(poster, { budgetMs: 1000, clock: () => (t += 600) });
+    const called = [a, b].filter((d) => poster.for(d.googleReviewId).length > 0);
+    expect(called).toHaveLength(1);
+    expect(res.waiting.filter((w) => w.code === "time_budget").map((w) => w.draftId)).toContain(
+      [a, b].find((d) => !called.includes(d))!.draftId,
+    );
+  });
+
+  it("audits an unreadable token once per location per run", async () => {
+    const l = await location({ token: "garbled" });
+    await draft(l);
+    await draft(l);
+    await run(new FakePoster());
+    const rows = await db
+      .select()
+      .from(s.auditLog)
+      .where(
+        and(
+          eq(s.auditLog.locationId, l.locationId),
+          eq(s.auditLog.action, "reply_post_failed"),
+          eq(s.auditLog.detail, "code=token_unreadable"),
+        ),
+      );
+    expect(rows).toHaveLength(1);
   });
 });

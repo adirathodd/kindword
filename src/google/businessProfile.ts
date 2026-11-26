@@ -54,7 +54,8 @@ export interface ReplyPoster {
 // expired: Google answered invalid_grant; someone must reconnect), auth_failed (Google refused our OAuth client:
 // fix the configuration), no_access (403, or 404 on a read: the token's user cannot read this location),
 // too_many_pages, bad_response, timeout, network, http_error. Posting adds invalid_review and invalid_reply (refused
-// before any call), rejected (400: Google refused this reply) and not_found (404: the review is gone).
+// before any call), rejected (400: Google refused this reply) and not_found (404: the review is gone, or access to the
+// location was lost; Google answers both the same way).
 // retryable is true for failures a later run may get past on its own.
 export class GoogleReviewsError extends Error {
   constructor(

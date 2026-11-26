@@ -109,17 +109,21 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
   // FR-11, then FR-12 drafts for what polling found, then FR-15 posts of owner-approved replies, then the FR-13
   // low-rating email. Every run reads every review, so a missed run is caught up by the next one. Posting runs after
   // polling so has_reply is fresh when it checks for a reply the owner made on Google.
-  reviews: () =>
-    steps({
+  reviews: () => {
+    // Locations whose poll failed this run; null when the poll step itself failed. Posting needs a fresh has_reply.
+    let pollFailed: Set<string> | null = null;
+    return steps({
       poll: async () => {
         const source = new BusinessProfileClient(configure(() => googleOAuthConfigFromEnv()));
         const r = await pollReviews({ source, tokenSecret: googleTokenSecret() });
+        pollFailed = new Set(r.failed.map((f) => f.locationId));
         return { locations: r.locations, newReviews: r.newReviews, failed: count(r.failed.map((f) => f.code)) };
       },
       draft: async () => ({ ...(await draftPendingReviews(configure(() => draftModelFromEnv()))) }),
       post: async () => {
+        if (!pollFailed) return { skipped: "poll_failed" };
         const poster = new BusinessProfileClient(configure(() => googleOAuthConfigFromEnv()));
-        const r = await postApprovedReplies({ poster, tokenSecret: googleTokenSecret() });
+        const r = await postApprovedReplies({ poster, tokenSecret: googleTokenSecret(), skipLocationIds: pollFailed });
         return {
           posted: r.posted,
           failed: count(r.failed.map((f) => f.code)),
@@ -129,7 +133,8 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       lowRating: async () => ({
         ...(await sendLowRatingAlerts({ email: email(), baseUrl: configure(() => inboxBaseUrl()) })),
       }),
-    }),
+    });
+  },
 
   // FR-13: hourly; each location gets its digest on the first run at or after DIGEST_HOUR local time.
   "owner-digest": () =>

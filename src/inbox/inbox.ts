@@ -5,6 +5,7 @@
 import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, replyDrafts, reviews } from "../db/schema";
+import { MAX_REPLY_BYTES } from "../google/businessProfile";
 import type { OwnerSession } from "./auth";
 
 const HOUR = 60 * 60 * 1000;
@@ -115,7 +116,9 @@ export async function decide(
   if (decision.action === "edit") {
     text = decision.text.replace(/\r\n/g, "\n").trim();
     if (!text) return { ok: false, reason: "empty_text" };
-    if (text.length > MAX_REPLY_CHARS) return { ok: false, reason: "too_long" };
+    // Google takes at most 4,096 UTF-8 bytes (FR-15); accented or emoji text reaches that before 4,000 characters.
+    if (text.length > MAX_REPLY_CHARS || Buffer.byteLength(text, "utf8") > MAX_REPLY_BYTES)
+      return { ok: false, reason: "too_long" };
   }
 
   return db.transaction(async (tx) => {
