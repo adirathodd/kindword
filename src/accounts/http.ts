@@ -1,5 +1,6 @@
 // HTTP pieces of owner accounts (SPEC FR-24): cookie, providers from env, and the server-rendered pages. Same page
 // rules as the inbox (src/inbox/http.ts): no scripts, every value escaped, same-origin form posts only.
+import { after } from "next/server";
 import { escapeHtml as e, inboxBaseUrl } from "../inbox/auth";
 import { html, readCookie } from "../inbox/http";
 import { ResendEmail, resendConfigFromEnv } from "../email/resend";
@@ -16,6 +17,7 @@ export const routeDeps = {
       breach: new PwnedPasswords(),
       baseUrl: inboxBaseUrl(),
       operatorEmail: process.env.OPERATOR_EMAIL?.trim() || undefined,
+      later: (task) => after(task),
     };
   },
 };

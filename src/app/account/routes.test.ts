@@ -1,6 +1,6 @@
 // End-to-end tests of owner accounts (SPEC FR-24) through the real route handlers, against the Postgres in
 // DATABASE_URL. Fake data only: @acct.example.test emails, a fake email provider and a fake breach checker.
-import { eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeDeps } from "../../accounts/http";
@@ -91,6 +91,19 @@ async function verifiedAccount(email: string) {
   return { cookie: cookieOf(res), businessId: a.businessId, accountId: a.id };
 }
 
+// Collects the work routes hand to after() (Deps.later) so a test can check what ran before the response.
+function deferLater() {
+  const tasks: (() => Promise<void>)[] = [];
+  const base = routeDeps.make();
+  vi.spyOn(routeDeps, "make").mockImplementation(() => ({ ...base, later: (t) => void tasks.push(t) }));
+  return {
+    tasks,
+    flush: async () => {
+      for (const t of tasks.splice(0)) await t();
+    },
+  };
+}
+
 describe("sign-up", () => {
   it("is closed unless SIGNUP_OPEN=true", async () => {
     vi.stubEnv("SIGNUP_OPEN", "");
@@ -117,6 +130,30 @@ describe("sign-up", () => {
     expect(b).toMatchObject({ name: "Pat Plumbing", status: "onboarding", ownerEmail: "new@acct.example.test" });
     expect(sent.map((m) => m.to).sort()).toEqual(["new@acct.example.test", "ops@acct.example.test"]);
     expect(sent.every((m) => !m.text.includes(PW))).toBe(true);
+  });
+
+  it("does the account and email work after the response, so a new and a taken email answer alike (F-28-2)", async () => {
+    await register.POST(post(signUpForm("taken@acct.example.test")));
+    sent = [];
+    const later = deferLater();
+    const taken = await register.POST(post(signUpForm("taken@acct.example.test")));
+    const fresh = await register.POST(post(signUpForm("fresh@acct.example.test")));
+    expect(await taken.text()).toBe(await fresh.text());
+    // Before the response: no account row and no email on either path, and one deferred task each.
+    expect(sent).toEqual([]);
+    expect(
+      await db.select().from(s.ownerAccounts).where(eq(s.ownerAccounts.normalizedEmail, "fresh@acct.example.test")),
+    ).toEqual([]);
+    expect(later.tasks).toHaveLength(2);
+    await later.flush();
+    expect(sent.map((m) => m.to).sort()).toEqual([
+      "fresh@acct.example.test",
+      "ops@acct.example.test",
+      "taken@acct.example.test",
+    ]);
+    expect(
+      await db.select().from(s.ownerAccounts).where(eq(s.ownerAccounts.normalizedEmail, "fresh@acct.example.test")),
+    ).toHaveLength(1);
   });
 
   it("answers the same for an email that already has an account, without a second account", async () => {
@@ -239,6 +276,26 @@ describe("password reset", () => {
     const unknown = await resetReq.POST(post({ email: "nope@acct.example.test" }));
     expect(await known.text()).toBe(await unknown.text());
     expect(sent.map((m) => m.to)).toEqual(["p@acct.example.test"]);
+  });
+
+  it("looks up the account and sends after the response, so known and unknown emails answer alike (F-36-2)", async () => {
+    const { accountId } = await verifiedAccount("pl@acct.example.test");
+    sent = [];
+    const later = deferLater();
+    const known = await resetReq.POST(post({ email: "pl@acct.example.test" }));
+    const unknown = await resetReq.POST(post({ email: "nope@acct.example.test" }));
+    expect(await known.text()).toBe(await unknown.text());
+    expect(sent).toEqual([]);
+    const resetTokens = () =>
+      db
+        .select()
+        .from(s.accountTokens)
+        .where(and(eq(s.accountTokens.accountId, accountId), eq(s.accountTokens.purpose, "reset_password")));
+    expect(await resetTokens()).toEqual([]);
+    expect(later.tasks).toHaveLength(2);
+    await later.flush();
+    expect(sent.map((m) => m.to)).toEqual(["pl@acct.example.test"]);
+    expect(await resetTokens()).toHaveLength(1);
   });
 
   it("answers the same for a known and an unknown email when the email provider fails", async () => {

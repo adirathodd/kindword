@@ -2,7 +2,8 @@
 // one REST call. Sends from one verified address (a subdomain set up with SPF, DKIM and DMARC); the display name
 // comes from each message.
 // Transient failures (429, 5xx, network errors, timeouts) are retried with backoff under one Idempotency-Key, so a
-// retry after a lost response cannot send the same email twice. Nothing here logs or returns the recipient, the
+// retry after a lost response cannot send the same email twice. A Retry-After longer than MAX_DELAY_MS is not slept
+// through or cut short: the send stops and the error carries retryAfterMs so the caller can defer (F-12-3). Nothing here logs or returns the recipient, the
 // subject, the body or the API key.
 import { randomUUID } from "node:crypto";
 import type { EmailMessage, EmailProvider } from "./provider";
@@ -11,7 +12,7 @@ const API_URL = "https://api.resend.com/emails";
 const SEND_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 500;
-const MAX_DELAY_MS = 10_000; // a longer Retry-After is not waited out here; the job's own retry takes over
+const MAX_DELAY_MS = 10_000; // a longer Retry-After is not waited out here: the error carries it to the caller
 const MAX_IDEMPOTENCY_KEY = 256;
 
 // One address, no display name, no list. Deliberately strict: anything else is refused before it reaches Resend.
@@ -39,6 +40,7 @@ export class ResendSendError extends Error {
     readonly status: number,
     readonly code: string | null,
     readonly retryable: boolean,
+    readonly retryAfterMs: number | null = null, // Resend's Retry-After, when it sent one
   ) {
     super(`Resend send failed: status=${status} code=${code ?? "none"}`);
     this.name = "ResendSendError";
@@ -77,12 +79,12 @@ function validate(m: EmailMessage) {
 
 const retryableStatus = (status: number) => status === 429 || status === 409 || status >= 500;
 
-// Retry-After in seconds (Resend sends seconds on 429); falls back to exponential backoff.
-function delayFor(attempt: number, retryAfter: string | null) {
-  const seconds = retryAfter === null ? NaN : Number(retryAfter);
-  const ms = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : BASE_DELAY_MS * 2 ** (attempt - 1);
-  return Math.min(ms, MAX_DELAY_MS);
+// Retry-After in seconds (Resend sends seconds on 429).
+function retryAfterMs(header: string | null) {
+  const seconds = header === null ? NaN : Number(header);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null;
 }
+const backoff = (attempt: number) => BASE_DELAY_MS * 2 ** (attempt - 1);
 
 export class ResendEmail implements EmailProvider {
   private readonly fetchImpl: typeof fetch;
@@ -131,15 +133,16 @@ export class ResendEmail implements EmailProvider {
       } catch (e) {
         // Network error or timeout: the email may or may not have been accepted; the same key makes a retry safe.
         last = new ResendSendError(0, e instanceof Error && e.name === "TimeoutError" ? "timeout" : "network", true);
-        if (attempt < this.maxAttempts) await this.sleep(delayFor(attempt, null));
+        if (attempt < this.maxAttempts) await this.sleep(backoff(attempt));
         continue;
       }
       const json = (await res.json().catch(() => null)) as { id?: unknown; name?: unknown } | null;
       if (res.ok) return typeof json?.id === "string" ? json.id : undefined;
       const code = typeof json?.name === "string" && /^[a-z_]{1,64}$/.test(json.name) ? json.name : null;
-      last = new ResendSendError(res.status, code, retryableStatus(res.status));
-      if (!last.retryable) throw last;
-      if (attempt < this.maxAttempts) await this.sleep(delayFor(attempt, res.headers.get("retry-after")));
+      const wait = retryAfterMs(res.headers.get("retry-after"));
+      last = new ResendSendError(res.status, code, retryableStatus(res.status), wait);
+      if (!last.retryable || (wait !== null && wait > MAX_DELAY_MS)) throw last;
+      if (attempt < this.maxAttempts) await this.sleep(wait ?? backoff(attempt));
     }
     throw last;
   }

@@ -330,7 +330,7 @@ describe("sendMonthlyReports", () => {
       "Replies you approved: 3",
       "Typical time to approve (median): 2 hours",
       "Replies posted to Google: 2",
-      `Open your reply inbox: ${BASE}/inbox`,
+      `Open your reply inbox: ${BASE}/inbox?location=${t.locationId}`,
     ])
       expect(m.text).toContain(line);
     expect(m.html).toContain("Average rating of those reviews: 3.7 of 5");
