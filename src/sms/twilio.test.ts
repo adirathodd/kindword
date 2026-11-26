@@ -7,6 +7,7 @@ const SID = "AC00000000000000000000000000000000";
 const TOKEN = "test-auth-token-0123456789abcdef";
 const URL_ = "https://reviews.example.test/api/sms/inbound";
 const config = { accountSid: SID, authToken: TOKEN, webhookUrl: URL_ };
+const STATUS_URL = "https://reviews.example.test/api/sms/status";
 
 const PARAMS = {
   MessageSid: "SM0123456789abcdef0123456789abcdef",
@@ -121,6 +122,40 @@ describe("TwilioSms.parseInbound", () => {
   });
 });
 
+describe("TwilioSms.parseStatusCallback", () => {
+  const MSG = "SM0123456789abcdef0123456789abcdef";
+  const fields = { AccountSid: SID, MessageSid: MSG, MessageStatus: "delivered", To: "+12015550100" };
+  const req = (params: Record<string, string>, url = STATUS_URL, token = TOKEN) =>
+    new Request(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": twilioSignature(token, url, new URLSearchParams(params)),
+      },
+      body: new URLSearchParams(params),
+    });
+
+  it("reads the SID and status of a signed callback", async () => {
+    const sms = new TwilioSms({ ...config, statusCallbackUrl: STATUS_URL });
+    expect(await sms.parseStatusCallback(req(fields))).toEqual({ messageSid: MSG, status: "delivered" });
+    const legacy = { AccountSid: SID, SmsSid: MSG, SmsStatus: "Undelivered" };
+    expect(await sms.parseStatusCallback(req(legacy))).toEqual({ messageSid: MSG, status: "undelivered" });
+  });
+
+  it("refuses an inbound-message signature, another token or account, and a bad SID", async () => {
+    const sms = new TwilioSms({ ...config, statusCallbackUrl: STATUS_URL });
+    expect(await sms.parseStatusCallback(req(fields, URL_))).toBeNull();
+    expect(await sms.parseStatusCallback(req(fields, STATUS_URL, "other-token"))).toBeNull();
+    expect(await sms.parseStatusCallback(req({ ...fields, AccountSid: `AC${"1".repeat(32)}` }))).toBeNull();
+    expect(await sms.parseStatusCallback(req({ ...fields, MessageSid: "SM123" }))).toBeNull();
+    expect(await sms.parseStatusCallback(req({ ...fields, MessageStatus: "" }))).toBeNull();
+  });
+
+  it("accepts nothing when no status callback URL is configured", async () => {
+    expect(await new TwilioSms(config).parseStatusCallback(req(fields))).toBeNull();
+  });
+});
+
 describe("TwilioSms.send", () => {
   type Call = { url: string; init: RequestInit };
   const fakeFetch = (status: number, json: unknown, calls: Call[] = []) =>
@@ -139,6 +174,13 @@ describe("TwilioSms.send", () => {
     expect(h.Authorization).toBe(`Basic ${Buffer.from(`${SID}:${TOKEN}`).toString("base64")}`);
     const body = new URLSearchParams(String(calls[0].init.body));
     expect(Object.fromEntries(body)).toEqual({ From: "+12015550190", To: "+12015550100", Body: "hi" });
+  });
+
+  it("asks for a status callback when one is configured", async () => {
+    const calls: Call[] = [];
+    const sms = new TwilioSms({ ...config, statusCallbackUrl: STATUS_URL }, fakeFetch(201, { sid: "SMabc" }, calls));
+    await sms.send("+12015550190", "+12015550100", "hi");
+    expect(new URLSearchParams(String(calls[0].init.body)).get("StatusCallback")).toBe(STATUS_URL);
   });
 
   it("throws a TwilioSendError with only the status and Twilio code when refused", async () => {
@@ -246,8 +288,22 @@ describe("TwilioSms.send", () => {
 describe("twilioConfigFromEnv", () => {
   const env = { TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: TOKEN, APP_BASE_URL: "https://reviews.example.test/" };
 
-  it("derives the webhook URL from APP_BASE_URL", () => {
-    expect(twilioConfigFromEnv(env)).toEqual(config);
+  it("derives the webhook and status callback URLs from APP_BASE_URL", () => {
+    expect(twilioConfigFromEnv(env)).toEqual({ ...config, statusCallbackUrl: STATUS_URL });
+  });
+
+  it("prefers TWILIO_STATUS_CALLBACK_URL, else uses the webhook URL's origin", () => {
+    const statusCallbackUrl = "https://hooks.example.test/status";
+    expect(twilioConfigFromEnv({ ...env, TWILIO_STATUS_CALLBACK_URL: statusCallbackUrl }).statusCallbackUrl).toBe(
+      statusCallbackUrl,
+    );
+    expect(
+      twilioConfigFromEnv({ ...env, APP_BASE_URL: undefined, TWILIO_WEBHOOK_URL: "https://hooks.example.test/sms" })
+        .statusCallbackUrl,
+    ).toBe("https://hooks.example.test/api/sms/status");
+    expect(() => twilioConfigFromEnv({ ...env, TWILIO_STATUS_CALLBACK_URL: "hooks.example.test" })).toThrow(
+      /TWILIO_STATUS_CALLBACK_URL/,
+    );
   });
 
   it("prefers TWILIO_WEBHOOK_URL", () => {
