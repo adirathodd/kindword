@@ -12,6 +12,7 @@ import {
   type ReviewSourceLocation,
 } from "../google/businessProfile";
 import { encryptRefreshToken } from "../google/tokenCrypto";
+import { recordDelivery } from "../requests/delivery";
 import { googleFigures, median, reportPeriod, sendMonthlyReports, startOfLocalMonth } from "./monthly";
 
 const BASE = "https://app.example.test";
@@ -111,7 +112,14 @@ type T = Awaited<ReturnType<typeof tenant>>;
 
 async function request(
   t: T,
-  opts: { attempt: 1 | 2; sentAt: Date | null; status?: "sent" | "failed"; clickedAt?: Date },
+  opts: {
+    attempt: 1 | 2;
+    sentAt: Date | null;
+    status?: "sent" | "failed";
+    clickedAt?: Date;
+    channel?: "sms" | "email";
+    providerMessageId?: string;
+  },
 ) {
   const [c] = await db
     .insert(s.customers)
@@ -136,10 +144,11 @@ async function request(
     visitId: v.id,
     scheduledFor: opts.sentAt ?? NOV("10T12:00:00Z"),
     sentAt: opts.sentAt,
-    channel: "email",
+    channel: opts.channel ?? "email",
     status: opts.status ?? "sent",
     attempt: opts.attempt,
     clickedAt: opts.clickedAt ?? null,
+    providerMessageId: opts.providerMessageId ?? null,
   });
 }
 
@@ -321,6 +330,39 @@ describe("sendMonthlyReports", () => {
       source.calls.slice(0, callsBefore).filter((c) => c.googleLocationId === t.googleLocationId).length,
     );
     expect(await sentAudit(t.locationId)).toHaveLength(1);
+  });
+
+  it("reports requests and reminders delivered in the month, and leaves the line out without receipts", async () => {
+    const t = await tenant();
+    const other = await tenant();
+    const noReceipts = await tenant();
+    const id = (k: string) => `${k}-${t.locationId}`;
+    await request(t, { attempt: 1, sentAt: NOV("05T15:00:00Z"), channel: "sms", providerMessageId: id("sms1") });
+    await request(t, { attempt: 1, sentAt: NOV("06T15:00:00Z"), providerMessageId: id("em1") });
+    await request(t, { attempt: 2, sentAt: NOV("09T15:00:00Z"), channel: "sms", providerMessageId: id("sms2") });
+    await request(t, { attempt: 1, sentAt: NOV("07T15:00:00Z"), providerMessageId: id("em-no-receipt") });
+    await request(t, { attempt: 1, sentAt: new Date("2026-10-31T15:00:00Z"), providerMessageId: id("em-oct") });
+    await request(other, { attempt: 1, sentAt: NOV("05T15:00:00Z"), providerMessageId: id("other") });
+    await request(noReceipts, { attempt: 1, sentAt: NOV("05T15:00:00Z"), providerMessageId: id("quiet") });
+    for (const [ch, k] of [
+      ["sms", "sms1"],
+      ["sms", "sms1"], // repeated callback: counted once
+      ["email", "em1"],
+      ["sms", "sms2"],
+      ["email", "em-oct"], // sent in October
+      ["email", "other"], // another business
+    ] as const)
+      await recordDelivery(ch, id(k));
+
+    await run();
+    const [m] = to(email, t.locationId);
+    expect(m.text).toContain("Review requests sent: 3");
+    expect(m.text).toContain("Reminders sent: 1");
+    expect(m.text).toContain("Requests and reminders delivered: 3");
+    expect(m.html).toContain("Requests and reminders delivered: 3");
+    const [q] = to(email, noReceipts.locationId);
+    expect(q.text).toContain("Review requests sent: 1");
+    expect(q.text).not.toContain("delivered");
   });
 
   it("waits for the send hour on the 1st and catches up later in the month", async () => {
