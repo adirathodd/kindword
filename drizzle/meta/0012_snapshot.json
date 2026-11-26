@@ -1,5 +1,5 @@
 {
-  "id": "33e04f6c-dd95-4359-b737-c3089a30784e",
+  "id": "a5998108-5ef7-49c8-9dc2-ab0fd1939cab",
   "prevId": "98586d5f-1f75-42e0-8462-de915cebf6b3",
   "version": "7",
   "dialect": "postgresql",
@@ -809,72 +809,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.operator_sessions": {
-      "name": "operator_sessions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "session_token_hash": {
-          "name": "session_token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "totp_step": {
-          "name": "totp_step",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "operator_sessions_session_token_hash_unique": {
-          "name": "operator_sessions_session_token_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "session_token_hash"
-          ]
-        },
-        "operator_sessions_totp_step_unique": {
-          "name": "operator_sessions_totp_step_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "totp_step"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.owner_accounts": {
       "name": "owner_accounts",
       "schema": "",
@@ -1350,6 +1284,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "send_attempts": {
+          "name": "send_attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "maybe_sent_at": {
+          "name": "maybe_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

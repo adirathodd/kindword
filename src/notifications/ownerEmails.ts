@@ -31,7 +31,7 @@ const ACTOR = "system:owner_email";
 export type OwnerEmailDeps = { email: EmailProvider; baseUrl: string; now?: Date };
 export type OwnerEmailResult = { sent: number; failed: number };
 
-type Recipient = {
+export type Recipient = {
   locationId: string;
   locationName: string;
   timezone: string;
@@ -41,7 +41,7 @@ type Recipient = {
 
 // Locations whose owner can be emailed: an owner email on file, the business not offboarded, and no disabled
 // account. Same eligibility as the emailed sign-in link (src/inbox/linkRequest.ts).
-async function recipients(db: Db, locationIds?: string[]): Promise<Recipient[]> {
+export async function recipients(db: Db, locationIds?: string[]): Promise<Recipient[]> {
   const rows = await db
     .select({
       locationId: locations.id,
@@ -85,11 +85,13 @@ export function localDayAndHour(t: Date, timeZone: string) {
 }
 
 // Serializes sends for one location and one kind of email across concurrent runs; released at commit.
-const lockLocation = (tx: Pick<Db, "execute">, kind: string, locationId: string) =>
+export const lockLocation = (tx: Pick<Db, "execute">, kind: string, locationId: string) =>
   tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${kind}:${locationId}`}))`);
 
 const stars = (n: number) => `${"★".repeat(n)}${"☆".repeat(5 - n)}`;
-const inboxUrl = (baseUrl: string) => `${baseUrl}/inbox`;
+// Names the location: an owner session covers one location, so /inbox alone could open another location's inbox
+// for a business with several (audit F-40-1). /inbox checks the parameter against the session.
+export const inboxUrl = (baseUrl: string, locationId: string) => `${baseUrl}/inbox?location=${locationId}`;
 
 function waited(createdAt: Date, now: Date) {
   const hours = Math.max(0, Math.floor((now.getTime() - createdAt.getTime()) / (60 * 60 * 1000)));
@@ -119,7 +121,7 @@ export function digestEmail(r: Recipient, drafts: DigestDraft[], day: string, ba
   const head = `${n} ${n === 1 ? "reply is" : "replies are"} waiting for your approval at ${r.businessName} (${r.locationName})${
     overdue ? `, ${overdue} overdue (waiting 48 hours or more)` : ""
   }.`;
-  const url = inboxUrl(baseUrl);
+  const url = inboxUrl(baseUrl, r.locationId);
   const text = [
     head,
     "",
@@ -231,7 +233,7 @@ export function lowRatingEmail(r: Recipient, ratings: number[], reviewIds: strin
       : `${n} new reviews of 2 stars or lower for ${r.businessName} (${r.locationName}) need a reply.`;
   const body =
     "We are drafting a suggested reply for each one. You will find it in your reply inbox, marked for extra care.";
-  const url = inboxUrl(baseUrl);
+  const url = inboxUrl(baseUrl, r.locationId);
   const list = n === 1 ? [] : ratings.map((x) => `- ${x}-star review`);
   const text = [
     head,

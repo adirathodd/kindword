@@ -11,6 +11,7 @@
 //   audit check plus idempotency key (low-rating email).
 // - owner-digest: per-location advisory lock, one audit row per local day, idempotency key.
 // - purge: deletes under row locks; a rerun finds nothing left.
+// - operator-alerts: one advisory lock, one audit row per alerted problem, idempotency key.
 //
 // Results are counts and short codes only: never phone numbers, emails, message text, review text or names.
 import { isNotNull, and } from "drizzle-orm";
@@ -22,8 +23,11 @@ import { BusinessProfileClient, googleOAuthConfigFromEnv } from "../google/busin
 import { inboxBaseUrl } from "../inbox/auth";
 import { GoogleSheetsError, GoogleSheetsReader, googleSheetsConfigFromEnv } from "../intake/googleSheets";
 import { pollSheet } from "../intake/pollSheet";
+import { sendMonthlyReports } from "../reports/monthly";
+import { sendOperatorAlerts } from "../notifications/operatorAlerts";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
 import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
+import { purgeExpiredCustomers } from "../retention/customers";
 import { draftPendingReviews } from "../reviews/draft";
 import { pollReviews } from "../reviews/poll";
 import { purgeExpiredReviews } from "../reviews/purge";
@@ -126,12 +130,50 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       }),
     }),
 
-  // FR-22: daily, with a one-day margin inside the 30-day limit.
+  // FR-22: daily, with a one-day margin inside the 30-day limit. Then the SPEC Security retention rule: customers
+  // whose last visit is more than 12 months old, deleted under the importer's per-location lock.
   purge: () =>
     steps({
       purge: async () => {
         const r = await purgeExpiredReviews();
         return { reviews: r.reviews, drafts: r.drafts };
+      },
+      customers: async () => ({ customers: (await purgeExpiredCustomers()).customers }),
+    }),
+
+  // FR-17: hourly; each location gets last month's report on the first run at or after DIGEST_HOUR local time on
+  // the 1st. Idempotent: per-location advisory lock, one audit row per month (month only), idempotency key.
+  "monthly-report": () =>
+    steps({
+      report: async () => {
+        const source = new BusinessProfileClient(configure(() => googleOAuthConfigFromEnv()));
+        const tokenSecret = configure(() => {
+          const s = process.env.GOOGLE_TOKEN_SECRET;
+          if (!s || s.length < 32) throw new Error("GOOGLE_TOKEN_SECRET missing or shorter than 32 chars");
+          return s;
+        });
+        return {
+          ...(await sendMonthlyReports({
+            email: email(),
+            source,
+            tokenSecret,
+            baseUrl: configure(() => inboxBaseUrl()),
+          })),
+        };
+      },
+    }),
+
+  // SPEC Reliability: alert the operator when a send fails, a Google token expires, or the review check has not run
+  // in 3 hours. Every 15 minutes, on its own schedule so a stopped or misconfigured reviews job is still noticed.
+  "operator-alerts": () =>
+    steps({
+      alerts: async () => {
+        const operatorEmail = configure(() => {
+          const v = process.env.OPERATOR_EMAIL?.trim();
+          if (!v) throw new Error("OPERATOR_EMAIL missing");
+          return v;
+        });
+        return { ...(await sendOperatorAlerts({ email: email(), operatorEmail })) };
       },
     }),
 };
