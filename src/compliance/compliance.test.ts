@@ -90,7 +90,15 @@ describe("per-location pages", () => {
 
   it("privacy says numbers and consent are never shared or sold for marketing", async () => {
     const body = await (await get(privacyGet, live)).text();
-    expect(body).toContain("never sell, rent or share mobile numbers or SMS consent");
+    // Twilio 30908: non-sharing statement, plus frequency and rates on the policy itself.
+    for (const t of [
+      "No mobile information will be shared with third parties or affiliates for marketing or promotional purposes",
+      "opt-in data and consent will not be shared with any third parties",
+      "Up to 2 texts per job",
+      "Msg &amp; data rates may apply",
+    ])
+      expect(body).toContain(t);
+    expect(body).not.toMatch(/share[^.]*for (their )?marketing purposes/i);
   });
 });
 
@@ -151,6 +159,10 @@ describe("Kindword /terms and /privacy", () => {
       expect(res.status).toBe(200);
       expect(await res.text()).toContain(TERMS_VERSION);
     }
-    expect(await kwPrivacy().text()).toContain("never sell personal data");
+    const privacy = await kwPrivacy().text();
+    expect(privacy).toContain("never sell personal data");
+    expect(privacy).toContain("opt-in data and consent will not be shared with any third parties");
+    for (const t of ["Limitation of liability", "Governing law", "Acceptable use"])
+      expect(await kwTerms().text()).toContain(t);
   });
 });

@@ -24,7 +24,7 @@ export const VERIFY_TTL_MS = 24 * 60 * MINUTE;
 export const RESET_TTL_MS = 15 * MINUTE;
 export const ACCOUNT_SESSION_TTL_MS = SESSION_TTL_MS; // 30 days, like inbox sessions
 // Version of the terms and privacy policy shown on the sign-up page; bump when they change.
-export const TERMS_VERSION = "2026-11-25-draft";
+export const TERMS_VERSION = "2026-11-25.2-draft";
 
 const newSecret = () => randomBytes(32).toString("base64url");
 const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
