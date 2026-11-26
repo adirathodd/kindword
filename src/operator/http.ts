@@ -2,16 +2,15 @@
 // route uses, and the server-rendered pages. Same page rules as the inbox (src/inbox/http.ts): no scripts, every value
 // escaped, same-origin form posts only. The cookie is SameSite=Strict and sent only to /operator.
 import { escapeHtml as e, inboxBaseUrl } from "../inbox/auth";
-import { html, readCookie, redirect, sameOrigin } from "../inbox/http";
+import { notAllowed } from "../accounts/http";
+import { cookieHeader, html, readCookie, redirect, sameOrigin } from "../inbox/http";
 import { getOperatorSession, operatorConfigFromEnv, type OperatorSession } from "./auth";
 import { LANGUAGES, VERTICALS, type BusinessInput, type Fields, type LocationInput } from "./businesses";
 
 export const OPERATOR_COOKIE = "operator_session";
-const secure = (baseUrl: string) => (baseUrl.startsWith("https://") ? "; Secure" : "");
 export const operatorCookie = (secret: string, expiresAt: Date, baseUrl: string) =>
-  `${OPERATOR_COOKIE}=${secret}; Path=/operator; Expires=${expiresAt.toUTCString()}; HttpOnly; SameSite=Strict${secure(baseUrl)}`;
-export const clearOperatorCookie = (baseUrl: string) =>
-  `${OPERATOR_COOKIE}=; Path=/operator; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Strict${secure(baseUrl)}`;
+  cookieHeader(OPERATOR_COOKIE, "/operator", "Strict", baseUrl, secret, expiresAt);
+export const clearOperatorCookie = (baseUrl: string) => cookieHeader(OPERATOR_COOKIE, "/operator", "Strict", baseUrl);
 export const operatorSecret = (req: Request) => readCookie(req, OPERATOR_COOKIE);
 
 // The env-configured operator, or null (sign-in is off). The missing setting's name is never shown to visitors.
@@ -32,7 +31,6 @@ export async function formFields(req: Request): Promise<Fields> {
   };
 }
 
-export const notAllowed = () => html(403, "Not allowed", "<p>Please use the form on our site.</p>");
 export const notFound = () => html(404, "Not found", '<p><a href="/operator">Back to businesses</a></p>');
 
 // Every operator page and form goes through this: a valid operator session, and for posts, a same-origin request.

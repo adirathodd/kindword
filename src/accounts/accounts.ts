@@ -2,7 +2,6 @@
 // Sign-up creates the business in onboarding status; nothing imports or sends until the operator switches it to live.
 // Sign-up, sign-in and reset answer the same way whether or not the email has an account, and are rate-limited.
 // Tokens and session secrets are random, stored only as SHA-256 hashes. Audit rows carry IDs only.
-import { createHash, randomBytes } from "node:crypto";
 import { and, count, eq, gt, isNull, lt, sql, TransactionRollbackError } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import {
@@ -16,7 +15,7 @@ import {
   ownerSessions,
 } from "../db/schema";
 import type { EmailProvider } from "../email/provider";
-import { escapeHtml, looksLikeSecret, SESSION_TTL_MS } from "../inbox/auth";
+import { escapeHtml, looksLikeSecret, newSecret, SESSION_TTL_MS, sha256 } from "../inbox/auth";
 import { dummyHash, hashPassword, passwordProblem, verifyPassword, type BreachChecker } from "./password";
 
 const MINUTE = 60 * 1000;
@@ -26,8 +25,6 @@ export const ACCOUNT_SESSION_TTL_MS = SESSION_TTL_MS; // 30 days, like inbox ses
 // Version of the terms and privacy policy shown on the sign-up page; bump when they change.
 export const TERMS_VERSION = "2026-11-26-draft";
 
-const newSecret = () => randomBytes(32).toString("base64url");
-const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
 export const normalizeEmail = (s: string) => s.trim().toLowerCase();
 

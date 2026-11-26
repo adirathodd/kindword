@@ -5,7 +5,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { businesses, locations, smsOptIns } from "../db/schema";
 import { allow } from "../accounts/accounts";
-import { escapeHtml as e } from "../inbox/auth";
+import { escapeHtml as e, UUID_RE } from "../inbox/auth";
 import { normalizePhone } from "../intake/normalize";
 import { CUSTOMER_RETENTION_MONTHS } from "../retention/customers";
 
@@ -19,11 +19,9 @@ export const CONTACT_EMAIL = "hello@kindword.fun";
 
 export type Program = { locationId: string; businessId: string; name: string };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // The pages exist from onboarding on (10DLC vetting happens before go-live) and disappear once offboarded.
 export async function loadProgram(locationId: string, db: Db = defaultDb): Promise<Program | null> {
-  if (!UUID.test(locationId)) return null;
+  if (!UUID_RE.test(locationId)) return null;
   const [row] = await db
     .select({
       locationId: locations.id,

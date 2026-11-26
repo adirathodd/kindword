@@ -6,13 +6,12 @@
 // operator set up without an account can sign in too. No link goes to an offboarded business or a disabled account.
 // When the owner has an account (FR-24), the sessions the links start are tied to it, so a password reset ends them.
 // Nothing here logs or audits the email address; audit rows carry IDs only.
-import { createHash } from "node:crypto";
 import { and, asc, count, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { authAttempts, businesses, locations, ownerAccounts } from "../db/schema";
 import { afterResponse, type Later } from "../accounts/accounts";
 import type { EmailProvider } from "../email/provider";
-import { createSignInLink, escapeHtml } from "./auth";
+import { createSignInLink, escapeHtml, sha256 } from "./auth";
 
 const MINUTE = 60 * 1000;
 // The same limits as a password-reset request, which also emails a short-lived link.
@@ -23,7 +22,6 @@ export const LINK_LIMITS = {
 
 // Same shape check as sign-up (src/accounts/accounts.ts).
 const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
-const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 // Records one attempt in auth_attempts (keys are hashes, so no email or IP is stored) and says whether it is within
 // the limit. Same table and rule as the account limits; old rows are cleared as a side effect.

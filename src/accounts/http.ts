@@ -2,7 +2,7 @@
 // rules as the inbox (src/inbox/http.ts): no scripts, every value escaped, same-origin form posts only.
 import { after } from "next/server";
 import { escapeHtml as e, inboxBaseUrl } from "../inbox/auth";
-import { html, readCookie } from "../inbox/http";
+import { cookieHeader, html, readCookie } from "../inbox/http";
 import { ResendEmail, resendConfigFromEnv } from "../email/resend";
 import { MIN_PASSWORD, PwnedPasswords } from "./password";
 import type { Deps } from "./accounts";
@@ -30,11 +30,9 @@ export const clientIp = (req: Request) =>
 
 export const accountSecret = (req: Request) => readCookie(req, ACCOUNT_COOKIE);
 
-const secure = (baseUrl: string) => (baseUrl.startsWith("https://") ? "; Secure" : "");
 export const accountCookie = (secret: string, expiresAt: Date, baseUrl: string) =>
-  `${ACCOUNT_COOKIE}=${secret}; Path=/account; Expires=${expiresAt.toUTCString()}; HttpOnly; SameSite=Lax${secure(baseUrl)}`;
-export const clearAccountCookie = (baseUrl: string) =>
-  `${ACCOUNT_COOKIE}=; Path=/account; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax${secure(baseUrl)}`;
+  cookieHeader(ACCOUNT_COOKIE, "/account", "Lax", baseUrl, secret, expiresAt);
+export const clearAccountCookie = (baseUrl: string) => cookieHeader(ACCOUNT_COOKIE, "/account", "Lax", baseUrl);
 
 export async function formFields(req: Request) {
   const f = await req.formData().catch(() => null);

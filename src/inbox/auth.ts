@@ -13,9 +13,12 @@ const MINUTE = 60 * 1000;
 export const LINK_TTL_MS = 15 * MINUTE;
 export const SESSION_TTL_MS = 30 * 24 * 60 * MINUTE;
 
-const newSecret = () => randomBytes(32).toString("base64url");
-const hash = (secret: string) => createHash("sha256").update(secret, "utf8").digest("hex");
+// Shared by every sign-in kind (owner link, owner account, operator): a 256-bit random secret, and the SHA-256 hex
+// that is all the database keeps of it.
+export const newSecret = () => randomBytes(32).toString("base64url");
+export const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 // Tokens and session secrets are 32 random bytes in base64url (43 chars); anything else cannot be ours.
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const looksLikeSecret = (s: string | undefined | null): s is string => !!s && /^[A-Za-z0-9_-]{43}$/.test(s);
 
 export type OwnerSession = { sessionId: string; locationId: string };
@@ -59,7 +62,7 @@ export async function createSignInLink(
     .values({
       locationId,
       ownerEmail,
-      loginTokenHash: hash(token),
+      loginTokenHash: sha256(token),
       tokenExpiresAt: expiresAt,
       accountId: opts.accountId,
     })
@@ -123,10 +126,10 @@ export async function redeemSignInToken(
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
   const [row] = await db
     .update(ownerSessions)
-    .set({ sessionTokenHash: hash(secret), sessionExpiresAt: expiresAt })
+    .set({ sessionTokenHash: sha256(secret), sessionExpiresAt: expiresAt })
     .where(
       and(
-        eq(ownerSessions.loginTokenHash, hash(token)),
+        eq(ownerSessions.loginTokenHash, sha256(token)),
         isNull(ownerSessions.sessionTokenHash), // single use
         gt(ownerSessions.tokenExpiresAt, now),
         isNull(ownerSessions.revokedAt),
@@ -157,7 +160,7 @@ export async function getOwnerSession(
     .from(ownerSessions)
     .where(
       and(
-        eq(ownerSessions.sessionTokenHash, hash(secret)),
+        eq(ownerSessions.sessionTokenHash, sha256(secret)),
         gt(ownerSessions.sessionExpiresAt, now),
         isNull(ownerSessions.revokedAt),
       ),
@@ -170,7 +173,7 @@ export async function signOut(secret: string | undefined | null, db: Db = defaul
   const [row] = await db
     .update(ownerSessions)
     .set({ revokedAt: new Date() })
-    .where(and(eq(ownerSessions.sessionTokenHash, hash(secret)), isNull(ownerSessions.revokedAt)))
+    .where(and(eq(ownerSessions.sessionTokenHash, sha256(secret)), isNull(ownerSessions.revokedAt)))
     .returning({ id: ownerSessions.id, locationId: ownerSessions.locationId });
   if (row)
     await db.insert(auditLog).values({

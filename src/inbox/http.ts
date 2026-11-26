@@ -27,13 +27,24 @@ export function readCookie(req: Request, name: string) {
   return undefined;
 }
 
-const secure = (baseUrl: string) => (baseUrl.startsWith("https://") ? "; Secure" : "");
+// Every session cookie (owner inbox, owner account, operator): HttpOnly, scoped to its own path, Secure on https.
+// No value and no expiry clears it.
+export const cookieHeader = (
+  name: string,
+  path: string,
+  sameSite: "Lax" | "Strict",
+  baseUrl: string,
+  value = "",
+  expiresAt = new Date(0),
+) =>
+  `${name}=${value}; Path=${path}; Expires=${expiresAt.toUTCString()}; HttpOnly; SameSite=${sameSite}${
+    baseUrl.startsWith("https://") ? "; Secure" : ""
+  }`;
 
 export const sessionCookie = (secret: string, expiresAt: Date, baseUrl: string) =>
-  `${SESSION_COOKIE}=${secret}; Path=/inbox; Expires=${expiresAt.toUTCString()}; HttpOnly; SameSite=Lax${secure(baseUrl)}`;
+  cookieHeader(SESSION_COOKIE, "/inbox", "Lax", baseUrl, secret, expiresAt);
 
-export const clearSessionCookie = (baseUrl: string) =>
-  `${SESSION_COOKIE}=; Path=/inbox; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax${secure(baseUrl)}`;
+export const clearSessionCookie = (baseUrl: string) => cookieHeader(SESSION_COOKIE, "/inbox", "Lax", baseUrl);
 
 // Form posts must come from our own pages. SameSite=Lax already keeps the cookie off cross-site posts; this also
 // refuses them outright (and covers the sign-in form, which has no cookie yet).
@@ -143,8 +154,6 @@ export function inboxPage(inbox: Inbox, notice: string | null) {
     `${n ? `<p class="notice${n[1] ? " error" : ""}" role="status">${e(n[0])}</p>` : ""}<h2>Waiting for you (${inbox.pending.length})</h2>${pending}${approved}<h2>Posted in the last 30 days</h2>${posted}<form method="post" action="/inbox/sign-out"><button type="submit">Sign out</button></form>`,
   );
 }
-
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // An owner email named a location the session does not cover (audit F-40-1). Shows nothing about either location:
 // the account route checks the location belongs to the signed-in business before opening its inbox.

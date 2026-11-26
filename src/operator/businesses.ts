@@ -5,6 +5,7 @@
 import { and, asc, count, eq } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses, locations } from "../db/schema";
+import { UUID_RE } from "../inbox/auth";
 import type { OperatorSession } from "./auth";
 
 // Home services only (SPEC Decisions: no healthcare or finance). home_services is the self-serve sign-up default.
@@ -36,7 +37,6 @@ const MAX_NAME = 120;
 const MAX_TONE = 1000;
 const MAX_FACTS = 2000;
 const MAX_LINK = 500;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type Fields = { get(name: string): string; all(name: string): string[] };
 export type BusinessInput = {

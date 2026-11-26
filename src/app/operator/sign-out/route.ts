@@ -2,7 +2,8 @@
 import { inboxBaseUrl } from "../../../inbox/auth";
 import { redirect, sameOrigin } from "../../../inbox/http";
 import { operatorSignOut } from "../../../operator/auth";
-import { clearOperatorCookie, notAllowed, operatorSecret } from "../../../operator/http";
+import { notAllowed } from "../../../accounts/http";
+import { clearOperatorCookie, operatorSecret } from "../../../operator/http";
 
 export async function POST(req: Request) {
   const baseUrl = inboxBaseUrl();

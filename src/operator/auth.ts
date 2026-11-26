@@ -4,17 +4,15 @@
 // any of them missing, operator sign-in is off. A wrong email, password or code all get the same answer; guesses
 // are rate-limited per IP; each authenticator code opens at most one session (operator_sessions.totp_step is unique).
 // Sessions last 12 hours and store only a SHA-256 of the cookie secret. Audit rows carry IDs only.
-import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { allow, normalizeEmail } from "../accounts/accounts";
 import { dummyHash, verifyPassword } from "../accounts/password";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, operatorSessions } from "../db/schema";
-import { looksLikeSecret } from "../inbox/auth";
+import { looksLikeSecret, newSecret, sha256 } from "../inbox/auth";
 import { base32Decode, verifyTotp } from "./totp";
 
 export const OPERATOR_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 export type OperatorConfig = { email: string; passwordHash: string; totpSecret: string };
 
@@ -55,7 +53,7 @@ export async function operatorSignIn(
   const step = verifyTotp(config.totpSecret, input.code.trim(), now);
   if (!emailOk || !passwordOk || step === null) return { ok: false, reason: "invalid" };
 
-  const secret = randomBytes(32).toString("base64url");
+  const secret = newSecret();
   const expiresAt = new Date(now.getTime() + OPERATOR_SESSION_TTL_MS);
   // A code already used for a session (replay) inserts nothing.
   const [row] = await db

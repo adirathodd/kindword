@@ -3,7 +3,8 @@ import { clientIp } from "../../../accounts/http";
 import { inboxBaseUrl } from "../../../inbox/auth";
 import { redirect, sameOrigin } from "../../../inbox/http";
 import { operatorSignIn } from "../../../operator/auth";
-import { formFields, notAllowed, operatorConfig, operatorCookie, signInPage } from "../../../operator/http";
+import { notAllowed } from "../../../accounts/http";
+import { formFields, operatorConfig, operatorCookie, signInPage } from "../../../operator/http";
 
 export async function GET() {
   return signInPage({ disabled: !operatorConfig() });
