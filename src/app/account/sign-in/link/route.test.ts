@@ -245,6 +245,22 @@ describe("email me a sign-in link", () => {
     expect(warn.mock.calls.flat().join(" ")).not.toContain("down@link.example.test");
   });
 
+  it("creates links and sends after the response, so known and unknown emails answer alike (F-36-2)", async () => {
+    const { locations } = await business("later@link.example.test", ["Main"]);
+    const tasks: (() => Promise<void>)[] = [];
+    const base = routeDeps.make();
+    vi.spyOn(routeDeps, "make").mockImplementation(() => ({ ...base, later: (t) => void tasks.push(t) }));
+    const known = await ask("later@link.example.test");
+    const unknown = await ask("nobody@link.example.test");
+    expect(await known.text()).toBe(await unknown.text());
+    // Before the response: no link row and no email on either path, and one deferred task each.
+    expect(sent).toEqual([]);
+    expect(await db.select().from(s.ownerSessions).where(eq(s.ownerSessions.locationId, locations[0].id))).toEqual([]);
+    expect(tasks).toHaveLength(2);
+    for (const t of tasks) await t();
+    expect(sent.map((m) => m.to)).toEqual(["later@link.example.test"]);
+  });
+
   it("rejects a malformed email without sending", async () => {
     const res = await ask("not an email");
     expect(res.status).toBe(400);
