@@ -1,5 +1,5 @@
 {
-  "id": "5050ca63-1cc3-41da-9e76-17d7bac1d7f3",
+  "id": "a5998108-5ef7-49c8-9dc2-ab0fd1939cab",
   "prevId": "98586d5f-1f75-42e0-8462-de915cebf6b3",
   "version": "7",
   "dialect": "postgresql",
@@ -362,12 +362,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'onboarding'"
-        },
-        "offboarded_at": {
-          "name": "offboarded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -1290,6 +1284,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "send_attempts": {
+          "name": "send_attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "maybe_sent_at": {
+          "name": "maybe_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

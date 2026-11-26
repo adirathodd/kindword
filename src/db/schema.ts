@@ -57,7 +57,7 @@ export const businesses = pgTable(
     // onboarding; the AI drafter may use nothing else about the business (SPEC: AI reply generation, rule 4).
     approvedFacts: text("approved_facts"),
     status: businessStatus("status").notNull().default("onboarding"),
-    // When the business was switched to offboarded. Set and cleared by a database trigger (migration 0013) whenever
+    // When the business was switched to offboarded. Set and cleared by a database trigger (migration 0014) whenever
     // status changes, so no code path can offboard without it. Everything for the business is deleted within 30 days
     // of this time (SPEC Security, Retention; src/retention/businesses.ts).
     offboardedAt: ts("offboarded_at"),
@@ -195,6 +195,12 @@ export const reviewRequests = pgTable(
     // A failed send that may still have reached the customer (timeout, lost connection, ambiguous 5xx). Counts as
     // asked for FR-9.
     outcomeUnknown: boolean("outcome_unknown").notNull().default(false),
+    // Email sends that hit a retryable provider error (F-12-2): how many sends were tried, and when the first one that
+    // may have reached the customer was. A retry reuses the Resend idempotency key, which Resend keeps for 24 hours,
+    // so no retry goes out more than EMAIL_RETRY_WINDOW_MS after maybe_sent_at. A row with maybe_sent_at counts as
+    // asked (FR-9) and keeps its link working (FR-7) whatever its status.
+    sendAttempts: smallint("send_attempts").notNull().default(0),
+    maybeSentAt: ts("maybe_sent_at"),
   },
   (t) => [
     unique().on(t.visitId, t.channel, t.attempt),

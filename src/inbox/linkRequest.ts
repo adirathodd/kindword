@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { and, asc, count, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { authAttempts, businesses, locations, ownerAccounts } from "../db/schema";
+import { afterResponse, type Later } from "../accounts/accounts";
 import type { EmailProvider } from "../email/provider";
 import { createSignInLink, escapeHtml } from "./auth";
 
@@ -39,7 +40,7 @@ async function allow(limit: keyof typeof LINK_LIMITS, value: string, now: Date, 
   return n < max;
 }
 
-export type LinkRequestDeps = { email: EmailProvider; baseUrl: string; now?: Date };
+export type LinkRequestDeps = { email: EmailProvider; baseUrl: string; now?: Date; later?: Later };
 export type LinkRequestResult = { ok: true } | { ok: false; error: string } | { ok: false; limited: true };
 
 // ok:true means "if that email is an owner's, we sent a link", whether or not anything was sent.
@@ -55,7 +56,12 @@ export async function requestSignInLinks(
   const okIp = await allow("signInLinkIp", ip, now, db);
   const okEmail = await allow("signInLinkEmail", email, now, db);
   if (!okIp || !okEmail) return { ok: false, limited: true };
+  // The lookup, links and emails run after the response, so a known email answers as fast as an unknown one.
+  await afterResponse(deps, "sign-in link email", () => sendLinks(email, deps, now, db));
+  return { ok: true };
+}
 
+async function sendLinks(email: string, deps: LinkRequestDeps, now: Date, db: Db) {
   const owned = await db
     .select({
       businessId: businesses.id,
@@ -68,7 +74,7 @@ export async function requestSignInLinks(
     .leftJoin(ownerAccounts, eq(ownerAccounts.businessId, businesses.id))
     .where(and(sql`lower(trim(${businesses.ownerEmail})) = ${email}`, ne(businesses.status, "offboarded")));
   const eligible = owned.filter((b) => !b.accountDisabledAt);
-  if (!eligible.length) return { ok: true };
+  if (!eligible.length) return;
 
   const locs = await db
     .select({ id: locations.id, name: locations.name, businessId: locations.businessId })
@@ -97,7 +103,6 @@ export async function requestSignInLinks(
       console.warn("sign-in link email not sent");
     }
   }
-  return { ok: true };
 }
 
 // One email per business, one link per location. A transactional message to the owner, so no unsubscribe footer.
