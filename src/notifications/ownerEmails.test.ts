@@ -151,9 +151,9 @@ describe("sendDailyDigests", () => {
     expect(m.text).toContain("2 replies are waiting for your approval at Digest Test Plumbing (Main St), 1 overdue");
     expect(m.text).toContain("- 5-star review, waiting 3 hours");
     expect(m.text).toContain("- 1-star review, waiting 2 days, needs extra care, overdue");
-    expect(m.text).toContain(`Open your reply inbox: ${BASE}/inbox`);
+    expect(m.text).toContain(`Open your reply inbox: ${BASE}/inbox?location=${loc}`);
     expect(m.text).toContain("Nothing is posted until you approve it.");
-    expect(m.html).toContain(`<a href="${BASE}/inbox">`);
+    expect(m.html).toContain(`<a href="${BASE}/inbox?location=${loc}">`);
     for (const body of [m.text, m.html, m.subject]) {
       expect(body).not.toMatch(/Secret|Pat/);
     }
@@ -263,7 +263,7 @@ describe("sendLowRatingAlerts", () => {
       idempotencyKey: `low-rating/${loc}/${low}`,
     });
     expect(mine[0].text).toContain("A new 2-star review for Digest Test Plumbing (Main St) needs a reply.");
-    expect(mine[0].text).toContain(`${BASE}/inbox`);
+    expect(mine[0].text).toContain(`${BASE}/inbox?location=${loc}`);
     for (const body of [mine[0].text, mine[0].html]) expect(body).not.toMatch(/Secret|Pat/);
     expect(await audit(loc, "low_rating_email_sent")).toMatchObject([{ entity: "review", entityId: low }]);
 

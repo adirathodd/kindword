@@ -165,6 +165,36 @@ describe("inbox page", () => {
     },
   );
 
+  // F-40-1: owner emails link to /inbox?location=<id>; a session for another location must not pass as that inbox.
+  it("shows the inbox when ?location= is the session's location", async () => {
+    await draft(A, "awaiting_owner", "Alpha review");
+    const res = await getInbox(await cookieFor(A), `?location=${A}`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Alpha review");
+  });
+
+  it("does not show another location's inbox for ?location= of a location the session does not cover", async () => {
+    await draft(A, "awaiting_owner", "Alpha review");
+    await draft(B, "awaiting_owner", "Beta only review");
+    const res = await getInbox(await cookieFor(A), `?location=${B}`);
+    expect(res.status).toBe(200);
+    const page = await res.text();
+    expect(page).not.toContain("Alpha review");
+    expect(page).not.toContain("Beta only review");
+    expect(page).not.toContain("Beta HVAC");
+    expect(page).toContain(`<form method="post" action="/account/inbox/${B}">`);
+    expect(page).toContain('href="/inbox"');
+    expect(page).toContain('href="/account/sign-in"');
+  });
+
+  it("asks to sign in for ?location= without a session, and ignores a malformed ?location=", async () => {
+    expect((await getInbox(undefined, `?location=${B}`)).status).toBe(401);
+    await draft(A, "awaiting_owner", "Alpha review");
+    const page = await (await getInbox(await cookieFor(A), `?location=%22%3E%3Cscript%3E`)).text();
+    expect(page).toContain("Alpha review");
+    expect(page).not.toContain("<script>");
+  });
+
   it("shows an empty state", async () => {
     const page = await (await getInbox(await cookieFor(A))).text();
     expect(page).toContain("No replies waiting for you");

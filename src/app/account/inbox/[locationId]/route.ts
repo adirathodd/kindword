@@ -3,9 +3,7 @@
 import { getAccountSession, openInbox } from "../../../../accounts/accounts";
 import { accountSecret, notAllowed } from "../../../../accounts/http";
 import { inboxBaseUrl } from "../../../../inbox/auth";
-import { html, redirect, sameOrigin, sessionCookie } from "../../../../inbox/http";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE, html, redirect, sameOrigin, sessionCookie } from "../../../../inbox/http";
 
 export async function POST(req: Request, ctx: RouteContext<"/account/inbox/[locationId]">) {
   const baseUrl = inboxBaseUrl();
