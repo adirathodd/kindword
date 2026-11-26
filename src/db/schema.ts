@@ -57,7 +57,7 @@ export const businesses = pgTable(
     // onboarding; the AI drafter may use nothing else about the business (SPEC: AI reply generation, rule 4).
     approvedFacts: text("approved_facts"),
     status: businessStatus("status").notNull().default("onboarding"),
-    // When the business was switched to offboarded. Set and cleared by a database trigger (migration 0015) whenever
+    // When the business was switched to offboarded. Set and cleared by a database trigger (migration 0016) whenever
     // status changes, so no code path can offboard without it. Everything for the business is deleted within 30 days
     // of this time (SPEC Security, Retention; src/retention/businesses.ts).
     offboardedAt: ts("offboarded_at"),
@@ -75,7 +75,7 @@ export const locations = pgTable(
       .notNull()
       .references(() => businesses.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York
+    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York; trigger locations_timezone_valid (0014)
     reviewLink: text("review_link").notNull(),
     googleLocationId: text("google_location_id").unique(), // one row per Google Business Profile
     googleConnectedAt: ts("google_connected_at"),
