@@ -45,95 +45,149 @@ export async function formFields(req: Request) {
   return get;
 }
 
-const err = (msg: string | null) => (msg ? `<p class="notice error" role="alert">${e(msg)}</p>` : "");
-const field = (name: string, label: string, type: string, value: string, auto: string, extra = "") =>
-  `<p><label for="${name}" class="stack">${e(label)}<input id="${name}" name="${name}" type="${type}" value="${e(value)}" autocomplete="${auto}" required${extra}></label></p>`;
-const pw = (auto: "new-password" | "current-password") =>
-  `<p><label for="password" class="stack">Password${
-    auto === "new-password" ? ` <span class="meta">(at least ${MIN_PASSWORD} characters)</span>` : ""
-  }<input id="password" name="password" type="password" autocomplete="${auto}" required${
-    auto === "new-password" ? ` minlength="${MIN_PASSWORD}"` : ""
-  } maxlength="256"></label></p>`;
+// Auth pages (sign-up, sign-in, sign-in link, reset) share a narrow card layout. A field's error sits under it and is
+// tied to it with aria-describedby; autofocus puts the cursor back in that field (plain HTML, no script).
+const SIGN_IN: [string, string] = ["/account/sign-in", "Back to sign in"];
+const page = (status: number, title: string, body: string, back = SIGN_IN) => html(status, title, body, {}, { back });
+
+type FieldOpts = { error?: string | null; hint?: string; extra?: string; labelRow?: string };
+const field = (name: string, label: string, type: string, value: string | null, auto: string, o: FieldOpts = {}) => {
+  const ids = [o.hint && `${name}-hint`, o.error && `${name}-error`].filter(Boolean).join(" ");
+  const lbl = `<label for="${name}">${e(label)}</label>`;
+  return `<div class="field">${o.labelRow ? `<div class="label-row">${lbl}${o.labelRow}</div>` : lbl}${
+    o.hint ? `<p class="hint" id="${name}-hint">${e(o.hint)}</p>` : ""
+  }<input id="${name}" name="${name}" type="${type}"${value === null ? "" : ` value="${e(value)}"`} autocomplete="${auto}" required${
+    o.extra ?? ""
+  }${ids ? ` aria-describedby="${ids}"` : ""}${o.error ? ' aria-invalid="true" autofocus' : ""}>${
+    o.error ? `<p class="field-error" id="${name}-error">${e(o.error)}</p>` : ""
+  }</div>`;
+};
+const PW_HINT = `At least ${MIN_PASSWORD} characters. We turn down passwords found in known data breaches.`;
+const newPw = (error: string | null) =>
+  field("password", "Password", "password", null, "new-password", {
+    error,
+    hint: PW_HINT,
+    extra: ` minlength="${MIN_PASSWORD}" maxlength="256"`,
+  });
+const alt = (links: [string, string][]) =>
+  `<ul class="alt">${links.map(([href, text]) => `<li><a href="${href}">${e(text)}</a></li>`).join("")}</ul>`;
 
 export const notAllowed = () => html(403, "Not allowed", "<p>Please use the form on our site.</p>");
 export const tooMany = () =>
   html(429, "Too many attempts", "<p>Too many attempts. Wait 15 minutes and try again.</p>", { "Retry-After": "900" });
 
-export const signUpPage = (v: { name: string; businessName: string; email: string }, error: string | null = null) =>
-  html(
+// Which sign-up field an error from signUp() belongs to; anything else shows above the form.
+const signUpField = (msg: string) =>
+  /password|characters/i.test(msg)
+    ? "password"
+    : /business name/i.test(msg)
+      ? "businessName"
+      : /your name/i.test(msg)
+        ? "name"
+        : /email/i.test(msg)
+          ? "email"
+          : /terms/i.test(msg)
+            ? "terms"
+            : "form";
+
+export const signUpPage = (v: { name: string; businessName: string; email: string }, error: string | null = null) => {
+  const on = error ? signUpField(error) : "";
+  const errFor = (f: string) => (on === f ? error : null);
+  const termsErr = errFor("terms");
+  return page(
     error ? 400 : 200,
     "Create your Kindword account",
-    `${err(error)}<p>Set up review requests and owner-approved replies for your business. After you sign up, we contact you to finish setup; nothing is sent to your customers until then.</p><form method="post">${field(
-      "name",
-      "Your name",
-      "text",
-      v.name,
-      "name",
-      ' maxlength="200"',
-    )}${field("businessName", "Business name", "text", v.businessName, "organization", ' maxlength="200"')}${field(
+    `<p class="lede">Set up review requests and owner-approved replies for your business. After you sign up, we contact you to finish setup; nothing is sent to your customers until then.</p>${
+      on === "form" ? `<p class="form-error" role="alert">${e(error!)}</p>` : ""
+    }<form method="post">${field("name", "Your name", "text", v.name, "name", {
+      error: errFor("name"),
+      extra: ' maxlength="200"',
+    })}${field("businessName", "Business name", "text", v.businessName, "organization", {
+      error: errFor("businessName"),
+      extra: ' maxlength="200"',
+    })}${field("email", "Email", "email", v.email, "email", {
+      error: errFor("email"),
+      hint: "We send a link to this address to confirm it.",
+      extra: ' maxlength="254"',
+    })}${newPw(errFor("password"))}<div class="field"><label class="check"><input type="checkbox" name="terms" value="yes" required${
+      termsErr ? ' aria-invalid="true" aria-describedby="terms-error" autofocus' : ""
+    }> <span>I agree to the <a href="/terms">terms</a> and <a href="/privacy">privacy policy</a>.</span></label>${
+      termsErr ? `<p class="field-error" id="terms-error">${e(termsErr)}</p>` : ""
+    }</div><button type="submit" class="primary">Create account</button></form>`,
+  );
+};
+
+export const signUpClosed = () =>
+  page(200, "Sign-up opens soon", "<p>We are not taking new sign-ups online yet. Email us and we will set you up.</p>");
+
+export const checkEmailPage = (what: string) => page(200, "Check your email", `<p class="lede">${e(what)}</p>`);
+
+// Sign-in errors are about the pair (or the account), not one field, so they show above the form and both fields
+// point at them.
+export const signInPage = (email = "", error: string | null = null, status = error ? 400 : 200) => {
+  const desc = error ? ' aria-describedby="form-error"' : "";
+  return page(
+    status,
+    "Sign in to Kindword",
+    `${error ? `<p class="form-error" id="form-error" role="alert">${e(error)}</p>` : ""}<form method="post">${field(
       "email",
       "Email",
       "email",
-      v.email,
-      "email",
-      ' maxlength="254"',
-    )}${pw("new-password")}<p><label><input type="checkbox" name="terms" value="yes" required> I agree to the <a href="/terms">terms</a> and <a href="/privacy">privacy policy</a>.</label></p><div class="row"><button type="submit" class="primary">Create account</button></div></form><p class="meta">Already have an account? <a href="/account/sign-in">Sign in</a></p>`,
+      email,
+      "username",
+      { extra: ` maxlength="254"${desc}` },
+    )}${field("password", "Password", "password", null, "current-password", {
+      extra: ` maxlength="256"${desc}`,
+      labelRow: '<a href="/account/reset">Forgot your password?</a>',
+    })}<button type="submit" class="primary">Sign in</button></form>${alt([
+      ["/account/sign-in/link", "Email me a sign-in link instead"],
+      ["/account/register", "Create an account"],
+    ])}`,
+    ["/", "Back to home"],
   );
-
-export const signUpClosed = () =>
-  html(200, "Sign-up opens soon", "<p>We are not taking new sign-ups online yet. Email us and we will set you up.</p>");
-
-export const checkEmailPage = (what: string) =>
-  html(200, "Check your email", `<p>${e(what)}</p><p class="meta"><a href="/account/sign-in">Back to sign in</a></p>`);
-
-export const signInPage = (email = "", error: string | null = null, status = error ? 400 : 200) =>
-  html(
-    status,
-    "Sign in to Kindword",
-    `${err(error)}<form method="post">${field("email", "Email", "email", email, "username", ' maxlength="254"')}${pw(
-      "current-password",
-    )}<div class="row"><button type="submit" class="primary">Sign in</button></div></form><p class="meta"><a href="/account/sign-in/link">Email me a sign-in link instead</a> · <a href="/account/reset">Forgot your password?</a> · <a href="/account/register">Create an account</a></p>`,
-  );
+};
 
 // FR-13: the passwordless alternative to the password form.
 export const signInLinkPage = (email = "", error: string | null = null) =>
-  html(
+  page(
     error ? 400 : 200,
     "Email me a sign-in link",
-    `${err(error)}<p>Enter the email we have on file for your business. We send a link that opens your review reply inbox without a password.</p><form method="post">${field(
+    `<p class="lede">Enter the email we have on file for your business. We send a link that opens your review reply inbox without a password.</p><form method="post">${field(
       "email",
       "Email",
       "email",
       email,
       "email",
-      ' maxlength="254"',
-    )}<div class="row"><button type="submit" class="primary">Send sign-in link</button></div></form><p class="meta"><a href="/account/sign-in">Sign in with your password</a></p>`,
+      { error, hint: "Each link works once, for 15 minutes.", extra: ' maxlength="254"' },
+    )}<button type="submit" class="primary">Send sign-in link</button></form>`,
   );
 
 export const resetRequestPage = (error: string | null = null) =>
-  html(
+  page(
     error ? 400 : 200,
     "Reset your password",
-    `${err(error)}<p>Enter your email and we will send a link to choose a new password.</p><form method="post">${field(
+    `<p class="lede">Enter your email and we will send a link to choose a new password.</p><form method="post">${field(
       "email",
       "Email",
       "email",
       "",
       "email",
-      ' maxlength="254"',
-    )}<div class="row"><button type="submit" class="primary">Send link</button></div></form>`,
+      { error, extra: ' maxlength="254"' },
+    )}<button type="submit" class="primary">Send reset link</button></form>${alt([
+      ["/account/sign-in/link", "Email me a sign-in link instead"],
+    ])}`,
   );
 
 export const newPasswordPage = (error: string | null = null) =>
-  html(
+  page(
     error ? 400 : 200,
     "Choose a new password",
-    `${err(error)}<form method="post">${pw("new-password")}<p class="meta">Choosing a new password signs you out everywhere else.</p><div class="row"><button type="submit" class="primary">Save password</button></div></form>`,
+    `<form method="post">${newPw(error)}<button type="submit" class="primary">Save password</button><p class="note">Saving a new password signs you out everywhere else.</p></form>`,
   );
 
 export const linkInvalid = (againHtml: string) =>
   // againHtml: constant markup from our own routes
-  html(400, "Link not valid", `<p>This link has expired or was already used. ${againHtml}</p>`);
+  page(400, "Link not valid", `<p>This link has expired or was already used. ${againHtml}</p>`);
 
 export const confirmPage = (title: string, text: string, button: string) =>
   html(

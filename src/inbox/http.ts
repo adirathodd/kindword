@@ -44,14 +44,44 @@ export function sameOrigin(req: Request, baseUrl: string) {
   return !origin || origin === new URL(baseUrl).origin; // "null" (opaque origin) never matches
 }
 
-export const html = (status: number, title: string, body: string, extra: Record<string, string> = {}) =>
+// auth: the sign-up, sign-in and reset pages, a narrow card under the wordmark with a back link (href, text) on top.
+export const html = (
+  status: number,
+  title: string,
+  body: string,
+  extra: Record<string, string> = {},
+  auth?: { back: [string, string] },
+) =>
   new Response(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)}</title><style>${CSS}</style></head><body><main><h1>${e(title)}</h1>${body}</main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)}</title><style>${CSS}</style></head>${
+      auth
+        ? `<body class="auth"><main><a class="wordmark" href="/">Kindword</a><div class="panel"><a class="back" href="${e(auth.back[0])}"><span aria-hidden="true">&larr; </span>${e(auth.back[1])}</a><h1>${e(title)}</h1>${body}</div></main></body>`
+        : `<body><main><h1>${e(title)}</h1>${body}</main></body>`
+    }</html>`,
     { status, headers: { ...PAGE_HEADERS, ...extra } },
   );
 
 export const redirect = (location: string, extra: Record<string, string> = {}) =>
   new Response(null, { status: 303, headers: { "Cache-Control": "no-store", Location: location, ...extra } });
+
+// The auth layout (sign-up, sign-in, sign-in link, reset). Field borders use muted, not line, so they reach 3:1.
+const AUTH_CSS = `body.auth main{max-width:26rem;padding:2.5rem 1rem 4rem}
+.wordmark{display:inline-block;font-size:1.25rem;font-weight:500;letter-spacing:-0.03em;text-decoration:none;margin:0 0 1.25rem}
+.panel{background:var(--k-card);border:1px solid var(--k-line);border-radius:var(--k-radius-lg);padding:1.75rem 1.5rem}
+.back{display:inline-block;font-size:.9375rem;margin:0 0 1rem}.panel a{text-decoration-thickness:1px;text-underline-offset:.2em}
+.back,.label-row a,.alt a{font-weight:500;text-decoration:none}.back:hover,.label-row a:hover{color:var(--k-muted)}
+body.auth h1{font-size:1.75rem;line-height:1.2;letter-spacing:-0.03em;margin:0 0 .5rem}.lede{margin:0 0 1.5rem}
+.panel form{margin:1.5rem 0 0}.field{margin:0 0 1.25rem}.field>label,.label-row>label{display:block;font-weight:500;margin:0 0 .25rem}
+.label-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;column-gap:1rem}.label-row a{font-size:.9375rem}
+.hint{color:var(--k-muted);font-size:.875rem;margin:0 0 .5rem}
+body.auth input[type=text],body.auth input[type=email],body.auth input[type=password]{max-width:none;min-height:2.75rem;padding:.5rem .75rem;border-color:var(--k-muted)}
+body.auth [aria-invalid=true]{border-color:var(--k-error-line);box-shadow:inset 0 0 0 1px var(--k-error-line)}
+.field-error,.form-error{background:var(--k-error-bg);border:1px solid var(--k-error-line);border-radius:var(--k-radius-md);padding:.5rem .75rem;margin:.5rem 0 0;font-size:.9375rem}.form-error{margin:1rem 0 0}
+.field>.check{display:flex;gap:.625rem;align-items:flex-start;font-weight:400}.check input{appearance:none;display:grid;place-content:center;width:1.25rem;height:1.25rem;margin:.15rem 0 0;flex:none;border:1px solid var(--k-muted);border-radius:var(--k-radius-sm);background:var(--k-card);cursor:pointer}.check input::before{content:"";width:.3rem;height:.6rem;border:solid var(--k-ink-on);border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg);visibility:hidden}.check input:checked{background:var(--k-ink);border-color:var(--k-ink)}.check input:checked::before{visibility:visible}
+body.auth button.primary{width:100%;min-height:2.75rem;margin-top:.25rem}.note{color:var(--k-muted);font-size:.875rem;margin:.75rem 0 0}
+.alt{list-style:none;display:grid;gap:.5rem;padding:1.5rem 0 0;margin:1.5rem 0 0;border-top:1px solid var(--k-line)}
+.alt a{display:flex;align-items:center;justify-content:center;min-height:2.75rem;box-sizing:border-box;padding:.5rem 1rem;text-align:center;background:var(--k-surface);border:1px solid var(--k-line);border-radius:var(--k-radius-md)}.alt a:hover{border-color:var(--k-muted)}
+@media (max-width:30rem){body.auth main{padding-top:1.5rem}.panel{padding:1.5rem 1.25rem}}`;
 
 // Brand tokens as CSS variables (src/ui/brand.ts, docs/BRAND.md); no web fonts here: the CSP allows none.
 const CSS = `${BRAND_CSS_VARS}
@@ -65,7 +95,8 @@ form{margin:.5rem 0 0}.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:cen
 button{font:inherit;font-weight:500;padding:.5rem 1rem;border-radius:var(--k-radius-md);border:1px solid var(--k-line);background:var(--k-surface);color:var(--k-ink);cursor:pointer}button.primary{background:var(--k-ink);border-color:var(--k-ink);color:var(--k-ink-on)}
 :focus-visible{outline:2px solid var(--k-ink);outline-offset:2px}
 details{margin-top:.5rem}summary{cursor:pointer;color:var(--k-ink);font-weight:500}label{display:flex;gap:.4rem;align-items:flex-start}.empty{color:var(--k-muted)}
-label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password],input[type=tel]{font:inherit;color:inherit;padding:.45rem .6rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card);width:100%;max-width:24rem;box-sizing:border-box}a{color:var(--k-ink)}`;
+label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password],input[type=tel]{font:inherit;color:inherit;padding:.45rem .6rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card);width:100%;max-width:24rem;box-sizing:border-box}a{color:var(--k-ink)}
+${AUTH_CSS}`;
 
 const FLAG_LABELS: Record<string, string> = {
   low_rating: "Rating of 2 stars or lower",
