@@ -376,3 +376,80 @@ describe("opening the inbox", () => {
     expect((await openInbox.POST(post({}), ctx("locationId", ownLoc.id))).status).toBe(303); // no session: sign in
   });
 });
+
+// D-2 (FR-13): /account is the owner's entry URL.
+describe("/account entry point", () => {
+  const nav = (cookie: string, site = "same-origin", extra: Record<string, string> = {}) =>
+    new Request(`${BASE}/account`, {
+      headers: { cookie, "sec-fetch-site": site, "sec-fetch-mode": "navigate", "sec-fetch-dest": "document", ...extra },
+    });
+  const addLocations = (businessId: string, ...names: string[]) =>
+    db
+      .insert(s.locations)
+      .values(
+        names.map((name) => ({ businessId, name, timezone: "America/New_York", reviewLink: "https://g.page/r/a" })),
+      )
+      .returning();
+  const sessionsFor = (locationId: string) =>
+    db.select().from(s.ownerSessions).where(eq(s.ownerSessions.locationId, locationId));
+
+  it("takes a signed-in owner with one location straight to that location's inbox", async () => {
+    const mine = await verifiedAccount("one@acct.example.test");
+    const [loc] = await addLocations(mine.businessId, "Only");
+    for (const site of ["same-origin", "none"]) {
+      const res = await home.GET(nav(mine.cookie, site));
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toBe("/inbox");
+      const inboxRes = await inbox.GET(get(cookieOf(res)));
+      expect(inboxRes.status).toBe(200);
+    }
+    const sess = await sessionsFor(loc.id);
+    expect(sess.map((x) => x.accountId)).toEqual([mine.accountId, mine.accountId]);
+  });
+
+  it("never opens a session from a cross-site request, a prefetch or a request without fetch metadata", async () => {
+    const mine = await verifiedAccount("pre@acct.example.test");
+    const [loc] = await addLocations(mine.businessId, "Only");
+    for (const req of [
+      nav(mine.cookie, "cross-site"),
+      nav(mine.cookie, "same-site"),
+      nav(mine.cookie, "same-origin", { "sec-purpose": "prefetch" }),
+      nav(mine.cookie, "same-origin", { purpose: "prefetch" }),
+      nav(mine.cookie, "same-origin", { "sec-fetch-mode": "no-cors" }),
+      get(mine.cookie),
+    ]) {
+      const res = await home.GET(req);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("set-cookie")).toBeNull();
+      expect(await res.text()).toContain("Open inbox: Only"); // the one-button page instead
+    }
+    expect(await sessionsFor(loc.id)).toEqual([]);
+  });
+
+  it("keeps the location buttons for an owner with more than one location", async () => {
+    const mine = await verifiedAccount("two@acct.example.test");
+    const [a, b] = await addLocations(mine.businessId, "North", "South");
+    const res = await home.GET(nav(mine.cookie));
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("Open inbox: North");
+    expect(body).toContain("Open inbox: South");
+    expect([...(await sessionsFor(a.id)), ...(await sessionsFor(b.id))]).toEqual([]);
+  });
+
+  it("shows an owner with no location yet the account page", async () => {
+    const mine = await verifiedAccount("none@acct.example.test");
+    const res = await home.GET(nav(mine.cookie));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Pat Plumbing");
+  });
+
+  it("sends a signed-out owner to the sign-in screen, which offers an emailed link", async () => {
+    const res = await home.GET(nav(""));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/account/sign-in");
+    const page = await (await signIn.GET()).text();
+    expect(page).toContain('type="password"');
+    expect(page).toContain('href="/account/sign-in/link"');
+  });
+});
