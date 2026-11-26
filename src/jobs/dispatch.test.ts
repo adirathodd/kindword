@@ -143,17 +143,17 @@ describe("failures and retries", () => {
     expect(line).not.toContain(ENV.GOOGLE_OAUTH_CLIENT_SECRET);
   });
 
+  it("does not send review requests when sending is misconfigured", async () => {
+    vi.stubEnv("TWILIO_AUTH_TOKEN", "");
+    await runScheduled(msg("review-requests"));
+    expect(calls.list).toEqual([]);
+  });
+
   it("does not run operator alerts without OPERATOR_EMAIL, naming the setting", async () => {
     vi.stubEnv("OPERATOR_EMAIL", "");
     await expect(runScheduled(msg("operator-alerts"))).resolves.toBeUndefined();
     expect(calls.list).toEqual([]);
     expect(String(vi.mocked(console.error).mock.calls[0][0])).toContain("OPERATOR_EMAIL missing");
-  });
-
-  it("does not send review requests when sending is misconfigured", async () => {
-    vi.stubEnv("TWILIO_AUTH_TOKEN", "");
-    await runScheduled(msg("review-requests"));
-    expect(calls.list).toEqual([]);
   });
 
   it("throws on a transient failure so the queue retries it, logging the error class only", async () => {
