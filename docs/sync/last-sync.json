@@ -3,21 +3,21 @@
   "synced_at": "2026-11-26T17:35Z to 18:30Z",
   "repository": "adirathodd/review-automation (GitHub reports adirathodd/kindword)",
   "target_branch": "main",
-  "audited_sha": "51d99cedb12a2e83e399f5acb4f58486ec0cf852",
-  "main_moved_during_run": "yes: 66a966e -> 3fefa4c (#65) during the run; then 51d99ce (#73, SPEC only: D-2 decided, new FR-25, D-14 to D-18) before the owner asked for an update. #65 and #73 reviewed; branch merged with main",
+  "audited_sha": "9f7a11928d56dcf7d1368e4f747af5088dfd2bbd",
+  "main_moved_during_run": "yes: 66a966e -> 3fefa4c (#65) during the run; then 51d99ce (#73, SPEC only: D-2 decided, new FR-25, D-14 to D-18) before the owner asked for an update. #65 and #73 reviewed; branch merged with main; then 9f7a119 (#66, delivery receipts for FR-17), reviewed and merged into this branch",
   "previous_sync": {
     "sync_id": "sync-2026-11-26-02 (sync-2026-11-26-03 was a same-SHA rerun recorded in Notion only)",
     "audited_sha": "f3d6d49fcfdc0ba3424542329ee46d854db43292",
     "status": "complete_with_documented_discrepancies"
   },
-  "commits_reviewed": "f3d6d49..51d99ce: #64, #60, #61, #69, #71, #70, #68, #72, #67, #59, #65, #73. Open PRs #49, #51, #62, #63, #66 not used as evidence",
+  "commits_reviewed": "f3d6d49..9f7a119: #64, #60, #61, #69, #71, #70, #68, #72, #67, #59, #65, #73, #66. Open PRs #49, #51, #62, #63 not used as evidence",
   "sources_of_truth": {
     "spec": "docs/SPEC.md and the Claude Doc https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs, always kept in sync (owner decision D-1, 2026-11-24)",
     "status_and_priorities": "Notion: Kindword (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
     "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
     "doc_status": "Read via the Artifact tool: it is a Claude Docs document; no Claude Docs connector in this session, so its text could not be read or written. Edits the Doc still needs: docs/sync/proposed-spec-changes.md"
   },
-  "evidence": "Code read on main 66a966e and 3fefa4c for each PR (src/requests/requests.ts, src/email/resend.ts, src/optout/confirmations.ts, src/jobs/jobs.ts, src/accounts/accounts.ts, src/inbox/linkRequest.ts, src/app/inbox/route.ts, src/retention/businesses.ts, src/reviews/poll.ts, drizzle 0012-0016, vercel.json, src/compliance/compliance.ts for #65). Node 24.22.3 + local Postgres 16, migrations 0000-0016 applied: 639/639 vitest pass at 66a966e and 642/642 at 3fefa4c. next build not run (docs-only change). #73 changes docs only, so the 3fefa4c test run covers 51d99ce's code; checked on main that / has no link to /account and /account does not redirect a single-location owner to the inbox (D-2 not built)",
+  "evidence": "Code read on main 66a966e and 3fefa4c for each PR (src/requests/requests.ts, src/email/resend.ts, src/optout/confirmations.ts, src/jobs/jobs.ts, src/accounts/accounts.ts, src/inbox/linkRequest.ts, src/app/inbox/route.ts, src/retention/businesses.ts, src/reviews/poll.ts, drizzle 0012-0016, vercel.json, src/compliance/compliance.ts for #65). Node 24.22.3 + local Postgres 16, migrations 0000-0016 applied: 639/639 vitest pass at 66a966e and 642/642 at 3fefa4c. next build not run (docs-only change). #73 changes docs only, so the 3fefa4c test run covers 51d99ce's code; checked on main that / has no link to /account and /account does not redirect a single-location owner to the inbox (D-2 not built). At 9f7a119 (#66): src/requests/delivery.ts, src/app/api/sms/status, src/app/api/email/events, src/reports/monthly.ts read; 670/670 vitest pass",
   "requirements_reviewed": "All FR-1 to FR-25 rows and the Retention row re-checked against main; changed: FR-5, FR-6, FR-7, FR-8, FR-9, FR-13, FR-20, FR-23, FR-24, Retention (Security)",
   "requirements": {
     "implemented": [
@@ -48,12 +48,14 @@
       "FR-23": "partial (draft wording); F-45-R fixed by #65",
       "FR-25": "new requirement (#73): not implemented",
       "FR-13": "partial; F-40-1 fixed (#68), F-36-2 fixed (#70); D-2 decided (#73), not built",
-      "FR-5, FR-6, FR-9, FR-24": "status unchanged; rows record #67, #71, #69, #70"
+      "FR-5, FR-6, FR-9, FR-24": "status unchanged; rows record #67, #71, #69, #70",
+      "FR-17": "partial; delivered now counted (#66, Resend webhook not yet configured in production); O-53-1 remains",
+      "FR-19": "partial; delivery receipt audit rows added (#66)"
     }
   },
   "spec_changes": [
-    "Header: last synced against 51d99ce",
-    "Implementation status: FR-5, FR-6, FR-7, FR-8, FR-9, FR-13, FR-20, FR-23, FR-24, Retention (Security)",
+    "Header: last synced against 9f7a119",
+    "Implementation status: FR-5, FR-6, FR-7, FR-8, FR-9, FR-13, FR-17, FR-19, FR-20, FR-23, FR-24, Retention (Security)",
     "Data model: businesses.offboarded_at; review_requests.outcome_unknown, send_attempts, maybe_sent_at; new optout_confirmations row",
     "Decisions needed: F-40-1 marked resolved by #68 (D-2 still open); D-11 note that F-9-2 is fixed by #72",
     "Merged with #73: FR-13 status row combines #73's D-2 gap with F-40-1 fixed by #68; F-40-1 decision item ticked with #73's FR-25 note kept"
@@ -90,5 +92,5 @@
     "O-53-2 clicks can exceed sends"
   ],
   "status": "complete_with_documented_discrepancies",
-  "next_sync_starts_after": "51d99cedb12a2e83e399f5acb4f58486ec0cf852"
+  "next_sync_starts_after": "9f7a11928d56dcf7d1368e4f747af5088dfd2bbd"
 }
