@@ -81,12 +81,24 @@ export async function sendPendingConfirmations(sms: ConfirmationSms, db: Db = de
       .where(and(eq(c.id, r.id), eq(c.status, r.status), eq(c.attempts, r.attempts), inWindow))
       .returning({ id: c.id });
     if (!claimed) continue;
-    try {
-      if (r.status === "sending" && (await sms.sentSince(r.from, r.to, r.createdAt))) {
+    if (r.status === "sending") {
+      // A failed lookup says nothing about the earlier attempt, so the row stays "sending" (outcome unknown) and the
+      // next run looks again. It must not go through recordSendError: a 429 or 503 from the message list is a
+      // TwilioSendError with refused: true, which would mark the row pending, and a pending row is resent without a
+      // lookup (audit F-72-1).
+      const found = await sms.sentSince(r.from, r.to, r.createdAt).catch(() => null);
+      if (found === null) {
+        out.failed++;
+        out.open++;
+        continue;
+      }
+      if (found) {
         await setStatus(r.id, "sent", db);
         out.alreadySent++;
         continue;
       }
+    }
+    try {
       await sms.send(r.from, r.to, confirmationText(r.businessName));
       await setStatus(r.id, "sent", db);
       out.sent++;
