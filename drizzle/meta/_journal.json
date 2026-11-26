@@ -71,6 +71,13 @@
       "when": 1795490223823,
       "tag": "0009_waitlist",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795665437235,
+      "tag": "0010_sms_opt_ins",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-// Self-serve sign-up (SPEC FR-24, Flow 0). Closed until SIGNUP_OPEN=true (the terms and privacy pages must exist).
+// Self-serve sign-up (SPEC FR-24, Flow 0). Closed until SIGNUP_OPEN=true (the terms and privacy wording must be final, FR-23).
 import { signUp } from "../../../accounts/accounts";
 import {
   checkEmailPage,
