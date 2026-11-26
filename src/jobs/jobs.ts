@@ -10,7 +10,7 @@
 // - reviews: unique google_review_id (poll), at most one draft per review (draft), per-location advisory lock plus
 //   audit check plus idempotency key (low-rating email).
 // - owner-digest: per-location advisory lock, one audit row per local day, idempotency key.
-// - purge: deletes under row locks (customers also under the importer's per-location lock); a rerun finds nothing left.
+// - purge: deletes under row locks; a rerun finds nothing left.
 //
 // Results are counts and short codes only: never phone numbers, emails, message text, review text or names.
 import { isNotNull, and } from "drizzle-orm";
@@ -129,7 +129,7 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
     }),
 
   // FR-22: daily, with a one-day margin inside the 30-day limit. Then the SPEC Security retention rule: customers
-  // whose last visit is more than 12 months old.
+  // whose last visit is more than 12 months old, deleted under the importer's per-location lock.
   purge: () =>
     steps({
       purge: async () => {
