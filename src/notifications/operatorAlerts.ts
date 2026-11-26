@@ -10,6 +10,13 @@
 //   last successful poll, or since google_connected_at when it has never been polled). This catches a review job that
 //   stopped running, lost a setting, or keeps failing for one location. Alerted once per stale period: the next
 //   successful poll ends it.
+// - owner_email_failed: an owner email (daily digest, low-rating email, monthly report) that failed (audit action
+//   "owner_email_failed", written by src/notifications/sendFailures.ts). Owner emails are retried on every run, so a
+//   lasting failure fails many times: each location, kind and period (the digest's day, the low-rating email's UTC
+//   day, the report's month) is alerted once, with the number of failed attempts and their error codes.
+// - opt_out_confirmation_failed: the one confirmation text after an opt-out did not go out (audit action
+//   "opt_out_confirmation_failed"). It is not retried (audit F-9-2), so each failure is alerted once. The opt-out
+//   itself is already recorded and honored.
 // Offboarded businesses are left out: nothing sends or polls for them.
 //
 // What the email carries: business and location names and IDs, counts, channels and error codes. Never phone
@@ -26,6 +33,7 @@ import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses, locations, oauthTokens } from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import { escapeHtml as e } from "../inbox/auth";
+import { FAILURE_ACTIONS } from "./sendFailures";
 
 export const REVIEW_CHECK_STALE_MS = 3 * 60 * 60 * 1000; // "the review check has not run in 3 hours"
 const ACTOR = "system:operator_alert";
@@ -33,6 +41,8 @@ export const ALERT_ACTIONS = {
   send_failed: "operator_alert_send_failed",
   token_expired: "operator_alert_token_expired",
   review_check_stale: "operator_alert_review_check_stale",
+  owner_email_failed: "operator_alert_owner_email_failed",
+  confirmation_failed: "operator_alert_opt_out_confirmation_failed",
 } as const;
 
 export type OperatorAlertDeps = { email: EmailProvider; operatorEmail: string; now?: Date };
@@ -41,13 +51,24 @@ export type OperatorAlertResult = {
   sendFailed: number;
   tokenExpired: number;
   reviewCheckStale: number;
+  ownerEmailFailed: number;
+  confirmationFailed: number;
 };
 
 type Place = { locationId: string | null; locationName: string | null; businessName: string | null };
 export type SendFailure = Place & { auditId: string; requestId: string; channel: string; error: string };
 export type TokenExpiry = Place & { tokenId: string; since: Date | null };
 export type StaleCheck = Place & { lastPolledAt: Date | null; since: Date };
-export type Alerts = { sendFailed: SendFailure[]; tokenExpired: TokenExpiry[]; reviewCheckStale: StaleCheck[] };
+// One location, kind and period; attempts counts every failed try not yet alerted, errors their distinct codes.
+export type OwnerEmailFailure = Place & { kind: string; period: string; attempts: number; errors: string[] };
+export type ConfirmationFailure = Place & { auditId: string; error: string };
+export type Alerts = {
+  sendFailed: SendFailure[];
+  tokenExpired: TokenExpiry[];
+  reviewCheckStale: StaleCheck[];
+  ownerEmailFailed: OwnerEmailFailure[];
+  confirmationFailed: ConfirmationFailure[];
+};
 
 type Q = Pick<Db, "select">;
 const field = (detail: string | null, key: string) =>
@@ -218,15 +239,121 @@ async function staleChecks(q: Q, now: Date): Promise<StaleCheck[]> {
   });
 }
 
+// Owner email failures whose location, kind and period has no alert yet. The alert row's detail is the failure
+// row's "kind=…;period=…" prefix, so later failures for an alerted period are left out.
+async function ownerEmailFailures(q: Q): Promise<OwnerEmailFailure[]> {
+  const alerted = alias(auditLog, "alerted");
+  const rows = await q
+    .select({
+      detail: auditLog.detail,
+      locationId: auditLog.locationId,
+      locationName: locations.name,
+      businessName: businesses.name,
+    })
+    .from(auditLog)
+    .leftJoin(locations, eq(locations.id, auditLog.locationId))
+    .leftJoin(businesses, eq(businesses.id, locations.businessId))
+    .where(
+      and(
+        eq(auditLog.entity, "location"),
+        eq(auditLog.action, FAILURE_ACTIONS.owner_email),
+        isNotNull(auditLog.locationId),
+        or(isNull(businesses.status), ne(businesses.status, "offboarded")),
+        notExists(
+          q
+            .select({ x: sql`1` })
+            .from(alerted)
+            .where(
+              and(
+                eq(alerted.locationId, auditLog.locationId),
+                eq(alerted.action, ALERT_ACTIONS.owner_email_failed),
+                sql`starts_with(${auditLog.detail}, ${alerted.detail} || ';')`,
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(asc(auditLog.at), asc(auditLog.id));
+  const groups = new Map<string, OwnerEmailFailure>();
+  for (const r of rows) {
+    const kind = field(r.detail, "kind");
+    const period = field(r.detail, "period");
+    const key = `${r.locationId}|${kind}|${period}`;
+    const g = groups.get(key) ?? {
+      locationId: r.locationId,
+      locationName: r.locationName,
+      businessName: r.businessName,
+      kind,
+      period,
+      attempts: 0,
+      errors: [],
+    };
+    g.attempts++;
+    const error = field(r.detail, "error");
+    if (!g.errors.includes(error)) g.errors.push(error);
+    groups.set(key, g);
+  }
+  return [...groups.values()];
+}
+
+// Opt-out confirmation texts that failed and have no alert yet (the alert row's entity_id is the failure row's id).
+async function confirmationFailures(q: Q): Promise<ConfirmationFailure[]> {
+  const alerted = alias(auditLog, "alerted");
+  const rows = await q
+    .select({
+      auditId: auditLog.id,
+      detail: auditLog.detail,
+      locationId: auditLog.locationId,
+      locationName: locations.name,
+      businessName: businesses.name,
+    })
+    .from(auditLog)
+    .leftJoin(locations, eq(locations.id, auditLog.locationId))
+    .leftJoin(businesses, eq(businesses.id, locations.businessId))
+    .where(
+      and(
+        eq(auditLog.action, FAILURE_ACTIONS.opt_out_confirmation),
+        or(isNull(businesses.status), ne(businesses.status, "offboarded")),
+        notExists(
+          q
+            .select({ x: sql`1` })
+            .from(alerted)
+            .where(
+              and(
+                eq(alerted.entity, "audit_log"),
+                eq(alerted.entityId, auditLog.id),
+                eq(alerted.action, ALERT_ACTIONS.confirmation_failed),
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(asc(auditLog.at), asc(auditLog.id));
+  return rows.map((r) => ({
+    auditId: r.auditId,
+    error: field(r.detail, "error"),
+    locationId: r.locationId,
+    locationName: r.locationName,
+    businessName: r.businessName,
+  }));
+}
+
 export async function findAlerts(now: Date, q: Q = defaultDb): Promise<Alerts> {
   return {
     sendFailed: await sendFailures(q),
     tokenExpired: await tokenExpiries(q),
     reviewCheckStale: await staleChecks(q, now),
+    ownerEmailFailed: await ownerEmailFailures(q),
+    confirmationFailed: await confirmationFailures(q),
   };
 }
 
-const total = (a: Alerts) => a.sendFailed.length + a.tokenExpired.length + a.reviewCheckStale.length;
+const total = (a: Alerts) =>
+  a.sendFailed.length +
+  a.tokenExpired.length +
+  a.reviewCheckStale.length +
+  a.ownerEmailFailed.length +
+  a.confirmationFailed.length;
 const where = (p: Place) =>
   p.locationId
     ? `${p.businessName ?? "Unknown business"} (${p.locationName ?? "unknown location"}, location ${p.locationId})`
@@ -237,6 +364,12 @@ const ERROR_LABEL: Record<string, string> = {
   provider_rejected: "refused by the provider",
   outcome_unknown: "outcome unknown (may have reached the customer; not retried)",
   provider_opted_out: "customer had opted out at the provider (now suppressed)",
+};
+
+const OWNER_EMAIL_LABEL: Record<string, string> = {
+  digest: "daily digest",
+  low_rating: "low-rating email",
+  monthly_report: "monthly report",
 };
 
 // Lines for the email, grouped and counted; no personal data.
@@ -278,6 +411,22 @@ export function alertLines(a: Alerts, now: Date) {
           }. Check the reviews job log and the Google settings.`,
       ),
     });
+  if (a.ownerEmailFailed.length)
+    sections.push({
+      title: `${plural(a.ownerEmailFailed.length, "owner email")} failed`,
+      items: a.ownerEmailFailed.map(
+        (f) =>
+          `${where(f)}: ${OWNER_EMAIL_LABEL[f.kind] ?? f.kind} for ${f.period}, ${plural(f.attempts, "failed attempt")} (${f.errors.join(", ")}). Retried on every run; later failures for the same ${f.kind === "monthly_report" ? "month" : "day"} are not reported again.`,
+      ),
+    });
+  if (a.confirmationFailed.length)
+    sections.push({
+      title: `${plural(a.confirmationFailed.length, "opt-out confirmation text")} failed`,
+      items: a.confirmationFailed.map(
+        (c) =>
+          `${where(c)}: confirmation not sent (${c.error}). The opt-out is recorded and honored; the confirmation is not retried.`,
+      ),
+    });
   return sections;
 }
 
@@ -297,6 +446,8 @@ export function operatorAlertEmail(a: Alerts, to: string, now: Date): EmailMessa
     ...a.sendFailed.map((f) => `f:${f.requestId}`),
     ...a.tokenExpired.map((t) => `t:${t.tokenId}:${t.since?.toISOString() ?? ""}`),
     ...a.reviewCheckStale.map((s) => `s:${s.locationId}:${s.since.toISOString()}`),
+    ...a.ownerEmailFailed.map((f) => `o:${f.locationId}:${f.kind}:${f.period}`),
+    ...a.confirmationFailed.map((c) => `c:${c.auditId}`),
   ].sort();
   return {
     to,
@@ -313,14 +464,27 @@ export function operatorAlertEmail(a: Alerts, to: string, now: Date): EmailMessa
 // stopped or misconfigured review job is still noticed.
 export async function sendOperatorAlerts(deps: OperatorAlertDeps, db: Db = defaultDb): Promise<OperatorAlertResult> {
   const now = deps.now ?? new Date();
-  const empty = { sent: 0, sendFailed: 0, tokenExpired: 0, reviewCheckStale: 0 };
+  const empty = {
+    sent: 0,
+    sendFailed: 0,
+    tokenExpired: 0,
+    reviewCheckStale: 0,
+    ownerEmailFailed: 0,
+    confirmationFailed: 0,
+  };
   if (!total(await findAlerts(now, db))) return empty;
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('operator-alerts'))`);
     const a = await findAlerts(now, tx); // re-read under the lock: a concurrent run may have sent them
     if (!total(a)) return empty;
     await deps.email.send(operatorAlertEmail(a, deps.operatorEmail, now)); // throws: nothing recorded, retried
-    const row = (locationId: string | null, entity: string, entityId: string, action: string, detail: string) => ({
+    const row = (
+      locationId: string | null,
+      entity: string,
+      entityId: string | null,
+      action: string,
+      detail: string,
+    ) => ({
       locationId,
       entity,
       entityId,
@@ -341,12 +505,26 @@ export async function sendOperatorAlerts(deps: OperatorAlertDeps, db: Db = defau
         ...a.reviewCheckStale.map((s) =>
           row(s.locationId, "location", s.locationId!, ALERT_ACTIONS.review_check_stale, "hours=3"),
         ),
+        ...a.ownerEmailFailed.map((f) =>
+          row(
+            f.locationId,
+            "location",
+            f.locationId,
+            ALERT_ACTIONS.owner_email_failed,
+            `kind=${f.kind};period=${f.period}`,
+          ),
+        ),
+        ...a.confirmationFailed.map((c) =>
+          row(c.locationId, "audit_log", c.auditId, ALERT_ACTIONS.confirmation_failed, `error=${c.error}`),
+        ),
       ]);
     return {
       sent: 1,
       sendFailed: a.sendFailed.length,
       tokenExpired: a.tokenExpired.length,
       reviewCheckStale: a.reviewCheckStale.length,
+      ownerEmailFailed: a.ownerEmailFailed.length,
+      confirmationFailed: a.confirmationFailed.length,
     };
   });
 }

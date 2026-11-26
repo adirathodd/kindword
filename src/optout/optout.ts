@@ -5,6 +5,7 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses, channel, customers, locations, suppressionList } from "../db/schema";
 import { normalizePhone } from "../intake/normalize";
+import { recordOptOutConfirmationFailure } from "../notifications/sendFailures";
 import type { SmsProvider } from "../sms/provider";
 
 type Channel = (typeof channel.enumValues)[number];
@@ -102,13 +103,17 @@ export async function handleInboundSms(
   const from = normalizePhone(msg.from);
   if (!from) return { status: "ignored" }; // not a US number, so never one we texted
 
-  const { first, businessName } = await db.transaction(async (tx) => {
+  const { first, businessName, locationId } = await db.transaction(async (tx) => {
     const [loc] = await tx
       .select({ id: locations.id, businessName: businesses.name })
       .from(locations)
       .innerJoin(businesses, eq(businesses.id, locations.businessId))
       .where(eq(locations.smsNumber, normalizePhone(msg.to) ?? msg.to));
-    return { first: await optOut(tx, loc?.id ?? null, "sms", from, "customer_sms"), businessName: loc?.businessName };
+    return {
+      first: await optOut(tx, loc?.id ?? null, "sms", from, "customer_sms"),
+      businessName: loc?.businessName,
+      locationId: loc?.id ?? null,
+    };
   });
 
   // Sent after commit: a crash here loses the confirmation but can never send two.
@@ -122,6 +127,9 @@ export async function handleInboundSms(
     // reply confirmed it), so the one confirmation went out and this is not a failure (Flow 2 step 4).
     if ((e as { recipientOptedOut?: unknown } | null)?.recipientOptedOut === true)
       return { status: "opted_out", confirmation: "provider" };
+    // Not retried (a retry after a timeout could send a second confirmation, audit F-9-2); recorded so operator
+    // alerts report it. The record holds the location and an error code only, never the phone number.
+    await recordOptOutConfirmationFailure(locationId, e, db);
     throw e;
   }
   return { status: "opted_out", confirmation: "sent" };

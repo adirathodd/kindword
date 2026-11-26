@@ -221,6 +221,21 @@ describe("handleInboundSms", () => {
     expect((await customer(A.customerId)).optedOutAt).toBeInstanceOf(Date);
   });
 
+  it("a failed confirmation is recorded for operator alerts, without the phone number, and still throws", async () => {
+    sms.send = async () => {
+      throw new Error("timeout");
+    };
+    await expect(handleInboundSms(sms, inbound("stop please"))).rejects.toThrow("timeout");
+    expect(await isSuppressed(A.locationId, "sms", PHONE)).toBe(true); // the opt-out itself is kept
+    const failed = (await auditOf(A.locationId)).filter((r) => r.action === "opt_out_confirmation_failed");
+    expect(failed.map(({ entity, entityId, actor, detail }) => ({ entity, entityId, actor, detail }))).toEqual([
+      { entity: "location", entityId: A.locationId, actor: "system:send_failure", detail: "error=Error" },
+    ]);
+    // A retried webhook finds the opt-out recorded: no second confirmation and no second failure record.
+    expect(await handleInboundSms(sms, inbound("stop please"))).toEqual({ status: "opted_out", confirmation: "none" });
+    expect((await auditOf(A.locationId)).filter((r) => r.action === "opt_out_confirmation_failed")).toHaveLength(1);
+  });
+
   it("a bad signature is rejected and stores nothing", async () => {
     const r = await handleInboundSms(sms, inbound("STOP", { signed: false }));
     expect(r).toEqual({ status: "rejected" });

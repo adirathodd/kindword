@@ -26,6 +26,7 @@ import { GoogleReviewsError, type GoogleReview, type ReviewSource } from "../goo
 import { decryptRefreshToken } from "../google/tokenCrypto";
 import { escapeHtml as e } from "../inbox/auth";
 import { DIGEST_HOUR, lockLocation, recipients, type Recipient } from "../notifications/ownerEmails";
+import { recordOwnerEmailFailure, utcMonth } from "../notifications/sendFailures";
 
 const ACTOR = "system:monthly_report";
 const SENT_ACTION = "monthly_report_sent";
@@ -322,8 +323,10 @@ export async function sendMonthlyReports(
   const now = deps.now ?? new Date();
   const result: MonthlyReportResult = { sent: 0, failed: 0, waiting: 0 };
   for (const r of await recipients(db)) {
+    let month = utcMonth(now); // the reported month once the time zone has been read
     try {
       const period = reportPeriod(now, r.timezone, opts.sendHour); // throws on a bad time zone: counted as failed
+      month = period.key;
       if (!period.due) continue;
       if ((await alreadySent(db, r.locationId, period.key)).length) continue; // cheap check before the Google read
 
@@ -365,10 +368,15 @@ export async function sendMonthlyReports(
         return true;
       });
       if (sent) result.sent++;
-    } catch {
-      // The email provider refused or timed out, or the time zone is bad: nothing recorded, so the next run tries
-      // again under the same idempotency key. No details logged (they may hold the address).
+    } catch (err) {
+      // The email provider refused or timed out, or the time zone is bad: no send recorded, so the next run tries
+      // again under the same idempotency key. No details logged (they may hold the address); the failure record for
+      // operator alerts holds the location, the month and an error code only.
       result.failed++;
+      await recordOwnerEmailFailure(
+        { locationId: r.locationId, kind: "monthly_report", period: month, error: err, at: now },
+        db,
+      );
     }
   }
   return result;

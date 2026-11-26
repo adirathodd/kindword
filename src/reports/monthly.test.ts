@@ -374,6 +374,14 @@ describe("sendMonthlyReports", () => {
     const r = await run();
     expect(r.failed).toBeGreaterThanOrEqual(1);
     expect(await sentAudit(t.locationId)).toHaveLength(0);
+    // Recorded for operator alerts: the location, the reported month and an error code only.
+    const failures = await db
+      .select({ entity: s.auditLog.entity, entityId: s.auditLog.entityId, detail: s.auditLog.detail })
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.locationId, t.locationId), eq(s.auditLog.action, "owner_email_failed")));
+    expect(failures).toEqual([
+      { entity: "location", entityId: t.locationId, detail: "kind=monthly_report;period=2026-11;error=Error" },
+    ]);
     email.failNext = 0;
     await run(new Date(NOW.getTime() + HOUR));
     expect(to(email, t.locationId)).toHaveLength(1);

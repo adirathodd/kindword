@@ -218,6 +218,12 @@ describe("sendDailyDigests", () => {
     const okLoc = failedLoc === a ? b : a;
     expect(to(email, okLoc)).toHaveLength(1);
     expect(await audit(failedLoc, "owner_digest_sent")).toHaveLength(0);
+    // Recorded for operator alerts: the location, the local day and an error code only.
+    const failures = await audit(failedLoc, "owner_email_failed");
+    expect(failures.map((f) => [f.entity, f.entityId, f.detail])).toEqual([
+      ["location", failedLoc, "kind=digest;period=2026-11-25;error=Error"],
+    ]);
+    expect(await audit(okLoc, "owner_email_failed")).toHaveLength(0);
 
     await sendDailyDigests({ email, baseUrl: BASE, now: new Date(NOW.getTime() + HOUR) });
     expect(to(email, failedLoc)).toHaveLength(1);
@@ -234,6 +240,15 @@ describe("sendDailyDigests", () => {
     ]);
     expect(to(email, loc)).toHaveLength(1);
     expect(await audit(loc, "owner_digest_sent")).toHaveLength(1);
+  });
+
+  it("records a bad time zone as a failure for the UTC day, with the provider's codes kept short", async () => {
+    const loc = await tenant({ timezone: "Not/AZone" });
+    await draft(loc);
+    expect((await sendDailyDigests({ email, baseUrl: BASE, now: NOW })).failed).toBeGreaterThanOrEqual(1);
+    expect((await audit(loc, "owner_email_failed")).map((f) => f.detail)).toEqual([
+      "kind=digest;period=2026-11-25;error=bad_time_zone",
+    ]);
   });
 
   it("escapes business and location names in the HTML", async () => {
@@ -311,6 +326,9 @@ describe("sendLowRatingAlerts", () => {
     email.failNext = 1;
     expect(await sendLowRatingAlerts({ email, baseUrl: BASE, now: NOW })).toEqual({ sent: 0, failed: 1 });
     expect(await audit(loc, "low_rating_email_sent")).toHaveLength(0);
+    expect((await audit(loc, "owner_email_failed")).map((f) => f.detail)).toEqual([
+      "kind=low_rating;period=2026-11-25;error=Error",
+    ]);
     await Promise.all([
       sendLowRatingAlerts({ email, baseUrl: BASE, now: NOW }),
       sendLowRatingAlerts({ email, baseUrl: BASE, now: NOW }),
