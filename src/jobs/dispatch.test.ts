@@ -33,6 +33,9 @@ vi.mock("../notifications/ownerEmails", () => ({
 vi.mock("../reviews/purge", () => ({
   purgeExpiredReviews: track("purgeExpiredReviews", { reviews: 0, drafts: 0, cutoff: new Date() }),
 }));
+vi.mock("../reports/monthly", () => ({
+  sendMonthlyReports: track("sendMonthlyReports", { sent: 0, failed: 0, waiting: 0 }),
+}));
 
 const { JobFailedError, MAX_DELIVERIES, retryPolicy, runScheduled } = await import("./jobs");
 
@@ -94,6 +97,7 @@ describe("dispatch", () => {
     ["reviews", ["pollReviews", "draftPendingReviews", "sendLowRatingAlerts"]],
     ["owner-digest", ["sendDailyDigests"]],
     ["purge", ["purgeExpiredReviews"]],
+    ["monthly-report", ["sendMonthlyReports"]],
   ])("%s calls its job code", async (job, expected) => {
     await expect(runScheduled(msg(job))).resolves.toBeUndefined();
     expect(calls.list).toEqual(expected);
