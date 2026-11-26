@@ -2,11 +2,12 @@
 import { generateKeyPairSync } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, type Db } from "../db/client";
 import * as s from "../db/schema";
 import { importCsv } from "./importCsv";
 import { GoogleSheetsReader, SHEETS_API, TOKEN_URL } from "./googleSheets";
+import { purgeExpiredCustomers } from "../retention/customers";
 import { pollSheet, type SheetReader } from "./pollSheet";
 
 const HEADER = ["row_id", "name", "phone", "email", "visit_time", "consent_method", "consent_date", "evidence_ref"];
@@ -51,12 +52,19 @@ const source = async () => (await db.select().from(s.sheetSources).where(eq(s.sh
 const customersOf = () => db.select().from(s.customers).where(eq(s.customers.locationId, t.locationId));
 const visitsOf = () => db.select().from(s.visits).where(eq(s.visits.locationId, t.locationId));
 
+// The fixtures use fixed 2026 visit dates; the importer refuses visits more than 12 months old (customer
+// retention), so the clock is pinned (Date only; timers stay real) to keep these tests from expiring.
+const PINNED_NOW = new Date("2026-11-26T12:00:00Z");
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"], now: PINNED_NOW });
+});
 beforeAll(() => migrate(db, { migrationsFolder: "./drizzle" }));
 beforeEach(async () => {
   t = await makeTenant();
   sheet = [HEADER, pat(), sam(), lee()];
 });
 afterAll(async () => {
+  vi.useRealTimers();
   if (businessIds.length) await db.delete(s.businesses).where(inArray(s.businesses.id, businessIds));
   await db.$client.end();
 });
@@ -83,6 +91,21 @@ describe("pollSheet", () => {
     const src = await source();
     expect(src.lastRowId).toBe("3");
     expect(src.lastReadAt).toBeInstanceOf(Date);
+  });
+
+  it("does not bring back a row left in the sheet after its customer was deleted for retention", async () => {
+    await poll();
+    // A year later the owner's sheet still holds the rows, and the retention job has deleted the customers.
+    vi.setSystemTime(new Date("2027-12-01T12:00:00Z"));
+    try {
+      await purgeExpiredCustomers({ now: new Date() });
+      expect(await customersOf()).toHaveLength(0);
+      const r = await poll();
+      expect(r.ok && r.rows.map((x) => x.reason)).toEqual(Array(3).fill("visit_past_retention"));
+      expect(await customersOf()).toHaveLength(0);
+    } finally {
+      vi.setSystemTime(PINNED_NOW);
+    }
   });
 
   it("imports nothing on a second read with no new rows", async () => {

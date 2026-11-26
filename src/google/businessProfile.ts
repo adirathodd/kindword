@@ -36,6 +36,9 @@ export type GoogleReview = {
   reviewerName: string | null; // null for an anonymous reviewer
   createdAt: Date | null;
   hasReply: boolean; // the business has already replied on Google
+  // When the business's reply was last updated on Google (reviewReply.updateTime); null without a reply. Used only in
+  // memory by the monthly report's response time (src/reports/monthly.ts), never stored.
+  repliedAt?: Date | null;
 };
 
 export type ReviewSourceLocation = { googleLocationId: string; refreshToken: string };
@@ -85,6 +88,11 @@ function delayFor(attempt: number, retryAfter: string | null) {
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
 
+const parseTime = (v: unknown) => {
+  const t = str(v);
+  return t && !Number.isNaN(Date.parse(t)) ? new Date(t) : null;
+};
+
 // One review from the v4 list. Null for an entry we cannot store (no ID, or no 1-5 star rating).
 export function parseReview(raw: unknown): GoogleReview | null {
   if (!raw || typeof raw !== "object") return null;
@@ -96,13 +104,15 @@ export function parseReview(raw: unknown): GoogleReview | null {
   const created = str(r.createTime);
   const createdAt = created && !Number.isNaN(Date.parse(created)) ? new Date(created) : null;
   const reply = r.reviewReply as Record<string, unknown> | undefined;
+  const hasReply = !!reply && typeof reply === "object" && str(reply.comment) !== null;
   return {
     reviewId,
     rating,
     comment: str(r.comment),
     reviewerName: reviewer.isAnonymous === true ? null : str(reviewer.displayName),
     createdAt,
-    hasReply: !!reply && typeof reply === "object" && str(reply.comment) !== null,
+    hasReply,
+    repliedAt: hasReply ? parseTime(reply!.updateTime) : null,
   };
 }
 

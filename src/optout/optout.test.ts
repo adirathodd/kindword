@@ -177,7 +177,9 @@ describe("handleInboundSms", () => {
     const audit = await auditOf(A.locationId);
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({ entity: "customer", entityId: A.customerId, action: "opted_out" });
-    expect(JSON.stringify(audit)).not.toMatch(/555|0100|example\.test|stop please/i);
+    // Only the text fields: random UUIDs and timestamps can contain "555" or "0100" by chance.
+    const auditText = audit.map(({ entity, action, actor, detail }) => ({ entity, action, actor, detail }));
+    expect(JSON.stringify(auditText)).not.toMatch(/555|0100|example\.test|stop please/i);
 
     expect(sms.sent).toEqual([{ from: A_NUMBER, to: PHONE, body: expect.stringContaining("Alpha Plumbing") }]);
     expect(await isSuppressed(A.locationId, "sms", PHONE)).toBe(true);
@@ -273,8 +275,13 @@ describe("handleInboundSms", () => {
 describe("optOutEmail", () => {
   it("unsubscribes the email at that location and platform-wide, once", async () => {
     const token = unsubscribeToken(A.locationId, "Pat@Example.test");
-    expect(token).not.toMatch(/@|example|pat/i);
+    // The token is opaque: neither the email nor the location ID appears in it, as text or in its decoded bytes.
+    // (Matching short words like "pat" against the base64url text was flaky: random ciphertext can spell them.)
+    expect(token).not.toContain("@");
     expect(token).not.toContain(A.locationId);
+    const bytes = Buffer.from(token, "base64url").toString("latin1").toLowerCase();
+    expect(bytes).not.toContain("pat@example.test");
+    expect(bytes).not.toContain(A.locationId);
     expect(await optOutEmail(token)).toBe("opted_out");
 
     const rows = await suppressionRows();

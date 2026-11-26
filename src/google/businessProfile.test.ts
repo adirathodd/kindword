@@ -68,7 +68,14 @@ describe("parseReview", () => {
       reviewerName: "Pat Example",
       createdAt: new Date("2026-11-20T15:00:00Z"),
       hasReply: true,
+      repliedAt: null, // the reply carries no updateTime here
     });
+    expect(
+      parseReview(review("r5", { reviewReply: { comment: "Thanks!", updateTime: "2026-11-21T09:30:00Z" } }))?.repliedAt,
+    ).toEqual(new Date("2026-11-21T09:30:00Z"));
+    expect(
+      parseReview(review("r6", { reviewReply: { comment: "", updateTime: "2026-11-21T09:30:00Z" } })),
+    ).toMatchObject({ hasReply: false, repliedAt: null });
     expect(
       parseReview(review("r2", { comment: undefined, reviewer: { displayName: "A", isAnonymous: true } })),
     ).toMatchObject({ comment: null, reviewerName: null, hasReply: false });
