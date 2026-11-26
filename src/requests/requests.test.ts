@@ -51,9 +51,11 @@ class FakeSms implements SmsProvider {
 }
 class FakeEmail implements EmailProvider {
   sent: EmailMessage[] = [];
-  fail = false;
+  fail = false; // Resend answered and refused the email (refused: true)
+  failWith: unknown = null; // any other error, e.g. every attempt timed out
   async send(m: EmailMessage) {
-    if (this.fail) throw new Error("resend 422");
+    if (this.failWith) throw this.failWith;
+    if (this.fail) throw Object.assign(new Error("resend 422"), { refused: true });
     this.sent.push(m);
     return `em_${this.sent.length}`;
   }
@@ -283,6 +285,7 @@ describe("channel (FR-6)", () => {
       .from(s.auditLog)
       .where(and(eq(s.auditLog.locationId, t.locationId), eq(s.auditLog.action, "failed")));
     expect(log.detail).toBe("attempt=1;channel=sms;error=outcome_unknown");
+    expect((await one(v)).outcomeUnknown).toBe(true);
   });
 
   // FR-8: never message an opted-out phone or email; suppression applies to provider callbacks and future imports.
@@ -567,6 +570,41 @@ describe("90-day rule (FR-9)", () => {
     const v2 = await t.visit(c, plus(VISIT, HOUR));
     expect(await scheduleReviewRequests({ now: VISIT })).toEqual({ scheduled: 1, skipped: { duplicate: 1 } });
     expect((await one(v2)).skipReason).toBe("duplicate");
+  });
+
+  // F-12-4: a send that may have gone out counts as asked, so the customer is not asked again within 90 days.
+  it.each([
+    ["an SMS that timed out", "sms"],
+    ["an email that timed out on every attempt", "email"],
+  ] as const)("counts %s (outcome unknown)", async (_label, ch) => {
+    const t = await makeTenant();
+    const c = await t.customer(ch === "email" ? { phone: null } : {});
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    const timeout = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    if (ch === "sms") sms.failWith = timeout;
+    else email.failWith = timeout;
+    expect(await send(DUE)).toMatchObject({ sent: 0, failed: 1 });
+    expect(await one(first)).toMatchObject({ channel: ch, status: "failed", outcomeUnknown: true });
+
+    const later = plus(VISIT, 30 * DAY);
+    const second = await t.visit(c, later);
+    expect(await scheduleReviewRequests({ now: later })).toEqual({ scheduled: 0, skipped: { duplicate: 1 } });
+    expect((await one(second)).skipReason).toBe("duplicate");
+  });
+
+  it("does not count an email the provider refused", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.fail = true;
+    await send(DUE);
+    expect(await one(first)).toMatchObject({ status: "failed", outcomeUnknown: false });
+    const later = plus(VISIT, 30 * DAY);
+    const second = await t.visit(c, later);
+    await scheduleReviewRequests({ now: later });
+    expect((await one(second)).status).toBe("scheduled");
   });
 
   it("does not count a skipped or failed request", async () => {
