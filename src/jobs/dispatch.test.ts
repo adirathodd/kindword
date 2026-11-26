@@ -33,6 +33,9 @@ vi.mock("../notifications/ownerEmails", () => ({
 vi.mock("../reviews/purge", () => ({
   purgeExpiredReviews: track("purgeExpiredReviews", { reviews: 0, drafts: 0, cutoff: new Date() }),
 }));
+vi.mock("../retention/customers", () => ({
+  purgeExpiredCustomers: track("purgeExpiredCustomers", { customers: 0, cutoff: new Date() }),
+}));
 vi.mock("../notifications/operatorAlerts", () => ({
   sendOperatorAlerts: track("sendOperatorAlerts", { sent: 0, sendFailed: 0, tokenExpired: 0, reviewCheckStale: 0 }),
 }));
@@ -100,7 +103,7 @@ describe("dispatch", () => {
     ["review-requests", ["runReviewRequestJobs"]],
     ["reviews", ["pollReviews", "draftPendingReviews", "sendLowRatingAlerts"]],
     ["owner-digest", ["sendDailyDigests"]],
-    ["purge", ["purgeExpiredReviews"]],
+    ["purge", ["purgeExpiredReviews", "purgeExpiredCustomers"]],
     ["monthly-report", ["sendMonthlyReports"]],
     ["operator-alerts", ["sendOperatorAlerts"]],
   ])("%s calls its job code", async (job, expected) => {
@@ -146,7 +149,8 @@ describe("failures and retries", () => {
     calls.failPurge = true;
     await expect(runScheduled(msg("purge"))).rejects.toBeInstanceOf(JobFailedError);
     const line = String(vi.mocked(console.error).mock.calls[0][0]);
-    expect(line).toBe('job purge: failed {"purge":{"error":"Error"}}');
+    // The customer retention step still runs after the review purge failed.
+    expect(line).toBe('job purge: failed {"purge":{"error":"Error"},"customers":{"customers":0}}');
   });
 
   it("backs off 30 s, 1, 2, 4, 8 min, then gives up", () => {

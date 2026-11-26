@@ -5,6 +5,7 @@ import Papa from "papaparse";
 import { z } from "zod";
 import { db as defaultDb, type Db } from "../db/client";
 import { consentAttestations, consentMethod, customers, locations, visits } from "../db/schema";
+import { customerRetentionCutoff } from "../retention/customers";
 import { normalizePhone, parseTime } from "./normalize";
 
 export const COLUMNS = [
@@ -35,6 +36,7 @@ export type RowResult =
         | "invalid_phone"
         | "invalid_email"
         | "invalid_visit_time"
+        | "visit_past_retention"
         | "no_contact"
         | "no_consent_no_email"
         | "contact_conflict";
@@ -133,6 +135,7 @@ export async function importRows(
   const seen = new Set<string>(); // normalized phones and emails (and sheet row IDs) already accepted from this read
   const rows: RowResult[] = [];
   const now = new Date();
+  const retentionCutoff = customerRetentionCutoff(now);
 
   for (const { row, raw, rowId } of input) {
     const res = (status: RowResult["status"], reason: Reason) => rows.push({ row, status, reason } as RowResult);
@@ -155,6 +158,13 @@ export async function importRows(
       continue;
     }
     const v = r.data;
+    // SPEC Security, Retention: customer rows are deleted 12 months after the last visit (src/retention/customers.ts),
+    // so a visit already that old is never stored. Also stops a row left in a shared Sheet from coming back after its
+    // customer was deleted. Such a request would be skipped as stale anyway (FR-5).
+    if (parseTime(v.visit_time!, loc.timezone)! <= retentionCutoff) {
+      res("rejected", "visit_past_retention");
+      continue;
+    }
     const phone = v.phone ? normalizePhone(v.phone)! : undefined;
     const email = v.email?.toLowerCase();
     if (!phone && !email) {
