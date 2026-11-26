@@ -24,14 +24,23 @@ export const VERIFY_TTL_MS = 24 * 60 * MINUTE;
 export const RESET_TTL_MS = 15 * MINUTE;
 export const ACCOUNT_SESSION_TTL_MS = SESSION_TTL_MS; // 30 days, like inbox sessions
 // Version of the terms and privacy policy shown on the sign-up page; bump when they change.
-export const TERMS_VERSION = "2026-11-25.2-draft";
+export const TERMS_VERSION = "2026-11-26-draft";
 
 const newSecret = () => randomBytes(32).toString("base64url");
 const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
 export const normalizeEmail = (s: string) => s.trim().toLowerCase();
 
-export type Deps = { email: EmailProvider; breach: BreachChecker; baseUrl: string; operatorEmail?: string; now?: Date };
+// later: runs a task after the response is sent (Next.js after() in routes). Without it the task runs inline.
+export type Later = (task: () => Promise<void>) => void;
+export type Deps = {
+  email: EmailProvider;
+  breach: BreachChecker;
+  baseUrl: string;
+  operatorEmail?: string;
+  now?: Date;
+  later?: Later;
+};
 export type AccountSession = { sessionId: string; accountId: string; businessId: string };
 
 // ---- rate limits ----------------------------------------------------------------------------------------------
@@ -61,6 +70,19 @@ export async function allow(limit: Limit, value: string, now = new Date(), db: D
     .where(and(eq(authAttempts.key, key), gt(authAttempts.at, since)));
   await db.insert(authAttempts).values({ key, at: now });
   return n < max;
+}
+
+// FR-13/FR-24 (audit F-28-2, F-36-2): work only one path does (a new account, or a link for a known email) runs
+// after the response, so both paths answer after the same work and response time does not reveal the email.
+// The answer is already "check your email", so a failure is only logged, with no address or error text.
+export async function afterResponse(deps: { later?: Later }, what: string, task: () => Promise<unknown>) {
+  const safe = () =>
+    task().then(
+      () => {},
+      () => console.warn(`${what} failed`),
+    );
+  if (deps.later) deps.later(safe);
+  else await safe();
 }
 
 // ---- tokens, sessions, email ----------------------------------------------------------------------------------
@@ -159,6 +181,23 @@ export async function signUp(input: SignUpInput, ip: string, deps: Deps, db: Db 
     return { ok: false, error: "That password has appeared in a data breach. Choose a different one." };
 
   const passwordHash = await hashPassword(input.password);
+  await afterResponse(deps, "sign-up", () =>
+    finishSignUp(name, businessName, email, input.email.trim(), passwordHash, deps, now, db),
+  );
+  return { ok: true };
+}
+
+// Creates the business and account and emails the link, or tells an existing owner someone tried their email.
+async function finishSignUp(
+  name: string,
+  businessName: string,
+  email: string,
+  displayEmail: string,
+  passwordHash: string,
+  deps: Deps,
+  now: Date,
+  db: Db,
+) {
   const created = await db
     .transaction(async (tx) => {
       const [taken] = await tx
@@ -175,7 +214,7 @@ export async function signUp(input: SignUpInput, ip: string, deps: Deps, db: Db 
         .values({
           businessId: b.id,
           name,
-          email: input.email.trim(),
+          email: displayEmail,
           normalizedEmail: email,
           passwordHash,
           termsVersion: TERMS_VERSION,
@@ -206,14 +245,13 @@ export async function signUp(input: SignUpInput, ip: string, deps: Deps, db: Db 
       ],
       { url: `${deps.baseUrl}/account/sign-in`, label: "Sign in" },
     );
-    return { ok: true };
+    return;
   }
   await sendVerify(deps, created.accountId, email, now, db);
   if (deps.operatorEmail)
     await mail(deps, deps.operatorEmail, `New sign-up: ${businessName}`, [
       `A new business signed up and is waiting for onboarding (business ID ${created.businessId}).`,
     ]);
-  return { ok: true };
 }
 
 // ---- verification ---------------------------------------------------------------------------------------------
@@ -304,14 +342,15 @@ export async function requestReset(emailInput: string, ip: string, deps: Deps, d
   const okIp = await allow("resetIp", ip, now, db);
   const okEmail = await allow("resetEmail", email, now, db);
   if (!okIp || !okEmail) return { ok: false as const, limited: true as const };
-  const [a] = await db
-    .select({ id: ownerAccounts.id })
-    .from(ownerAccounts)
-    .where(and(eq(ownerAccounts.normalizedEmail, email), isNull(ownerAccounts.disabledAt)));
-  // FR-24: the same response whether or not the email has an account, including when the email provider fails
-  // (only an existing account reaches this send). The unsent link is single use and expires in 15 minutes; the owner
-  // can ask again. No address or error text is logged.
-  if (a)
+  // FR-24: the same response whether or not the email has an account, including when the email provider fails.
+  // The lookup and send run after the response (afterResponse). An unsent link is single use and expires in 15
+  // minutes; the owner can ask again.
+  await afterResponse(deps, "password reset email", async () => {
+    const [a] = await db
+      .select({ id: ownerAccounts.id })
+      .from(ownerAccounts)
+      .where(and(eq(ownerAccounts.normalizedEmail, email), isNull(ownerAccounts.disabledAt)));
+    if (!a) return;
     await mail(
       deps,
       email,
@@ -321,7 +360,8 @@ export async function requestReset(emailInput: string, ip: string, deps: Deps, d
         url: `${deps.baseUrl}/account/reset/${await newToken(a.id, "reset_password", now, db)}`,
         label: "Choose a new password",
       },
-    ).catch(() => console.warn("password reset email not sent"));
+    );
+  });
   return { ok: true as const };
 }
 

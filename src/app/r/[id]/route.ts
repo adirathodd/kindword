@@ -1,5 +1,7 @@
 // Review link redirect (SPEC FR-7, Flow 2 step 3): counts the click, then sends the customer to the business's
-// Google review form. Unknown or unsent IDs get a plain 404; nothing about the request is revealed.
+// Google review form. Unknown IDs and messages that never went out (never sent, or refused by the provider) get a
+// plain 404; a send with an unknown outcome may have reached the customer, so its link works. Nothing about the
+// request is revealed.
 import { recordClick, reviewLinkFor } from "../../../requests/requests";
 
 const headers = { "Cache-Control": "no-store", "X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer" };

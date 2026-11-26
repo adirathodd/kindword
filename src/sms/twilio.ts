@@ -2,7 +2,8 @@
 // signature is an HMAC-SHA1 over the configured URL plus the sorted form fields, and sending is one REST call.
 // Nothing here logs or returns phone numbers, message text or the auth token.
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { InboundSms, SmsProvider } from "./provider";
+import type { ConfirmationSms } from "../optout/confirmations";
+import type { InboundSms } from "./provider";
 
 const MAX_BODY_BYTES = 64 * 1024; // Twilio webhooks are a few KB; anything larger is not from Twilio
 const SEND_TIMEOUT_MS = 10_000;
@@ -80,7 +81,7 @@ export class TwilioSendError extends Error {
   }
 }
 
-export class TwilioSms implements SmsProvider {
+export class TwilioSms implements ConfirmationSms {
   constructor(
     private readonly config: TwilioConfig,
     private readonly fetchImpl: typeof fetch = fetch,
@@ -144,6 +145,33 @@ export class TwilioSms implements SmsProvider {
         await sleep(delayFor(attempt, e.retryAfter));
       }
     }
+  }
+
+  // Lists messages from `from` to `to` (Twilio returns the newest first) and checks for one created at or after
+  // `since`. Resolves an opt-out confirmation whose send timed out (audit F-9-2). Only dates are read.
+  async sentSince(from: string, to: string, since: Date): Promise<boolean> {
+    const { accountSid, authToken } = this.config;
+    const query = new URLSearchParams({ From: from, To: to, PageSize: "20" });
+    const res = await this.fetchImpl(
+      `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Messages.json?${query}`,
+      {
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      },
+    );
+    const json = (await res.json().catch(() => null)) as {
+      messages?: { date_created?: unknown }[];
+      code?: unknown;
+    } | null;
+    if (!res.ok || !Array.isArray(json?.messages))
+      throw new TwilioSendError(res.status, typeof json?.code === "number" ? json.code : null);
+    // date_created has whole seconds, so `since` is floored to its second. No wider margin: a customer often replies
+    // STOP seconds after a review request, and that request must not count as the confirmation.
+    const after = Math.floor(since.getTime() / 1000) * 1000;
+    return json.messages.some((m) => typeof m.date_created === "string" && Date.parse(m.date_created) >= after);
   }
 
   private async sendOnce(from: string, to: string, body: string): Promise<string | void> {
