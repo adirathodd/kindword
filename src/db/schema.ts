@@ -188,9 +188,13 @@ export const reviewRequests = pgTable(
     providerMessageId: text("provider_message_id"),
     attempt: smallint("attempt").notNull(),
     clickedAt: ts("clicked_at"),
+    // A failed send that may still have reached the customer (timeout, lost connection, ambiguous 5xx). Counts as
+    // asked for FR-9.
+    outcomeUnknown: boolean("outcome_unknown").notNull().default(false),
   },
   (t) => [
     unique().on(t.visitId, t.channel, t.attempt),
+    check("outcome_unknown_only_failed", sql`not ${t.outcomeUnknown} or ${t.status} = 'failed'`),
     check("attempt_1_or_2", sql`${t.attempt} in (1, 2)`), // request or the one reminder
     check("skip_reason_iff_skipped", sql`(${t.status} = 'skipped') = (${t.skipReason} is not null)`),
     index().on(t.status, t.scheduledFor),

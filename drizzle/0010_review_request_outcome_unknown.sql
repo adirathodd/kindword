@@ -1,0 +1,2 @@
+ALTER TABLE "review_requests" ADD COLUMN "outcome_unknown" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "review_requests" ADD CONSTRAINT "outcome_unknown_only_failed" CHECK (not "review_requests"."outcome_unknown" or "review_requests"."status" = 'failed');
