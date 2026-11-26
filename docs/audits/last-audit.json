@@ -167,7 +167,7 @@
         "vercel.json"
       ],
       "previously_audited": false,
-      "audit_status": "audited (verified finding F-72-1, introduced by #72; fix PR on claude/cool-meitner-7a9xpf)",
+      "audit_status": "audited (verified finding F-72-1, introduced by #72; fixed in #75)",
       "findings": ["F-72-1", "O-72-1", "O-72-2"]
     },
     {
@@ -250,7 +250,7 @@
       "pr": 72,
       "classification": "introduced by #72",
       "severity": "important",
-      "status": "fixed (fix PR)",
+      "status": "fixed in #75 (open, not merged)",
       "spec": "FR-8 and Flow 2 step 4 (one confirmation-only text); Reliability (a retry never sends the same message twice)",
       "summary": "sendPendingConfirmations ran the Twilio message-list lookup inside the send try/catch. A lookup failing with 429 or 503 throws TwilioSendError (refused: true); recordSendError then marked the row pending, and a pending row is resent without a lookup, so a confirmation Twilio took during the timed-out webhook attempt is sent a second time.",
       "reproduction": "src/optout/optout.test.ts 'a failed Twilio lookup after a timeout never leads to a resend without a lookup' fails on main (row status pending) and passes with the fix."
@@ -270,8 +270,8 @@
   ],
   "fix_prs": [
     {
-      "pr": null,
-      "url": null,
+      "pr": 75,
+      "url": "https://github.com/adirathodd/kindword/pull/75",
       "branch": "claude/cool-meitner-7a9xpf",
       "base": "main @ 3fefa4c",
       "remediates": [72],
@@ -294,9 +294,7 @@
       "regression": "new lookup-failure test fails without the fix, passes with it"
     }
   },
-  "merge_order": [
-    "fix PR (independent; touches only src/optout/confirmations.ts, src/optout/optout.test.ts and this file)"
-  ],
+  "merge_order": ["#75 (independent)"],
   "unresolved": [
     "S-10 (next SPEC sync)",
     "O-72-1, O-72-2, O-59-1 (observations)",
