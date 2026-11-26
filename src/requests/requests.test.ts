@@ -619,6 +619,24 @@ describe("90-day rule (FR-9)", () => {
     expect((await one(v)).status).toBe("scheduled");
   });
 
+  // F-7-4 (decided 2026-11-26): a duplicate skip is final; the customer's next visit is asked as usual.
+  it("keeps a duplicate skip when the request it duplicated fails, and asks the next visit", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ mail: null });
+    const first = await t.visit(c);
+    const second = await t.visit(c, plus(VISIT, HOUR));
+    expect(await scheduleReviewRequests({ now: VISIT })).toEqual({ scheduled: 1, skipped: { duplicate: 1 } });
+    sms.fail = true;
+    await send(DUE);
+    expect(await one(first)).toMatchObject({ status: "failed", outcomeUnknown: false });
+    sms.fail = false;
+    const later = plus(VISIT, 30 * DAY);
+    const third = await t.visit(c, later);
+    expect(await scheduleReviewRequests({ now: later })).toEqual({ scheduled: 1, skipped: {} });
+    expect((await one(second)).skipReason).toBe("duplicate");
+    expect((await one(third)).status).toBe("scheduled");
+  });
+
   it("applies per location: the same phone at another business is asked", async () => {
     const a = await makeTenant();
     await a.visit(await a.customer());
