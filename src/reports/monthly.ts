@@ -25,7 +25,7 @@ import type { EmailMessage, EmailProvider } from "../email/provider";
 import { GoogleReviewsError, type GoogleReview, type ReviewSource } from "../google/businessProfile";
 import { decryptRefreshToken } from "../google/tokenCrypto";
 import { escapeHtml as e } from "../inbox/auth";
-import { DIGEST_HOUR, lockLocation, recipients, type Recipient } from "../notifications/ownerEmails";
+import { DIGEST_HOUR, inboxUrl, lockLocation, recipients, type Recipient } from "../notifications/ownerEmails";
 
 const ACTOR = "system:monthly_report";
 const SENT_ACTION = "monthly_report_sent";
@@ -251,7 +251,7 @@ export function monthlyReportEmail(
     `Replies posted to Google: ${own.repliesPosted}`,
   ];
   const note = "Every reply waits for your approval before it is posted.";
-  const url = `${baseUrl}/inbox`;
+  const url = inboxUrl(baseUrl, r.locationId);
   const text = [
     head,
     "",

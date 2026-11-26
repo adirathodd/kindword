@@ -1,50 +1,55 @@
 {
-  "sync_id": "sync-2026-11-26-01",
-  "synced_at": "2026-11-26",
+  "sync_id": "sync-2026-11-26-02",
+  "synced_at": "2026-11-26T11:10Z to 12:10Z",
   "repository": "adirathodd/review-automation (GitHub reports adirathodd/kindword)",
   "target_branch": "main",
-  "audited_sha": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2",
+  "audited_sha": "f3d6d49fcfdc0ba3424542329ee46d854db43292",
   "main_moved_during_run": false,
   "previous_sync": {
-    "sync_id": "sync-2026-11-25-01",
-    "audited_sha": "b822c46a099252ac527f6dc70c0d50aaa4a0d8f0",
-    "status": "complete_with_documented_discrepancies; PR not opened (GitHub HTTP 500), branch ccr-b0cc9d2d-e3u0db superseded by this sync, which carries its edits"
+    "sync_id": "sync-2026-11-26-01",
+    "audited_sha": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2",
+    "status": "complete_with_documented_discrepancies"
   },
-  "commits_reviewed": "ca05c82..0d0c648: #32, #34, #35, #36, #37 (audit-2026-11-25-01), #38, #39, #40, #41, #33 (audit-2026-11-26-01)",
+  "commits_reviewed": "0d0c648..f3d6d49: #42, #43, #44, #45, #46, #47, #48, #50, #52, #53, #54, #55, #58, #57. #44 to #55 status rows were already written by #44, #45, #53 and #58; this run re-checked them and covered #43, #48 and #57. Open PRs #49, #51, #59 to #63 not used as evidence",
   "sources_of_truth": {
     "spec": "docs/SPEC.md and the Claude Doc https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs, always kept in sync (owner decision D-1, 2026-11-24)",
     "status_and_priorities": "Notion: Kindword (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
     "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
     "doc_status": "Read via the Artifact tool: it is a Claude Docs document; no Claude Docs connector in this session, so its text could not be read or written. Edits the Doc still needs: docs/sync/proposed-spec-changes.md"
   },
-  "evidence": "Code read on main 0d0c648. Node 24.22.3 + local Postgres 16: 520/520 vitest pass, prettier and eslint clean, next build passes.",
-  "requirements_reviewed": "FR-2a, FR-11, FR-13, FR-19, FR-22, FR-24, Data model, Risks and decisions (rows changed by the PRs in this range); other rows unchanged since ca05c82",
+  "evidence": "Code read on main f3d6d49 (src/retention/customers.ts, src/jobs/jobs.ts, src/requests/requests.ts reviewLinkFor/recordClick, src/compliance/compliance.ts). Node 24.22 + local Postgres 16, migrations 0000-0011 applied: 594/594 vitest pass, prettier and eslint clean (next build not re-run: docs-only change; passed at f3d6d49 in audit-2026-11-26-02). Cross-checked with audit-2026-11-26-02 (open PR #61), which agrees",
+  "requirements_reviewed": "All FR-1 to FR-24 rows re-checked against main; changed: FR-2, FR-7, FR-17, FR-23, Retention (Security) row added; Decisions needed D-13 added",
   "requirements": {
-    "implemented": ["FR-3", "FR-6", "FR-7", "FR-8", "FR-9", "FR-10", "FR-12", "FR-14", "FR-16"],
-    "partial": ["FR-2", "FR-2a", "FR-5", "FR-11", "FR-13", "FR-19", "FR-22", "FR-24"],
-    "not_implemented": ["FR-1", "FR-15", "FR-17", "FR-18", "FR-20", "FR-23"],
+    "implemented": ["FR-3", "FR-6", "FR-8", "FR-9", "FR-10", "FR-12", "FR-14", "FR-16", "FR-22"],
+    "implemented_with_gaps": {
+      "FR-7": "F-43-1 review link 404 after an outcome-unknown send (fix #60)",
+      "FR-8": "F-9-2 confirmation text can be lost on a Twilio timeout"
+    },
+    "partial": ["FR-2", "FR-2a", "FR-5", "FR-11", "FR-13", "FR-19", "FR-23", "FR-24", "Retention (Security)", "FR-17"],
+    "not_implemented": ["FR-1", "FR-15", "FR-18", "FR-20"],
     "later": ["FR-4", "FR-21"],
     "noncompliant": [
-      "FR-13: / is the marketing landing page (D-2); owner emails link to /inbox, wrong location for multi-location businesses (F-40-1)",
-      "FR-24: imports not refused for onboarding businesses; accepted terms/privacy pages 404"
+      "FR-7: F-43-1 (bug, pre-existing since #7; fix in #60)",
+      "FR-13: owner entry URL (D-2) and F-40-1",
+      "FR-24: imports not refused for onboarding businesses (S-5)"
     ],
     "status_changes_since_last_sync": {
-      "FR-11": "not implemented -> partial (#41)",
-      "FR-2a": "partial, reader added (#37)",
-      "FR-13": "partial, link request (#36, #38) and owner emails (#40) added",
-      "FR-24": "partial, per-email sign-up limit added (#34)"
+      "FR-5, FR-6, FR-12, FR-13, FR-22, FR-2a, FR-11": "scheduled by #44 (rows written by #44)",
+      "FR-17": "not implemented -> partial (#53): no delivered count (Flow 4); latent O-53-1; not live-tested. #53 had written Implemented",
+      "FR-22": "partial -> implemented, not live-tested (#44)",
+      "FR-23": "not implemented -> partial, draft wording (#45); support address now real (#48)",
+      "FR-7": "implemented -> implemented with one failure-path gap (F-43-1)",
+      "Retention (Security)": "new row: partial (#57)"
     }
   },
   "spec_changes": [
-    "Header: last synced against 0d0c648",
-    "Implementation status at 0d0c648: FR-2a, FR-11, FR-13, FR-19, FR-22, FR-24",
-    "Data model: waitlist_entries (#33)",
-    "Decisions needed: F-40-1 (with D-2), D-6, D-7, D-8 open",
-    "Carried from sync-2026-11-25-01: FR-2a row, FR-24 engines pin, decisions S-5, A-6, Sheet template dates and tab"
+    "Header: last synced against f3d6d49",
+    "Implementation status at f3d6d49: FR-2 (visit_past_retention), FR-7 (F-43-1), FR-17 (O-53-1), FR-23 (support address), new Retention (Security) row",
+    "Decisions needed: D-13 consent evidence retention"
   ],
-  "spec_changes_proposed": null,
-  "notion_changes": ["SPEC sync log: entry for sync-2026-11-26-01 with the Doc edits still needed (see PR #42)"],
-  "open_documentation_prs": ["#42"],
+  "doc_edits_pending": "docs/sync/proposed-spec-changes.md (Implementation status table, header line, D-13); no Claude Docs connector in this session",
+  "notion_changes": "see the SPEC sync log entry sync-2026-11-26-02",
+  "open_documentation_prs": ["this PR (sync-2026-11-26-02)", "#61 (audit record audit-2026-11-26-02)"],
   "open_decisions": [
     "D-2 owner entry URL (FR-13)",
     "D-3 password change (FR-24)",
@@ -60,15 +65,20 @@
     "D-8 waitlist scope and retention",
     "S-5 import while onboarding",
     "A-6 emailed link before verification",
-    "Sheet template dates and tab (O-37-1)"
+    "Sheet template dates and tab (O-37-1)",
+    "D-9 job scheduler in the Stack line",
+    "D-12 email sends without Twilio",
+    "D-13 consent evidence retention (lawyer)",
+    "Google-connect location ID lookup (Notion)"
   ],
   "open_observations": [
     "O-1 no E.164 check on locations.sms_number",
     "O-2 sheet_sources attestation FK not tenant-scoped",
-    "F-7-5 invalid locations.timezone stops scheduling for every tenant (fix with FR-1)",
-    "No engines pin for Node >= 24.7 (crypto.argon2)"
+    "O-43-1 90-day window dated by scheduled_for for outcome-unknown sends",
+    "O-46-1 failure-path transaction error aborts the batch",
+    "O-40-1 audit_log NOT EXISTS without an index",
+    "O-53-2 clicks can exceed sends"
   ],
   "status": "complete_with_documented_discrepancies",
-  "next_sync_starts_after": "0d0c648b34a86ce98b84a72aa2d5d8a4bea745e2",
-  "doc_edits_pending": "docs/sync/proposed-spec-changes.md (sections 0, 1 and 2)"
+  "next_sync_starts_after": "f3d6d49fcfdc0ba3424542329ee46d854db43292"
 }
