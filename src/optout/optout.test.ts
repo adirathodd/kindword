@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import type { InboundSms, SmsProvider } from "../sms/provider";
+import { TwilioSendError } from "../sms/twilio";
 import { sendPendingConfirmations } from "./confirmations";
 import { handleInboundSms, isOptOutMessage, isSuppressed, optOutEmail, unsubscribeToken } from "./optout";
 
@@ -322,6 +323,40 @@ describe("confirmation outbox (audit F-9-2)", () => {
     expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, alreadySent: 1, open: 0 });
     expect(sms.accepted).toHaveLength(1);
     expect(await row()).toMatchObject({ status: "sent" });
+  });
+
+  // F-72-1: a failed lookup is not a refused send. Twilio's message list answering 429 or 503 (TwilioSendError,
+  // refused: true) used to mark the row pending, and a pending row is resent without a lookup, so a confirmation
+  // Twilio took during the timed-out attempt went out a second time.
+  it("a failed Twilio lookup after a timeout never leads to a resend without a lookup", async () => {
+    sms.failNext = ["timeout"]; // Twilio took the text; we never heard
+    await expect(handleInboundSms(sms, inbound("STOP"))).rejects.toThrow();
+    await age(90);
+    const lookup = sms.sentSince.bind(sms);
+    sms.sentSince = async () => {
+      throw new TwilioSendError(429, 20429);
+    };
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, failed: 1, open: 1 });
+    expect(await row()).toMatchObject({ status: "sending" }); // outcome still unknown
+    expect(sms.accepted).toHaveLength(1);
+
+    sms.sentSince = lookup;
+    await age(90);
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, alreadySent: 1, open: 0 });
+    expect(sms.accepted).toHaveLength(1); // never twice
+    expect(await row()).toMatchObject({ status: "sent" });
+  });
+
+  it("a lookup that fails with a network error also leaves the outcome unknown", async () => {
+    sms.failNext = ["timeout"];
+    await expect(handleInboundSms(sms, inbound("STOP"))).rejects.toThrow();
+    await age(90);
+    sms.sentSince = async () => {
+      throw new TypeError("fetch failed");
+    };
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, failed: 1, open: 1 });
+    expect(await row()).toMatchObject({ status: "sending" });
+    expect(sms.accepted).toHaveLength(1);
   });
 
   it("a refused send is retried at once, and never after 5 minutes", async () => {

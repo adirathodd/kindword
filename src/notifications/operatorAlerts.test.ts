@@ -6,7 +6,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
+import { TwilioSendError } from "../sms/twilio";
 import { ALERT_ACTIONS, REVIEW_CHECK_STALE_MS, sendOperatorAlerts } from "./operatorAlerts";
+import { recordOwnerEmailFailure, type OwnerEmailKind } from "./sendFailures";
 
 const HOUR = 60 * 60 * 1000;
 const NOW = new Date("2026-11-26T15:00:00Z");
@@ -80,6 +82,9 @@ const failedSend = (locationId: string | null, channel: "sms" | "email", error: 
 const polled = (locationId: string, when: Date) =>
   audit(locationId, "location", locationId, "reviews_polled", null, when);
 
+const ownerEmailFailed = (locationId: string, kind: OwnerEmailKind, period: string, when: Date, error?: unknown) =>
+  recordOwnerEmailFailure({ locationId, kind, period, error: error ?? new Error("provider down"), at: when });
+
 const run = (email: FakeEmail, now = NOW) => sendOperatorAlerts({ email, operatorEmail: OPERATOR, now });
 
 beforeAll(async () => {
@@ -98,7 +103,14 @@ afterAll(async () => {
 describe("nothing to report", () => {
   it("sends nothing and records nothing", async () => {
     const email = new FakeEmail();
-    expect(await run(email)).toEqual({ sent: 0, sendFailed: 0, tokenExpired: 0, reviewCheckStale: 0 });
+    expect(await run(email)).toEqual({
+      sent: 0,
+      sendFailed: 0,
+      tokenExpired: 0,
+      reviewCheckStale: 0,
+      ownerEmailFailed: 0,
+      confirmationFailed: 0,
+    });
     expect(email.sent).toEqual([]);
   });
 });
@@ -172,6 +184,122 @@ describe("failed sends", () => {
     const results = await Promise.all([run(email), run(email)]);
     expect(results.map((r) => r.sent).sort()).toEqual([0, 1]);
     expect(email.sent).toHaveLength(1);
+  });
+});
+
+describe("failed owner emails", () => {
+  it("reports each location, kind and period once, with attempts and codes and no personal data", async () => {
+    const { locationId, businessName } = await location();
+    await ownerEmailFailed(locationId, "digest", "2026-11-26", at(-3));
+    await ownerEmailFailed(locationId, "digest", "2026-11-26", at(-2), new TwilioSendError(503, null));
+    await ownerEmailFailed(locationId, "digest", "2026-11-26", at(-1));
+    await ownerEmailFailed(locationId, "monthly_report", "2026-10", at(-1));
+    const email = new FakeEmail();
+    expect(await run(email)).toMatchObject({ sent: 1, ownerEmailFailed: 2 });
+    const m = email.sent[0];
+    expect(m.subject).toContain("2 owner emails failed");
+    expect(m.text).toContain(
+      `${businessName} (Main St, location ${locationId}): daily digest for 2026-11-26, 3 failed attempts (Error, sms_status_503)`,
+    );
+    expect(m.text).toContain("monthly report for 2026-10, 1 failed attempt (Error)");
+    expect(m.text).toContain("later failures for the same month are not reported again");
+    for (const body of [m.text, m.html, m.subject]) expect(body).not.toMatch(/@|\+1\d{10}/);
+
+    const rows = await db
+      .select({ detail: s.auditLog.detail, entityId: s.auditLog.entityId })
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.locationId, locationId), eq(s.auditLog.action, ALERT_ACTIONS.owner_email_failed)));
+    expect(rows.map((r) => r.detail).sort()).toEqual([
+      "kind=digest;period=2026-11-26",
+      "kind=monthly_report;period=2026-10",
+    ]);
+    expect(rows.every((r) => r.entityId === locationId)).toBe(true);
+
+    // The digest keeps failing on later runs that day: not reported again. The next day's failure is.
+    await ownerEmailFailed(locationId, "digest", "2026-11-26", at(0.5));
+    expect(await run(email, at(1))).toMatchObject({ sent: 0 });
+    await ownerEmailFailed(locationId, "digest", "2026-11-27", at(20));
+    expect(await run(email, at(21))).toMatchObject({ sent: 1, ownerEmailFailed: 1 });
+    expect(email.sent[1].text).toContain("daily digest for 2026-11-27, 1 failed attempt");
+  });
+
+  it("keeps kinds and locations apart, and a period that is a prefix of another does not hide it", async () => {
+    const a = await location();
+    const b = await location();
+    await ownerEmailFailed(a.locationId, "low_rating", "2026-11-26", at(-1));
+    const email = new FakeEmail();
+    await run(email);
+    await ownerEmailFailed(a.locationId, "digest", "2026-11-26", at(-0.5)); // same day, other kind
+    await ownerEmailFailed(b.locationId, "low_rating", "2026-11-26", at(-0.5)); // same kind and day, other location
+    await ownerEmailFailed(a.locationId, "monthly_report", "2026-1", at(-0.5));
+    await run(email, at(0.25));
+    await ownerEmailFailed(a.locationId, "monthly_report", "2026-11", at(0.5)); // "2026-1" alerted; this is not it
+    expect(await run(email, at(1))).toMatchObject({ sent: 1, ownerEmailFailed: 1 });
+    expect(email.sent[0].text).toContain("low-rating email for 2026-11-26");
+    expect(email.sent[1].text).toContain("3 new problems"); // a's digest, b's low-rating email, a's "2026-1" report
+    expect(email.sent[2].text).toContain("monthly report for 2026-11,");
+    expect(new Set(email.sent.map((m) => m.idempotencyKey)).size).toBe(3);
+  });
+
+  it("skips offboarded businesses and still reports a location that was deleted", async () => {
+    const off = await location({ status: "offboarded" });
+    await ownerEmailFailed(off.locationId, "digest", "2026-11-26", at(-1));
+    await ownerEmailFailed(randomUUID(), "digest", "2026-11-26", at(-1));
+    const email = new FakeEmail();
+    expect(await run(email)).toMatchObject({ sent: 1, ownerEmailFailed: 1 });
+    expect(email.sent[0].text).toContain("Unknown business (unknown location");
+    expect(email.sent[0].text).not.toContain(off.businessName);
+  });
+
+  it("records nothing when the alert email fails, and reports it on the next run", async () => {
+    const { locationId } = await location();
+    await ownerEmailFailed(locationId, "digest", "2026-11-26", at(-1));
+    const email = new FakeEmail();
+    email.failNext = 1;
+    await expect(run(email)).rejects.toThrow("provider down");
+    expect(await run(email, at(0.25))).toMatchObject({ sent: 1, ownerEmailFailed: 1 });
+  });
+});
+
+// An opt-out whose one confirmation the optout-confirmations job gave up on (src/optout/confirmations.ts).
+let confirmationN = 0;
+async function expiredConfirmation(locationId: string | null, attempts = 2, status = "expired") {
+  const address = `+1201555${String(1000 + (confirmationN++ % 9000)).padStart(4, "0")}`;
+  const [sup] = await db
+    .insert(s.suppressionList)
+    .values({ locationId, channel: "sms", address: `${address}-${randomUUID()}`, source: "test" })
+    .returning();
+  await db
+    .insert(s.optOutConfirmations)
+    .values({ suppressionId: sup.id, locationId, fromNumber: "+12015550100", status, attempts });
+}
+
+describe("failed opt-out confirmations", () => {
+  it("reports each failure once, with the code, the opt-out kept, and no phone number", async () => {
+    const { locationId, businessName } = await location();
+    await expiredConfirmation(locationId, 3);
+    await expiredConfirmation(null, 1); // texted a number no location uses
+    await expiredConfirmation(locationId, 1, "sent"); // sent: not a failure
+    const email = new FakeEmail();
+    expect(await run(email)).toMatchObject({ sent: 1, confirmationFailed: 2 });
+    const m = email.sent[0];
+    expect(m.subject).toContain("2 opt-out confirmation texts failed");
+    expect(m.text).toContain(
+      `${businessName} (Main St, location ${locationId}): confirmation not confirmed sent within 5 minutes (3 attempts)`,
+    );
+    expect(m.text).toContain("No location on record: confirmation not confirmed sent within 5 minutes (1 attempt)");
+    expect(m.text).toContain("The opt-out is recorded and honored");
+    for (const body of [m.text, m.html, m.subject]) expect(body).not.toMatch(/@|\+1\d{10}/);
+    expect(await run(email, at(1))).toMatchObject({ sent: 0 });
+
+    await expiredConfirmation(locationId);
+    expect(await run(email, at(2))).toMatchObject({ sent: 1, confirmationFailed: 1 });
+  });
+
+  it("skips offboarded businesses", async () => {
+    const off = await location({ status: "offboarded" });
+    await expiredConfirmation(off.locationId);
+    expect(await run(new FakeEmail())).toMatchObject({ sent: 0 });
   });
 });
 
@@ -251,9 +379,18 @@ describe("review check not run in 3 hours", () => {
     const expired = await location({ token: "refresh_failed" });
     await audit(expired.locationId, "location", expired.locationId, "review_poll_failed", "code=token_revoked", at(-1));
     await failedSend(stale.locationId, "sms", "provider_opted_out");
+    await ownerEmailFailed(stale.locationId, "digest", "2026-11-26", at(-1));
+    await expiredConfirmation(expired.locationId);
     const email = new FakeEmail();
-    expect(await run(email)).toEqual({ sent: 1, sendFailed: 1, tokenExpired: 1, reviewCheckStale: 1 });
-    expect(email.sent[0].text).toContain("3 new problems for Kindword");
+    expect(await run(email)).toEqual({
+      sent: 1,
+      sendFailed: 1,
+      tokenExpired: 1,
+      reviewCheckStale: 1,
+      ownerEmailFailed: 1,
+      confirmationFailed: 1,
+    });
+    expect(email.sent[0].text).toContain("5 new problems for Kindword");
     expect(email.sent[0].text).toContain("customer had opted out at the provider");
   });
 });
