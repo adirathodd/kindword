@@ -211,7 +211,7 @@
     "#40 traced: one digest per location per local day from 8 a.m. (DST from the zone database), only awaiting_owner/held drafts, overdue at 48 hours (same OVERDUE_MS as the inbox), no review text/names/reply text in either email, offboarded businesses and disabled accounts skipped, advisory lock + audit row + provider idempotency key; low-rating alert for rating <= 2, unanswered, once per review.",
     "#41 traced: only the token endpoint and the v4 reviews list are called (test enforces it for this module), averageRating/totalReviewCount ignored, refresh moves fetched_at so FR-22 purge keeps live reviews and drops deleted ones, invalid_grant marks the token refresh_failed, refresh tokens AES-256-GCM with the location as associated data, errors carry status and code only.",
     "#33 traced: same-origin check, per-IP limit, server-side Maps URL check, HTML escaped in the operator email, generated migration 0009 is additive (backward-compatible).",
-    "Still open from earlier audits: F-36-2, O-37-1, A-6, S-7, F-28-2, F-28-3, A-5, S-5, F-7-4, F-7-5, F-9-2 (timeout), F-12-2, F-12-3, F-12-4, S-1..S-4. The SPEC Implementation status table (FR-11, FR-13) is now stale after #40/#41; it is a SPEC-sync task, not changed here."
+    "Still open from earlier audits: F-36-2, O-37-1, A-6, S-7, F-28-2, F-28-3, A-5, S-5, F-7-4, F-7-5, F-9-2 (timeout), F-12-2, F-12-3, F-12-4, S-1..S-4. S-7 (stale Implementation status) is resolved by sync-2026-11-26-01 in the same PR (#42); D-6, D-7, D-8 in docs/SPEC.md record A-7, A-8, S-8, and F-40-1 is listed with D-2."
   ],
   "fix_prs": [],
   "validation": {
