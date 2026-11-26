@@ -36,6 +36,9 @@ vi.mock("../reviews/purge", () => ({
 vi.mock("../retention/customers", () => ({
   purgeExpiredCustomers: track("purgeExpiredCustomers", { customers: 0, cutoff: new Date() }),
 }));
+vi.mock("../notifications/operatorAlerts", () => ({
+  sendOperatorAlerts: track("sendOperatorAlerts", { sent: 0, sendFailed: 0, tokenExpired: 0, reviewCheckStale: 0 }),
+}));
 vi.mock("../reports/monthly", () => ({
   sendMonthlyReports: track("sendMonthlyReports", { sent: 0, failed: 0, waiting: 0 }),
 }));
@@ -57,6 +60,7 @@ const ENV = {
   GOOGLE_TOKEN_SECRET: "test-only-google-token-secret-0123456789",
   DRAFT_PROVIDER: "groq",
   GROQ_API_KEY: "gsk_test",
+  OPERATOR_EMAIL: "operator@example.test",
 };
 const msg = (name: string) => ({ name, executionId: "exec-1", scheduledAt: "2026-11-25T12:00:00Z" });
 
@@ -101,6 +105,7 @@ describe("dispatch", () => {
     ["owner-digest", ["sendDailyDigests"]],
     ["purge", ["purgeExpiredReviews", "purgeExpiredCustomers"]],
     ["monthly-report", ["sendMonthlyReports"]],
+    ["operator-alerts", ["sendOperatorAlerts"]],
   ])("%s calls its job code", async (job, expected) => {
     await expect(runScheduled(msg(job))).resolves.toBeUndefined();
     expect(calls.list).toEqual(expected);
@@ -155,5 +160,12 @@ describe("failures and retries", () => {
     );
     expect(retryPolicy(e, { deliveryCount: MAX_DELIVERIES })).toEqual({ acknowledge: true });
     expect(String(vi.mocked(console.error).mock.calls[0][0])).toBe("job purge: giving up after 6 deliveries");
+  });
+
+  it("does not run operator alerts without OPERATOR_EMAIL, and does not retry", async () => {
+    vi.stubEnv("OPERATOR_EMAIL", " ");
+    await expect(runScheduled(msg("operator-alerts"))).resolves.toBeUndefined();
+    expect(calls.list).toEqual([]);
+    expect(String(vi.mocked(console.error).mock.calls[0][0])).toContain("OPERATOR_EMAIL missing");
   });
 });
