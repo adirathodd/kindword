@@ -43,6 +43,12 @@ export class ResendSendError extends Error {
     super(`Resend send failed: status=${status} code=${code ?? "none"}`);
     this.name = "ResendSendError";
   }
+
+  // Definitely not sent: refused before sending, a non-retryable 4xx, or a 429. A timeout, lost connection, 409
+  // (same key still in flight) or 5xx may have been accepted, so it is not a refusal (FR-9 counts it as asked).
+  get refused() {
+    return !this.retryable || this.status === 429;
+  }
 }
 
 // Display names go inside a quoted string. Quotes, backslashes, angle brackets and line breaks are dropped so a

@@ -89,7 +89,8 @@ async function isOptedOut(tx: Tx, locationId: string, c: Customer) {
 }
 
 // FR-9: the same person (same customer, or same normalized phone or email) asked at this location within 90 days of
-// `at`, by a request that went out or is still due. Skipped and failed requests do not count.
+// `at`, by a request that went out, is still due, or failed in a way that may have reached them (outcome unknown).
+// Skipped requests and definite failures do not count.
 async function askedRecently(tx: Tx, locationId: string, visitId: string, c: Customer, at: Date, dedupMs: number) {
   const [hit] = await tx
     .select({ id: reviewRequests.id })
@@ -101,7 +102,10 @@ async function askedRecently(tx: Tx, locationId: string, visitId: string, c: Cus
         eq(visits.locationId, locationId),
         ne(visits.id, visitId),
         eq(reviewRequests.attempt, 1),
-        inArray(reviewRequests.status, ["scheduled", "sent"]),
+        or(
+          inArray(reviewRequests.status, ["scheduled", "sent"]),
+          and(eq(reviewRequests.status, "failed"), eq(reviewRequests.outcomeUnknown, true)),
+        ),
         or(
           eq(customers.id, c.id),
           c.normalizedPhone ? eq(customers.normalizedPhone, c.normalizedPhone) : undefined,
@@ -387,7 +391,10 @@ async function deliver(providers: Providers, cfg: SendConfig, s: Claimed, now: D
     const refused = providerOptOut || err?.refused === true;
     const error = providerOptOut ? "provider_opted_out" : refused ? "provider_rejected" : "outcome_unknown";
     await db.transaction(async (tx) => {
-      await tx.update(reviewRequests).set({ status: "failed", sentAt: null }).where(eq(reviewRequests.id, rr.id));
+      await tx
+        .update(reviewRequests)
+        .set({ status: "failed", sentAt: null, outcomeUnknown: error === "outcome_unknown" })
+        .where(eq(reviewRequests.id, rr.id));
       await audit(tx, l.id, rr.id, "failed", `attempt=${rr.attempt};channel=${rr.channel};error=${error}`);
       if (providerOptOut) {
         await optOut(tx, l.id, "sms", s.address, "provider_sms");
