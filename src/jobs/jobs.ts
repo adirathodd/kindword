@@ -180,7 +180,7 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       },
     }),
 
-  // FR-8, Flow 2 step 4 (audit F-9-2): the inbound webhook publishes this job with a 60 s delay when its confirmation
+  // FR-8, Flow 2 step 4 (audit F-9-2): the inbound webhook publishes this job with a 100 s delay when its confirmation
   // send fails; the 15-minute schedule only marks anything left over as expired.
   "optout-confirmations": () =>
     steps({

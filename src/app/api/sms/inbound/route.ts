@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     // in Twilio's error log (11200); a retry finds the opt-out already recorded and sends nothing. The confirmation
     // was recorded with the opt-out, so the optout-confirmations job checks and retries it within 5 minutes
     // (audit F-9-2). Publishing is best effort: a failure before the opt-out committed leaves the job nothing to do.
-    await send("jobs", { name: "optout-confirmations" }, { delaySeconds: 60 }).catch((err: unknown) =>
+    await send("jobs", { name: "optout-confirmations" }, { delaySeconds: 100 }).catch((err: unknown) =>
       console.error("sms_inbound: retry not queued:", err instanceof Error ? err.name : "unknown"),
     );
     // TwilioSendError messages hold only the status and Twilio error code; other errors are logged by name only.

@@ -305,7 +305,7 @@ describe("confirmation outbox (audit F-9-2)", () => {
 
     sms = new FakeSms();
     expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, open: 1 }); // the attempt may still be in flight
-    await age(60);
+    await age(90);
     expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 1, open: 0 });
     expect(sms.lookups).toBe(1); // checked Twilio first: the earlier outcome was unknown
     expect(sms.sent).toEqual([{ from: A_NUMBER, to: PHONE, body: expect.stringContaining("Alpha Plumbing") }]);
@@ -318,7 +318,7 @@ describe("confirmation outbox (audit F-9-2)", () => {
   it("a Twilio timeout after Twilio took the text: the job finds it and sends no second confirmation", async () => {
     sms.failNext = ["timeout"];
     await expect(handleInboundSms(sms, inbound("STOP"))).rejects.toThrow();
-    await age(60);
+    await age(90);
     expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, alreadySent: 1, open: 0 });
     expect(sms.accepted).toHaveLength(1);
     expect(await row()).toMatchObject({ status: "sent" });

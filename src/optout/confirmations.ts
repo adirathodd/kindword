@@ -13,9 +13,11 @@ import { businesses, locations, optOutConfirmations, suppressionList } from "../
 import type { SmsProvider } from "../sms/provider";
 
 export const CONFIRM_WINDOW_SECONDS = 300;
-// An inline webhook attempt takes at most ~32 s (3 tries x 10 s timeout plus backoff), so an older "sending" row's
-// attempt is over and its outcome unknown.
-export const STALE_SECONDS = 45;
+// An inline webhook attempt takes at most ~32 s (3 tries x 10 s timeout plus backoff). A "sending" row is checked only
+// 90 s after its last attempt started, so Twilio's message list has had about a minute after that attempt ended to
+// show a text it took before a "not found" lets us resend. A timed-out send never returns a message SID, so the list
+// is the only record to check. Resends still fit the 5-minute window: about 100 s, 130 s and 190 s after the opt-out.
+export const STALE_SECONDS = 90;
 
 export interface ConfirmationSms extends SmsProvider {
   // True when the provider already took a text from `from` to `to` created at or after `since`.
