@@ -71,7 +71,7 @@ export const locations = pgTable(
       .notNull()
       .references(() => businesses.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York; trigger locations_timezone_valid (0013)
+    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York; trigger locations_timezone_valid (0014)
     reviewLink: text("review_link").notNull(),
     googleLocationId: text("google_location_id").unique(), // one row per Google Business Profile
     googleConnectedAt: ts("google_connected_at"),
@@ -221,6 +221,33 @@ export const suppressionList = pgTable(
   },
   // NULLS NOT DISTINCT so platform-wide (null location) entries are unique too.
   (t) => [unique().on(t.locationId, t.channel, t.address).nullsNotDistinct(), index().on(t.channel, t.address)],
+);
+
+// The one opt-out confirmation text (FR-8, Flow 2 step 4) as a durable outbox row, so a send whose outcome is unknown
+// (a Twilio timeout) can be checked and retried by the optout-confirmations job (audit F-9-2). The recipient is read
+// through the suppression row, so no customer phone is stored here; from_number is our own Twilio number.
+// One row per suppression row: a retried webhook can never queue a second confirmation.
+// status: sending (an attempt is in flight or its outcome is unknown), pending (the provider refused it, safe to
+// resend), sent, provider (the provider confirmed it itself, 21610), expired (not sent within 5 minutes).
+export const optOutConfirmations = pgTable(
+  "optout_confirmations",
+  {
+    id: id(),
+    suppressionId: uuid("suppression_id")
+      .notNull()
+      .unique()
+      .references(() => suppressionList.id, { onDelete: "cascade" }),
+    locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
+    fromNumber: text("from_number").notNull(),
+    status: text("status").notNull().default("sending"),
+    attempts: smallint("attempts").notNull().default(1),
+    lastAttemptAt: ts("last_attempt_at").notNull().defaultNow(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("optout_confirmation_status", sql`${t.status} in ('sending', 'pending', 'sent', 'provider', 'expired')`),
+    index().on(t.status),
+  ],
 );
 
 export const reviews = pgTable(
