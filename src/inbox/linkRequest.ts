@@ -6,37 +6,15 @@
 // operator set up without an account can sign in too. No link goes to an offboarded business or a disabled account.
 // When the owner has an account (FR-24), the sessions the links start are tied to it, so a password reset ends them.
 // Nothing here logs or audits the email address; audit rows carry IDs only.
-import { and, asc, count, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
-import { authAttempts, businesses, locations, ownerAccounts } from "../db/schema";
-import { afterResponse, type Later } from "../accounts/accounts";
+import { businesses, locations, ownerAccounts } from "../db/schema";
+import { afterResponse, allow, type Later } from "../accounts/accounts";
 import type { EmailProvider } from "../email/provider";
-import { createSignInLink, escapeHtml, sha256 } from "./auth";
-
-const MINUTE = 60 * 1000;
-// The same limits as a password-reset request, which also emails a short-lived link.
-export const LINK_LIMITS = {
-  signInLinkIp: { max: 10, windowMs: 60 * MINUTE },
-  signInLinkEmail: { max: 5, windowMs: 60 * MINUTE },
-} as const;
+import { createSignInLink, escapeHtml } from "./auth";
 
 // Same shape check as sign-up (src/accounts/accounts.ts).
 const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
-
-// Records one attempt in auth_attempts (keys are hashes, so no email or IP is stored) and says whether it is within
-// the limit. Same table and rule as the account limits; old rows are cleared as a side effect.
-// shortcut: count-then-insert can let a burst of parallel requests slightly overshoot; fine for abuse limits.
-async function allow(limit: keyof typeof LINK_LIMITS, value: string, now: Date, db: Db) {
-  const { max, windowMs } = LINK_LIMITS[limit];
-  const key = sha256(`${limit}:${value}`);
-  await db.delete(authAttempts).where(lt(authAttempts.at, new Date(now.getTime() - 24 * 60 * MINUTE)));
-  const [{ n }] = await db
-    .select({ n: count() })
-    .from(authAttempts)
-    .where(and(eq(authAttempts.key, key), gt(authAttempts.at, new Date(now.getTime() - windowMs))));
-  await db.insert(authAttempts).values({ key, at: now });
-  return n < max;
-}
 
 export type LinkRequestDeps = { email: EmailProvider; baseUrl: string; now?: Date; later?: Later };
 export type LinkRequestResult = { ok: true } | { ok: false; error: string } | { ok: false; limited: true };
