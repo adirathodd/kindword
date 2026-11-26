@@ -1,28 +1,20 @@
-// End to end through the scheduled-job route with the real job code and the real Twilio and Resend adapters; only
+// End to end through the scheduled-job handler (what the queue consumer runs) with the real job code and the real Twilio and Resend adapters; only
 // their HTTP calls are faked (global fetch). Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx
 // numbers, example.test emails. No live sends.
 import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { POST } from "../app/api/jobs/[job]/route";
 import { db } from "../db/client";
 import * as s from "../db/schema";
+import { runScheduled } from "./jobs";
 
-const SECRET = "test-only-cron-secret-0123456789";
 const PHONE = "+12015550112";
 const NUMBER = "+12015550182";
 // 10:00 a.m. New York time on a Monday; the request is due at noon, inside the send window.
 const VISIT = new Date("2026-11-23T15:00:00Z");
 const NOW = new Date("2026-11-23T17:05:00Z");
 
-const run = (job: string) =>
-  POST(
-    new Request(`https://app.example.test/api/jobs/${job}`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${SECRET}` },
-    }),
-    { params: Promise.resolve({ job }) },
-  );
+const run = (name: string) => runScheduled({ name, executionId: "exec-1", scheduledAt: NOW.toISOString() });
 
 let outbound: string[];
 const businessIds: string[] = [];
@@ -31,7 +23,6 @@ beforeAll(() => migrate(db, { migrationsFolder: "./drizzle" }));
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"], now: NOW });
   for (const [k, v] of Object.entries({
-    CRON_SECRET: SECRET,
     APP_BASE_URL: "https://app.example.test",
     MAIL_POSTAL_ADDRESS: "PO Box 1, Hoboken, NJ 07030",
     UNSUBSCRIBE_SECRET: "test-only-secret-0123456789abcdef0123",
@@ -99,10 +90,9 @@ it("review-requests sends a due text once, even when the run repeats or overlaps
     .values({ customerId: c.id, locationId: l.id, visitAt: VISIT, source: "csv", externalVisitId: "jobs-1" })
     .returning();
 
-  // Two overlapping runs, then a retry.
-  const [r1, r2] = await Promise.all([run("review-requests"), run("review-requests")]);
-  const r3 = await run("review-requests");
-  for (const r of [r1, r2, r3]) expect(r.status).toBe(200);
+  // Two overlapping runs (a redelivery racing the original), then a retry.
+  await Promise.all([run("review-requests"), run("review-requests")]);
+  await run("review-requests");
 
   expect(outbound).toEqual(["api.twilio.com"]);
   const rows = await db.select().from(s.reviewRequests).where(eq(s.reviewRequests.visitId, v.id));

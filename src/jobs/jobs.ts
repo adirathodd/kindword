@@ -1,5 +1,7 @@
-// Scheduled background jobs (SPEC Architecture "Jobs", Reliability). Vercel Schedules (vercel.json) calls
-// POST /api/jobs/<name>; each job builds its outside services from the environment and runs the existing job code.
+// Scheduled background jobs (SPEC Architecture "Jobs", Reliability). Each Vercel Schedule (vercel.json `schedules`)
+// publishes a message to the `jobs` queue topic; the private consumer (src/app/api/jobs/route.ts) runs the job the
+// message names. Each job builds its outside services from the environment and runs the existing job code.
+// A run that fails for a reason a retry can fix is retried with backoff (retryPolicy); a missing setting is not.
 //
 // Idempotency comes from the job code itself, so overlapping or repeated runs are safe without an extra lock:
 // - review-requests: each message row is claimed (FOR UPDATE SKIP LOCKED, marked sent) and committed before the
@@ -39,14 +41,16 @@ function configure<T>(build: () => T): T {
 
 // Every step runs even if an earlier one fails, so one missing service does not stop the others.
 type StepResult = Record<string, unknown>;
-export type JobResult = { ok: boolean; steps: Record<string, StepResult | { error: string }> };
+// retryable: some step failed for a reason other than a missing setting (a timeout, a database error).
+export type JobResult = { ok: boolean; retryable: boolean; steps: Record<string, StepResult | { error: string }> };
 async function steps(list: Record<string, () => Promise<StepResult>>): Promise<JobResult> {
-  const out: JobResult = { ok: true, steps: {} };
+  const out: JobResult = { ok: true, retryable: false, steps: {} };
   for (const [name, run] of Object.entries(list)) {
     try {
       out.steps[name] = await run();
     } catch (e) {
       out.ok = false;
+      if (!(e instanceof JobConfigError)) out.retryable = true;
       // Other errors may echo provider responses, so only their class name is kept.
       out.steps[name] = { error: e instanceof JobConfigError ? e.message : e instanceof Error ? e.name : "unknown" };
     }
@@ -131,3 +135,38 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       },
     }),
 };
+
+// The message a static schedule publishes (Vercel Schedules, topic target). Only `name` is used: it is the
+// schedule's key in vercel.json, which matches a key of JOBS.
+export type ScheduleMessage = { name?: unknown; executionId?: unknown; scheduledAt?: unknown };
+
+export class JobFailedError extends Error {} // message: the job name only
+
+// Runs the job a schedule message names. Returning acknowledges the message; throwing hands it to retryPolicy.
+// Every job is idempotent, so a redelivery, a retry or a run overlapping the next tick never sends twice.
+export async function runScheduled(message: ScheduleMessage): Promise<void> {
+  const name = typeof message?.name === "string" ? message.name : "";
+  const run = Object.hasOwn(JOBS, name) ? JOBS[name] : undefined;
+  if (!run) {
+    console.error("job: unknown schedule name"); // a vercel.json schedule with no job here; retrying cannot help
+    return;
+  }
+  const result = await run();
+  const line = `job ${name}: ${result.ok ? "ok" : "failed"} ${JSON.stringify(result.steps)}`;
+  if (result.ok) return void console.log(line);
+  console.error(line);
+  // Only missing settings failed: a retry would fail the same way, and the next scheduled run tries again.
+  if (result.retryable) throw new JobFailedError(name);
+}
+
+// Backoff 30 s, 1, 2, 4, 8 min; after MAX_DELIVERIES the message is dropped and the next scheduled run picks the
+// work up (every job reads its whole backlog each run).
+export const MAX_DELIVERIES = 6;
+export function retryPolicy(error: unknown, metadata: { deliveryCount: number }) {
+  const job = error instanceof JobFailedError ? error.message : "unknown";
+  if (metadata.deliveryCount >= MAX_DELIVERIES) {
+    console.error(`job ${job}: giving up after ${metadata.deliveryCount} deliveries`);
+    return { acknowledge: true as const };
+  }
+  return { afterSeconds: 30 * 2 ** (metadata.deliveryCount - 1) };
+}
