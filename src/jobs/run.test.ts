@@ -106,3 +106,35 @@ it("review-requests sends a due text once, even when the run repeats or overlaps
     expect(line).not.toContain("Acme");
   }
 });
+
+it("optout-confirmations is redelivered while a confirmation is open, then sends it once (audit F-9-2)", async () => {
+  const [b] = await db.insert(s.businesses).values({ name: "Acme Plumbing", vertical: "plumbing" }).returning();
+  businessIds.push(b.id);
+  const [l] = await db
+    .insert(s.locations)
+    .values({
+      businessId: b.id,
+      name: "Main",
+      timezone: "America/New_York",
+      reviewLink: "https://g.page/r/a",
+      smsNumber: NUMBER,
+    })
+    .returning();
+  const [sup] = await db
+    .insert(s.suppressionList)
+    .values({ locationId: l.id, channel: "sms", address: PHONE, source: "customer_sms" })
+    .returning();
+  await db
+    .insert(s.optOutConfirmations)
+    .values({ suppressionId: sup.id, locationId: l.id, fromNumber: NUMBER, status: "pending" });
+  vi.spyOn(console, "error").mockImplementation(() => {});
+
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ code: 21211 }, { status: 400 })); // refused
+  await expect(run("optout-confirmations")).rejects.toThrow("optout-confirmations"); // handed to retryPolicy
+  await run("optout-confirmations");
+  await run("optout-confirmations");
+
+  expect(outbound).toEqual(["api.twilio.com"]); // the refused call bypassed `outbound`; one text went out
+  const [row] = await db.select().from(s.optOutConfirmations).where(eq(s.optOutConfirmations.suppressionId, sup.id));
+  expect(row).toMatchObject({ status: "sent", attempts: 3 });
+});

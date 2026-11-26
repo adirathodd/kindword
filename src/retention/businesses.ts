@@ -12,7 +12,7 @@
 // - audit_log: IDs and actions only (FR-19), with no foreign key, so it survives. One row per deleted business.
 //
 // offboarded_at is set by a database trigger when status becomes offboarded and cleared if it changes back
-// (migration 0014), so a business switched back to live before the deadline is never deleted.
+// (migration 0015), so a business switched back to live before the deadline is never deleted.
 //
 // Not done here: revoking Google access. SPEC says tokens are revoked on offboarding (FR-20), which happens at
 // offboarding time, not 30 days later. Deleting the business deletes our encrypted copy of the token.
