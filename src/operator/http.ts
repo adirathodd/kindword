@@ -61,7 +61,7 @@ export const signInPage = (
   opts: { error?: string | null; email?: string; status?: number; disabled?: boolean } = {},
 ) =>
   opts.disabled
-    ? html(503, "Operator sign-in is not set up", "<p>Ask the site owner to configure operator access.</p>")
+    ? html(503, "Operator sign-in is not set up", "<p>Operator sign-in is off until it is set up.</p>")
     : html(
         opts.status ?? (opts.error ? 400 : 200),
         "Operator sign-in",

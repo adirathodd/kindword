@@ -108,7 +108,14 @@ describe("parseLocationInput", () => {
       "https://maps.app.goo.gl/AbC123",
     ])
       expect(parseLocationInput(fields(locFields({ reviewLink }))).ok, reviewLink).toBe(true);
-    for (const timezone of ["America/Chicago", "America/Los_Angeles", "Pacific/Honolulu"])
+    for (const timezone of [
+      "America/Chicago",
+      "America/Los_Angeles",
+      "Pacific/Honolulu",
+      "UTC",
+      "Asia/Kolkata",
+      "America/Argentina/Buenos_Aires",
+    ])
       expect(parseLocationInput(fields(locFields({ timezone }))).ok, timezone).toBe(true);
   });
 
@@ -118,6 +125,8 @@ describe("parseLocationInput", () => {
       "https://g.page.evil.example/r/x",
       "https://evil.example/?u=https://g.page",
       "javascript:alert(1)",
+      "https://www.google.com/url?q=https://evil.example",
+      "https://search.google.com/search?q=x",
       "https://user@g.page/r/x",
       "",
       `https://g.page/${"x".repeat(500)}`,
@@ -126,7 +135,7 @@ describe("parseLocationInput", () => {
         ok: false,
         errors: { reviewLink: expect.any(String) },
       });
-    for (const timezone of ["Mars/Base", "EST5EDT; drop", ""])
+    for (const timezone of ["Mars/Base", "EST5EDT; drop", "", "+05:00", "../UTC"])
       expect(parseLocationInput(fields(locFields({ timezone }))), timezone).toMatchObject({
         ok: false,
         errors: { timezone: expect.any(String) },

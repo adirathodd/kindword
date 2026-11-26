@@ -23,8 +23,15 @@ export const LANGUAGES = [
   { id: "en", label: "English" },
   { id: "es", label: "Spanish" },
 ] as const;
-// Hosts a Google review link may use: short links, the write-review page and Maps.
-const REVIEW_HOSTS = new Set(["g.page", "search.google.com", "www.google.com", "maps.app.goo.gl", "g.co"]);
+// Where a Google review link may point: short links anywhere on their host, and on the main Google hosts only the
+// write-review page and Maps (not, say, www.google.com/url?q=..., a redirect to any site).
+const REVIEW_LINKS: Record<string, RegExp> = {
+  "g.page": /^\//,
+  "g.co": /^\//,
+  "maps.app.goo.gl": /^\//,
+  "search.google.com": /^\/local\/writereview(\/|$)/,
+  "www.google.com": /^\/maps(\/|$)/,
+};
 const MAX_NAME = 120;
 const MAX_TONE = 1000;
 const MAX_FACTS = 2000;
@@ -64,8 +71,16 @@ export function parseBusinessInput(f: Fields): Parsed<BusinessInput> {
   return { ok: true, value: { name, vertical, languages, toneNotes, approvedFacts } };
 }
 
+// Any zone the runtime knows, including aliases supportedValuesOf leaves out (UTC, Asia/Kolkata). Area/City or UTC
+// only, so offsets like "+05:00" (which Intl also accepts) are refused.
 export function isTimeZone(tz: string) {
-  return Intl.supportedValuesOf("timeZone").includes(tz);
+  if (!/^(UTC|Etc\/UTC|[A-Za-z_]+(\/[A-Za-z0-9_+-]+){1,2})$/.test(tz)) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function parseLocationInput(f: Fields): Parsed<LocationInput> {
@@ -79,7 +94,14 @@ export function parseLocationInput(f: Fields): Parsed<LocationInput> {
   } catch {
     url = null;
   }
-  if (!url || url.protocol !== "https:" || url.username || url.password || !REVIEW_HOSTS.has(url.hostname))
+  if (
+    !url ||
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    !Object.hasOwn(REVIEW_LINKS, url.hostname) ||
+    !REVIEW_LINKS[url.hostname].test(url.pathname)
+  )
     errors.reviewLink = "Enter the business's Google review link (https://g.page/..., search.google.com or Maps).";
   const timezone = f.get("timezone").trim();
   if (!isTimeZone(timezone)) errors.timezone = "Choose a time zone such as America/New_York.";

@@ -13,4 +13,4 @@ const SAVED: Record<string, string> = {
   business: "Business saved.",
   location: "Location saved.",
 };
-export const savedNotice = (key: string | null) => (key ? (SAVED[key] ?? null) : null);
+export const savedNotice = (key: string | null) => (key && Object.hasOwn(SAVED, key) ? SAVED[key] : null);

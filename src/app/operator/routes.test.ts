@@ -170,6 +170,14 @@ describe("businesses and locations", () => {
     expect(body).toContain("Route Test &lt;b&gt;Air&lt;/b&gt;");
     expect(body).not.toContain("<b>Air</b>");
     expect(body).toContain("Business added.");
+    for (const saved of ["constructor", "__proto__", "toString", "<b>x</b>"]) {
+      const r = await business.GET(
+        get(cookie, `/operator/businesses/${id}?saved=${encodeURIComponent(saved)}`),
+        ctx({ id }),
+      );
+      expect(r.status, saved).toBe(200);
+      expect(await r.text()).not.toContain("<b>x</b>");
+    }
     expect(body).toContain("https://g.page/r/route-test/review");
     const list = await (await home.GET(get(cookie))).text();
     expect(list).toContain(`/operator/businesses/${id}`);
