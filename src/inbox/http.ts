@@ -144,6 +144,17 @@ export function inboxPage(inbox: Inbox, notice: string | null) {
   );
 }
 
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// An owner email named a location the session does not cover (audit F-40-1). Shows nothing about either location:
+// the account route checks the location belongs to the signed-in business before opening its inbox.
+export const otherLocationPage = (locationId: string) =>
+  html(
+    200,
+    "This email is for another location",
+    `<p>You are signed in to the reply inbox of a different location.</p><form method="post" action="/account/inbox/${e(locationId)}"><button type="submit" class="primary">Open this location's inbox</button></form><p>This needs you to be signed in to your account. <a href="/account/sign-in">Sign in to your account</a>, or <a href="/inbox">go back to the inbox you are signed in to</a>.</p>`,
+  );
+
 export const signedOutPage = () =>
   html(
     401,

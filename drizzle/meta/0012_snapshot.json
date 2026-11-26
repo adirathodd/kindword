@@ -1,5 +1,5 @@
 {
-  "id": "3ae5e8aa-b4c9-4e01-8438-5cba8a9ed31d",
+  "id": "a5998108-5ef7-49c8-9dc2-ab0fd1939cab",
   "prevId": "98586d5f-1f75-42e0-8462-de915cebf6b3",
   "version": "7",
   "dialect": "postgresql",
@@ -45,25 +45,25 @@
         "account_sessions_account_id_owner_accounts_id_fk": {
           "name": "account_sessions_account_id_owner_accounts_id_fk",
           "tableFrom": "account_sessions",
+          "tableTo": "owner_accounts",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "owner_accounts",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "account_sessions_session_token_hash_unique": {
           "name": "account_sessions_session_token_hash_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "session_token_hash"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -118,25 +118,25 @@
         "account_tokens_account_id_owner_accounts_id_fk": {
           "name": "account_tokens_account_id_owner_accounts_id_fk",
           "tableFrom": "account_tokens",
+          "tableTo": "owner_accounts",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "owner_accounts",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "account_tokens_token_hash_unique": {
           "name": "account_tokens_token_hash_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "token_hash"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -216,9 +216,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -271,9 +271,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -418,26 +418,26 @@
         "consent_attestations_business_id_businesses_id_fk": {
           "name": "consent_attestations_business_id_businesses_id_fk",
           "tableFrom": "consent_attestations",
+          "tableTo": "businesses",
           "columnsFrom": [
             "business_id"
           ],
-          "tableTo": "businesses",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "consent_attestations_id_business_id_unique": {
           "name": "consent_attestations_id_business_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "business_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -546,51 +546,51 @@
         "customers_location_fk": {
           "name": "customers_location_fk",
           "tableFrom": "customers",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id",
             "business_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id",
             "business_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "customers_attestation_fk": {
           "name": "customers_attestation_fk",
           "tableFrom": "customers",
+          "tableTo": "consent_attestations",
           "columnsFrom": [
             "attestation_id",
             "business_id"
           ],
-          "tableTo": "consent_attestations",
           "columnsTo": [
             "id",
             "business_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "customers_location_id_normalized_phone_unique": {
           "name": "customers_location_id_normalized_phone_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "location_id",
             "normalized_phone"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "customers_location_id_normalized_email_unique": {
           "name": "customers_location_id_normalized_email_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "location_id",
             "normalized_email"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -680,49 +680,49 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "locations_business_id_businesses_id_fk": {
           "name": "locations_business_id_businesses_id_fk",
           "tableFrom": "locations",
+          "tableTo": "businesses",
           "columnsFrom": [
             "business_id"
           ],
-          "tableTo": "businesses",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "locations_google_location_id_unique": {
           "name": "locations_google_location_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "google_location_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "locations_sms_number_unique": {
           "name": "locations_sms_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "sms_number"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "locations_id_business_id_unique": {
           "name": "locations_id_business_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "business_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -784,25 +784,25 @@
         "oauth_tokens_location_id_locations_id_fk": {
           "name": "oauth_tokens_location_id_locations_id_fk",
           "tableFrom": "oauth_tokens",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "oauth_tokens_location_id_unique": {
           "name": "oauth_tokens_location_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "location_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -887,32 +887,32 @@
         "owner_accounts_business_id_businesses_id_fk": {
           "name": "owner_accounts_business_id_businesses_id_fk",
           "tableFrom": "owner_accounts",
+          "tableTo": "businesses",
           "columnsFrom": [
             "business_id"
           ],
-          "tableTo": "businesses",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "owner_accounts_business_id_unique": {
           "name": "owner_accounts_business_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "business_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "owner_accounts_normalized_email_unique": {
           "name": "owner_accounts_normalized_email_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "normalized_email"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -984,53 +984,53 @@
         "owner_sessions_location_id_locations_id_fk": {
           "name": "owner_sessions_location_id_locations_id_fk",
           "tableFrom": "owner_sessions",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "owner_sessions_account_id_owner_accounts_id_fk": {
           "name": "owner_sessions_account_id_owner_accounts_id_fk",
           "tableFrom": "owner_sessions",
+          "tableTo": "owner_accounts",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "owner_accounts",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "owner_sessions_login_token_hash_unique": {
           "name": "owner_sessions_login_token_hash_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "login_token_hash"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "owner_sessions_session_token_hash_unique": {
           "name": "owner_sessions_session_token_hash_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "session_token_hash"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "owner_sessions_id_location_id_unique": {
           "name": "owner_sessions_id_location_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "location_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1141,9 +1141,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "one_posted_reply_per_review": {
           "name": "one_posted_reply_per_review",
@@ -1156,42 +1156,42 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"reply_drafts\".\"status\" = 'posted'",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "reply_drafts_review_fk": {
           "name": "reply_drafts_review_fk",
           "tableFrom": "reply_drafts",
+          "tableTo": "reviews",
           "columnsFrom": [
             "review_id",
             "location_id"
           ],
-          "tableTo": "reviews",
           "columnsTo": [
             "id",
             "location_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "reply_drafts_session_fk": {
           "name": "reply_drafts_session_fk",
           "tableFrom": "reply_drafts",
+          "tableTo": "owner_sessions",
           "columnsFrom": [
             "approved_session_id",
             "location_id"
           ],
-          "tableTo": "owner_sessions",
           "columnsTo": [
             "id",
             "location_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1284,6 +1284,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "send_attempts": {
+          "name": "send_attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "maybe_sent_at": {
+          "name": "maybe_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1304,36 +1317,36 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "review_requests_visit_id_visits_id_fk": {
           "name": "review_requests_visit_id_visits_id_fk",
           "tableFrom": "review_requests",
+          "tableTo": "visits",
           "columnsFrom": [
             "visit_id"
           ],
-          "tableTo": "visits",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "review_requests_visit_id_channel_attempt_unique": {
           "name": "review_requests_visit_id_channel_attempt_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "visit_id",
             "channel",
             "attempt"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1440,42 +1453,42 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "reviews_location_id_locations_id_fk": {
           "name": "reviews_location_id_locations_id_fk",
           "tableFrom": "reviews",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "reviews_google_review_id_unique": {
           "name": "reviews_google_review_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "google_review_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         },
         "reviews_id_location_id_unique": {
           "name": "reviews_id_location_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "id",
             "location_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1540,38 +1553,38 @@
         "sheet_sources_location_id_locations_id_fk": {
           "name": "sheet_sources_location_id_locations_id_fk",
           "tableFrom": "sheet_sources",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "sheet_sources_attestation_id_consent_attestations_id_fk": {
           "name": "sheet_sources_attestation_id_consent_attestations_id_fk",
           "tableFrom": "sheet_sources",
+          "tableTo": "consent_attestations",
           "columnsFrom": [
             "attestation_id"
           ],
-          "tableTo": "consent_attestations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "sheet_sources_location_id_unique": {
           "name": "sheet_sources_location_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "location_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1638,26 +1651,26 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sms_opt_ins_location_fk": {
           "name": "sms_opt_ins_location_fk",
           "tableFrom": "sms_opt_ins",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id",
             "business_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id",
             "business_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1737,36 +1750,36 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "suppression_list_location_id_locations_id_fk": {
           "name": "suppression_list_location_id_locations_id_fk",
           "tableFrom": "suppression_list",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "suppression_list_location_id_channel_address_unique": {
           "name": "suppression_list_location_id_channel_address_unique",
+          "nullsNotDistinct": true,
           "columns": [
             "location_id",
             "channel",
             "address"
-          ],
-          "nullsNotDistinct": true
+          ]
         }
       },
       "policies": {},
@@ -1828,49 +1841,49 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "visits_customer_id_customers_id_fk": {
           "name": "visits_customer_id_customers_id_fk",
           "tableFrom": "visits",
+          "tableTo": "customers",
           "columnsFrom": [
             "customer_id"
           ],
-          "tableTo": "customers",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "visits_location_id_locations_id_fk": {
           "name": "visits_location_id_locations_id_fk",
           "tableFrom": "visits",
+          "tableTo": "locations",
           "columnsFrom": [
             "location_id"
           ],
-          "tableTo": "locations",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "visits_location_id_source_external_visit_id_unique": {
           "name": "visits_location_id_source_external_visit_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "location_id",
             "source",
             "external_visit_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1945,10 +1958,10 @@
       "uniqueConstraints": {
         "waitlist_entries_normalized_email_unique": {
           "name": "waitlist_entries_normalized_email_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "normalized_email"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -2045,10 +2058,10 @@
     }
   },
   "schemas": {},
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},
