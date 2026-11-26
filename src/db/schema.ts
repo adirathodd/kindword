@@ -57,6 +57,10 @@ export const businesses = pgTable(
     // onboarding; the AI drafter may use nothing else about the business (SPEC: AI reply generation, rule 4).
     approvedFacts: text("approved_facts"),
     status: businessStatus("status").notNull().default("onboarding"),
+    // When the business was switched to offboarded. Set and cleared by a database trigger (migration 0016) whenever
+    // status changes, so no code path can offboard without it. Everything for the business is deleted within 30 days
+    // of this time (SPEC Security, Retention; src/retention/businesses.ts).
+    offboardedAt: ts("offboarded_at"),
   },
   (t) => [
     check("owner_phone_requires_consent", sql`${t.ownerPhone} is null or ${t.ownerContactConsentRef} is not null`),

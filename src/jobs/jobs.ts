@@ -30,6 +30,7 @@ import { sendOperatorAlerts } from "../notifications/operatorAlerts";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
 import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
 import { sendPendingConfirmations } from "../optout/confirmations";
+import { purgeOffboardedBusinesses } from "../retention/businesses";
 import { purgeExpiredCustomers } from "../retention/customers";
 import { draftPendingReviews } from "../reviews/draft";
 import { pollReviews } from "../reviews/poll";
@@ -134,7 +135,8 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
     }),
 
   // FR-22: daily, with a one-day margin inside the 30-day limit. Then the SPEC Security retention rule: customers
-  // whose last visit is more than 12 months old, deleted under the importer's per-location lock.
+  // whose last visit is more than 12 months old, deleted under the importer's per-location lock, and businesses
+  // offboarded 29 days ago or more (everything within 30 days of offboarding).
   purge: () =>
     steps({
       purge: async () => {
@@ -142,6 +144,7 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
         return { reviews: r.reviews, drafts: r.drafts };
       },
       customers: async () => ({ customers: (await purgeExpiredCustomers()).customers }),
+      businesses: async () => ({ businesses: (await purgeOffboardedBusinesses()).businesses }),
     }),
 
   // FR-17: hourly; each location gets last month's report on the first run at or after DIGEST_HOUR local time on
