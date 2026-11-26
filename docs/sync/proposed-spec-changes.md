@@ -15,4 +15,4 @@ Simplest fix: replace the Doc's Implementation status table with the one in `doc
 
 When a later PR changes `docs/SPEC.md`, make the same edit in the Doc, or list it here.
 
-The D-2 and multi-business accounts PR (2026-11-26: change note, FR-13, new FR-25 and its status row, account\_businesses in the Data model, the Security scoping line, the Week 2 gate, D-2 decided, the F-40-1 note, new items D-14 to D-18) was applied to the Doc directly (Doc rev 279) and needs no further Doc edit. In the Doc, D-14 to D-18 sit at the end of the list, where D-13 will also go once the items above are applied.
+The D-2 and multi-business accounts PR (2026-11-26: change note, FR-13, new FR-25 and its status row, account\_businesses in the Data model, the Security scoping line, the Week 2 gate, D-2 decided, the F-40-1 note, new items D-14 to D-18) was applied to the Doc directly (Doc rev 279) and needs no further Doc edit. The follow-up that marks F-40-1 resolved by #68 (FR-13 status row and the F-40-1 item) was also applied directly (Doc rev 282). In the Doc, D-14 to D-18 sit at the end of the list, where D-13 will also go once the items above are applied.
