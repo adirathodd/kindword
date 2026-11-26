@@ -408,3 +408,28 @@ export const waitlistEntries = pgTable("waitlist_entries", {
   createdAt: ts("created_at").notNull().defaultNow(),
   updatedAt: ts("updated_at").notNull().defaultNow(),
 });
+
+// Hosted SMS opt-in page submissions (FR-23). Each row is a consent record by construction: a phone is stored only
+// with the wording version shown, the time the customer checked the box, and the location whose business it names.
+// Append-only evidence; deleted with the location. Not yet linked to customers (import still needs FR-3's fields).
+export const smsOptIns = pgTable(
+  "sms_opt_ins",
+  {
+    id: id(),
+    locationId: uuid("location_id").notNull(),
+    businessId: uuid("business_id").notNull(),
+    normalizedPhone: text("normalized_phone").notNull(), // E.164
+    consentWordingVersion: text("consent_wording_version").notNull(),
+    consentAt: ts("consent_at").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      name: "sms_opt_ins_location_fk",
+      columns: [t.locationId, t.businessId],
+      foreignColumns: [locations.id, locations.businessId],
+    }).onDelete("cascade"),
+    check("sms_opt_ins_phone_e164", sql`${t.normalizedPhone} ~ '^\\+1[2-9][0-9]{2}[2-9][0-9]{6}$'`),
+    check("sms_opt_ins_wording_version", sql`length(${t.consentWordingVersion}) > 0`),
+    index().on(t.locationId, t.normalizedPhone),
+  ],
+);

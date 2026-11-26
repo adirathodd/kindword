@@ -78,6 +78,13 @@
       "when": 1795665515644,
       "tag": "0010_review_request_outcome_unknown",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795666147562,
+      "tag": "0011_sms_opt_ins",
+      "breakpoints": true
     }
   ]
 }

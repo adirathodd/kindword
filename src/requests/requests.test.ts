@@ -1,7 +1,7 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx numbers, example.test emails. No live sends.
 import { and, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { GET as clickGET, HEAD as clickHEAD } from "../app/r/[id]/route";
 import { GET as unsubGET, POST as unsubPOST } from "../app/u/[token]/route";
 import { db } from "../db/client";
@@ -70,6 +70,7 @@ const businessIds: string[] = [];
 async function makeTenant({
   smsNumber = NUMBER as string | null,
   status = "live" as "live" | "onboarding" | "paused" | "offboarded",
+  timezone = "America/New_York",
 } = {}) {
   sms = new FakeSms();
   email = new FakeEmail();
@@ -80,7 +81,7 @@ async function makeTenant({
     .values({
       businessId: b.id,
       name: "Main",
-      timezone: "America/New_York",
+      timezone,
       reviewLink: "https://g.page/r/acme/review",
       smsNumber,
     })
@@ -625,6 +626,62 @@ describe("90-day rule (FR-9)", () => {
     const vb = await b.visit(await b.customer());
     expect((await scheduleReviewRequests({ now: VISIT })).scheduled).toBe(2);
     expect((await one(vb)).status).toBe("scheduled");
+  });
+});
+
+// F-7-5: a location time zone Intl rejects throws in window.ts. It must not stop any other tenant's requests.
+describe("a location with a bad stored time zone", () => {
+  const BAD = "America/New_Yrok";
+
+  it("does not stop another location's request from being scheduled", async () => {
+    const bad = await makeTenant({ timezone: BAD, smsNumber: "+12015550182" });
+    const vBad = await bad.visit(await bad.customer());
+    const good = await makeTenant();
+    const vGood = await good.visit(await good.customer());
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await scheduleReviewRequests({ now: VISIT })).toEqual({ scheduled: 1, skipped: {}, errors: 1 });
+      expect(spy.mock.calls.flat().join(" ")).not.toContain(PHONE);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await requestsOf(vBad)).toEqual([]); // retried on the next run
+    expect((await one(vGood)).status).toBe("scheduled");
+  });
+
+  it("does not stop another location's request from being sent, and leaves its own row scheduled", async () => {
+    const bad = await makeTenant({ smsNumber: "+12015550182" });
+    const vBad = await bad.visit(await bad.customer());
+    const good = await makeTenant();
+    const vGood = await good.visit(await good.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    await db.update(s.locations).set({ timezone: BAD }).where(eq(s.locations.id, bad.locationId));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await send(DUE)).toMatchObject({ sent: 1, failed: 0, errors: 1 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(sms.sent).toHaveLength(1);
+    expect((await one(vBad)).status).toBe("scheduled");
+    expect((await one(vGood)).status).toBe("sent");
+  });
+
+  it("does not stop another location's reminder from being scheduled", async () => {
+    const bad = await makeTenant({ smsNumber: "+12015550182" });
+    await bad.visit(await bad.customer());
+    const good = await makeTenant();
+    const vGood = await good.visit(await good.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    await send(DUE);
+    await db.update(s.locations).set({ timezone: BAD }).where(eq(s.locations.id, bad.locationId));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await scheduleReminders({ now: plus(DUE, 3 * DAY) })).toEqual({ scheduled: 1, errors: 1 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await requestsOf(vGood)).toHaveLength(2);
   });
 });
 
