@@ -798,6 +798,45 @@ describe("redirect link /r/[id]", () => {
     }
     expect((await one(v)).clickedAt).toBeNull();
   });
+
+  // FR-7, Flow 2: a send that timed out may still have reached the customer (outcome unknown, #43). Its link must
+  // open the review form, not a 404, and the click is counted.
+  it.each([
+    ["sms", "a timeout", new DOMException("The operation was aborted due to timeout", "TimeoutError")],
+    ["email", "a lost connection", new TypeError("fetch failed")],
+  ] as const)("keeps the %s link working after %s (outcome unknown)", async (ch, _label, error) => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer(ch === "sms" ? {} : { phone: null }));
+    await scheduleReviewRequests({ now: VISIT });
+    (ch === "sms" ? sms : email).failWith = error;
+    expect(await send(DUE)).toMatchObject({ sent: 0, failed: 1 });
+    const { id } = await one(v);
+    expect(await one(v)).toMatchObject({ channel: ch, status: "failed", outcomeUnknown: true, sentAt: null });
+
+    const head = await clickHEAD(new Request(`${BASE}/r/${id}`, { method: "HEAD" }), ctx({ id }));
+    expect(head.status).toBe(302);
+    expect((await one(v)).clickedAt).toBeNull();
+    const res = await clickGET(new Request(`${BASE}/r/${id}`), ctx({ id }));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://g.page/r/acme/review");
+    expect((await one(v)).clickedAt).not.toBeNull();
+    // Still one message per job: the click sends nothing and the failed request gets no reminder.
+    expect(await scheduleReminders({ now: plus(DUE, 4 * DAY) })).toEqual({ scheduled: 0 });
+    expect(await requestsOf(v)).toHaveLength(1);
+  });
+
+  it("returns 404 for a send the provider refused (definitely not delivered)", async () => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer({ phone: null }));
+    await scheduleReviewRequests({ now: VISIT });
+    email.fail = true;
+    expect(await send(DUE)).toMatchObject({ sent: 0, failed: 1 });
+    const { id } = await one(v);
+    expect(await one(v)).toMatchObject({ status: "failed", outcomeUnknown: false });
+    expect((await clickGET(new Request(`${BASE}/r/${id}`), ctx({ id }))).status).toBe(404);
+    expect((await clickHEAD(new Request(`${BASE}/r/${id}`, { method: "HEAD" }), ctx({ id }))).status).toBe(404);
+    expect((await one(v)).clickedAt).toBeNull();
+  });
 });
 
 describe("unsubscribe page /u/[token]", () => {
