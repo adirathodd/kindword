@@ -1,5 +1,5 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx numbers, example.test emails. No live sends.
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { GET as clickGET, HEAD as clickHEAD } from "../app/r/[id]/route";
@@ -70,7 +70,6 @@ const businessIds: string[] = [];
 async function makeTenant({
   smsNumber = NUMBER as string | null,
   status = "live" as "live" | "onboarding" | "paused" | "offboarded",
-  timezone = "America/New_York",
 } = {}) {
   sms = new FakeSms();
   email = new FakeEmail();
@@ -81,7 +80,7 @@ async function makeTenant({
     .values({
       businessId: b.id,
       name: "Main",
-      timezone,
+      timezone: "America/New_York",
       reviewLink: "https://g.page/r/acme/review",
       smsNumber,
     })
@@ -632,9 +631,18 @@ describe("90-day rule (FR-9)", () => {
 // F-7-5: a location time zone Intl rejects throws in window.ts. It must not stop any other tenant's requests.
 describe("a location with a bad stored time zone", () => {
   const BAD = "America/New_Yrok";
+  // The locations_timezone_valid trigger now rejects BAD, so these tests bypass it to stand in for a row stored
+  // before the trigger existed.
+  const storeBadZone = (locationId: string) =>
+    db.transaction(async (tx) => {
+      await tx.execute(sql`alter table locations disable trigger locations_timezone_valid`);
+      await tx.update(s.locations).set({ timezone: BAD }).where(eq(s.locations.id, locationId));
+      await tx.execute(sql`alter table locations enable trigger locations_timezone_valid`);
+    });
 
   it("does not stop another location's request from being scheduled", async () => {
-    const bad = await makeTenant({ timezone: BAD, smsNumber: "+12015550182" });
+    const bad = await makeTenant({ smsNumber: "+12015550182" });
+    await storeBadZone(bad.locationId);
     const vBad = await bad.visit(await bad.customer());
     const good = await makeTenant();
     const vGood = await good.visit(await good.customer());
@@ -655,7 +663,7 @@ describe("a location with a bad stored time zone", () => {
     const good = await makeTenant();
     const vGood = await good.visit(await good.customer());
     await scheduleReviewRequests({ now: VISIT });
-    await db.update(s.locations).set({ timezone: BAD }).where(eq(s.locations.id, bad.locationId));
+    await storeBadZone(bad.locationId);
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(await send(DUE)).toMatchObject({ sent: 1, failed: 0, errors: 1 });
@@ -674,7 +682,7 @@ describe("a location with a bad stored time zone", () => {
     const vGood = await good.visit(await good.customer());
     await scheduleReviewRequests({ now: VISIT });
     await send(DUE);
-    await db.update(s.locations).set({ timezone: BAD }).where(eq(s.locations.id, bad.locationId));
+    await storeBadZone(bad.locationId);
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(await scheduleReminders({ now: plus(DUE, 3 * DAY) })).toEqual({ scheduled: 1, errors: 1 });

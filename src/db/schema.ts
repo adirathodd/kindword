@@ -71,7 +71,7 @@ export const locations = pgTable(
       .notNull()
       .references(() => businesses.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York
+    timezone: text("timezone").notNull(), // IANA, e.g. America/New_York; trigger locations_timezone_valid (0012)
     reviewLink: text("review_link").notNull(),
     googleLocationId: text("google_location_id").unique(), // one row per Google Business Profile
     googleConnectedAt: ts("google_connected_at"),
