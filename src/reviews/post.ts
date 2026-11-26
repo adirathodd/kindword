@@ -28,7 +28,9 @@ import { decryptRefreshToken } from "../google/tokenCrypto";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 const ACTOR = "system:reply_post";
-export const POST_BATCH = 25; // per run; the rest wait 15 minutes for the next one
+// Google calls per run; the rest wait 15 minutes for the next one. Counted in calls, not drafts read, so drafts stuck
+// at a location Google refuses (403, revoked) cannot fill the batch and starve every other location.
+export const POST_BATCH = 25;
 export const POST_BUDGET_MS = 60_000; // no new draft is started after this; one call can take about a minute more
 // Google refused this reply itself: retrying cannot help, so the draft leaves the queue.
 const PERMANENT = new Set(["rejected", "invalid_reply", "invalid_review"]);
@@ -75,17 +77,21 @@ export async function postApprovedReplies(deps: PostDeps, db: Db = defaultDb): P
         eq(businesses.status, "live"),
       ),
     )
-    .orderBy(asc(replyDrafts.approvedAt))
-    .limit(POST_BATCH);
+    .orderBy(asc(replyDrafts.approvedAt));
 
   const result: PostResult = { posted: 0, failed: [], waiting: [] };
   const tokens = new Map<string, string | null>(); // decrypted once per location per run
-  const blocked = new Map<string, string>(); // location -> code, for the rest of this run (revoked or unreadable token)
+  const blocked = new Map<string, string>(); // location -> code, for the rest of this run (no access, revoked or unreadable token)
+  let calls = 0;
 
   for (const d of due) {
     const wait = (code: string) => result.waiting.push({ draftId: d.draftId, code });
     if (clock() >= deadline) {
       wait("time_budget");
+      continue;
+    }
+    if (calls >= POST_BATCH) {
+      wait("batch_full");
       continue;
     }
     if (deps.skipLocationIds?.has(d.locationId)) {
@@ -168,6 +174,7 @@ export async function postApprovedReplies(deps: PostDeps, db: Db = defaultDb): P
 
         // Committed on its own connection before Google is called, so it survives a rollback of this transaction.
         await audit(db, "reply_post_attempt", null);
+        calls++;
         try {
           await deps.poster.postReply(
             { googleLocationId: d.googleLocationId!, refreshToken },
@@ -177,6 +184,8 @@ export async function postApprovedReplies(deps: PostDeps, db: Db = defaultDb): P
         } catch (e) {
           const code = e instanceof GoogleReviewsError ? e.code : "error";
           if (PERMANENT.has(code)) return fail(code);
+          // No access to the location (403) fails the same way for its other drafts: skip them this run.
+          if (code === "no_access") blocked.set(d.locationId, code);
           if (code === "token_revoked") {
             blocked.set(d.locationId, "token_revoked");
             await tx

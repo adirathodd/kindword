@@ -6,7 +6,7 @@ import { db } from "../db/client";
 import * as s from "../db/schema";
 import { GoogleReviewsError, type ReplyPoster, type ReviewSourceLocation } from "../google/businessProfile";
 import { encryptRefreshToken } from "../google/tokenCrypto";
-import { postApprovedReplies } from "./post";
+import { POST_BATCH, postApprovedReplies } from "./post";
 
 const SECRET = "test-only-google-token-secret-0123456789";
 const NOW = new Date();
@@ -296,6 +296,26 @@ describe("postApprovedReplies", () => {
     const res = await run(poster);
     expect((await draftRow(d.draftId)).status).toBe("approved");
     expect(res.waiting).toContainEqual({ draftId: d.draftId, code: "not_found" });
+  });
+
+  it("drafts stuck at a location Google refuses never starve other locations", async () => {
+    const stuck = await location();
+    for (let i = 0; i < POST_BATCH + 1; i++) await draft(stuck);
+    const ok = await location();
+    const d = await draft(ok);
+    const poster = new FakePoster();
+    const postReply = poster.postReply.bind(poster);
+    poster.postReply = async (loc, reviewId, comment) => {
+      if (loc.googleLocationId === stuck.googleLocationId) {
+        poster.calls.push({ location: loc, reviewId, comment });
+        throw new GoogleReviewsError(403, "no_access", false);
+      }
+      return postReply(loc, reviewId, comment);
+    };
+    const res = await run(poster);
+    expect(poster.calls.filter((c) => c.location.googleLocationId === stuck.googleLocationId)).toHaveLength(1);
+    expect((await draftRow(d.draftId)).status).toBe("posted");
+    expect(res.waiting.filter((w) => w.code === "no_access")).toHaveLength(POST_BATCH + 1);
   });
 
   it("skips locations whose poll failed in this run", async () => {

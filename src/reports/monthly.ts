@@ -18,9 +18,9 @@
 // the month. One report per location per month, idempotent like the other owner emails: a per-location advisory
 // lock, an audit row (month=YYYY-MM, no figures) checked before sending and written in the same transaction, and a
 // stable provider idempotency key. The hourly monthly-report job runs it (src/jobs/jobs.ts, vercel.json).
-import { and, count, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, count, countDistinct, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
-import { auditLog, locations, oauthTokens, replyDrafts, reviewRequests, suppressionList, visits } from "../db/schema";
+import { auditLog, locations, oauthTokens, reviewRequests, suppressionList, visits } from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import { GoogleReviewsError, type GoogleReview, type ReviewSource } from "../google/businessProfile";
 import { decryptRefreshToken } from "../google/tokenCrypto";
@@ -174,15 +174,18 @@ export async function ownFigures(db: Pick<Db, "select">, locationId: string, sta
           lt(auditLog.at, end),
         ),
       ),
+    // Posts also come from the audit log (src/reviews/post.ts writes one reply_posted row per draft), so a post early
+    // in the month still counts after its draft is purged (audit O-53-1).
     db
-      .select({ n: count() })
-      .from(replyDrafts)
+      .select({ n: countDistinct(auditLog.entityId) })
+      .from(auditLog)
       .where(
         and(
-          eq(replyDrafts.locationId, locationId),
-          isNotNull(replyDrafts.postedAt),
-          gte(replyDrafts.postedAt, start),
-          lt(replyDrafts.postedAt, end),
+          eq(auditLog.locationId, locationId),
+          eq(auditLog.entity, "reply_draft"),
+          eq(auditLog.action, "reply_posted"),
+          gte(auditLog.at, start),
+          lt(auditLog.at, end),
         ),
       ),
   ]);
