@@ -31,7 +31,7 @@ const ACTOR = "system:owner_email";
 export type OwnerEmailDeps = { email: EmailProvider; baseUrl: string; now?: Date };
 export type OwnerEmailResult = { sent: number; failed: number };
 
-type Recipient = {
+export type Recipient = {
   locationId: string;
   locationName: string;
   timezone: string;
@@ -41,7 +41,7 @@ type Recipient = {
 
 // Locations whose owner can be emailed: an owner email on file, the business not offboarded, and no disabled
 // account. Same eligibility as the emailed sign-in link (src/inbox/linkRequest.ts).
-async function recipients(db: Db, locationIds?: string[]): Promise<Recipient[]> {
+export async function recipients(db: Db, locationIds?: string[]): Promise<Recipient[]> {
   const rows = await db
     .select({
       locationId: locations.id,
@@ -85,7 +85,7 @@ export function localDayAndHour(t: Date, timeZone: string) {
 }
 
 // Serializes sends for one location and one kind of email across concurrent runs; released at commit.
-const lockLocation = (tx: Pick<Db, "execute">, kind: string, locationId: string) =>
+export const lockLocation = (tx: Pick<Db, "execute">, kind: string, locationId: string) =>
   tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${kind}:${locationId}`}))`);
 
 const stars = (n: number) => `${"★".repeat(n)}${"☆".repeat(5 - n)}`;

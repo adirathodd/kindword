@@ -22,6 +22,7 @@ import { BusinessProfileClient, googleOAuthConfigFromEnv } from "../google/busin
 import { inboxBaseUrl } from "../inbox/auth";
 import { GoogleSheetsError, GoogleSheetsReader, googleSheetsConfigFromEnv } from "../intake/googleSheets";
 import { pollSheet } from "../intake/pollSheet";
+import { sendMonthlyReports } from "../reports/monthly";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
 import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
 import { draftPendingReviews } from "../reviews/draft";
@@ -132,6 +133,28 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       purge: async () => {
         const r = await purgeExpiredReviews();
         return { reviews: r.reviews, drafts: r.drafts };
+      },
+    }),
+
+  // FR-17: hourly; each location gets last month's report on the first run at or after DIGEST_HOUR local time on
+  // the 1st. Idempotent: per-location advisory lock, one audit row per month (month only), idempotency key.
+  "monthly-report": () =>
+    steps({
+      report: async () => {
+        const source = new BusinessProfileClient(configure(() => googleOAuthConfigFromEnv()));
+        const tokenSecret = configure(() => {
+          const s = process.env.GOOGLE_TOKEN_SECRET;
+          if (!s || s.length < 32) throw new Error("GOOGLE_TOKEN_SECRET missing or shorter than 32 chars");
+          return s;
+        });
+        return {
+          ...(await sendMonthlyReports({
+            email: email(),
+            source,
+            tokenSecret,
+            baseUrl: configure(() => inboxBaseUrl()),
+          })),
+        };
       },
     }),
 };
