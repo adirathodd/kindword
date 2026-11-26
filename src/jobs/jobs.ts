@@ -11,6 +11,7 @@
 //   audit check plus idempotency key (low-rating email).
 // - owner-digest: per-location advisory lock, one audit row per local day, idempotency key.
 // - purge: deletes under row locks; a rerun finds nothing left.
+// - operator-alerts: one advisory lock, one audit row per alerted problem, idempotency key.
 //
 // Results are counts and short codes only: never phone numbers, emails, message text, review text or names.
 import { isNotNull, and } from "drizzle-orm";
@@ -23,6 +24,7 @@ import { inboxBaseUrl } from "../inbox/auth";
 import { GoogleSheetsError, GoogleSheetsReader, googleSheetsConfigFromEnv } from "../intake/googleSheets";
 import { pollSheet } from "../intake/pollSheet";
 import { sendMonthlyReports } from "../reports/monthly";
+import { sendOperatorAlerts } from "../notifications/operatorAlerts";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
 import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
 import { draftPendingReviews } from "../reviews/draft";
@@ -155,6 +157,20 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
             baseUrl: configure(() => inboxBaseUrl()),
           })),
         };
+      },
+    }),
+
+  // SPEC Reliability: alert the operator when a send fails, a Google token expires, or the review check has not run
+  // in 3 hours. Every 15 minutes, on its own schedule so a stopped or misconfigured reviews job is still noticed.
+  "operator-alerts": () =>
+    steps({
+      alerts: async () => {
+        const operatorEmail = configure(() => {
+          const v = process.env.OPERATOR_EMAIL?.trim();
+          if (!v) throw new Error("OPERATOR_EMAIL missing");
+          return v;
+        });
+        return { ...(await sendOperatorAlerts({ email: email(), operatorEmail })) };
       },
     }),
 };
