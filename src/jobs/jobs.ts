@@ -38,6 +38,7 @@ import { pollReviews } from "../reviews/poll";
 import { postApprovedReplies } from "../reviews/post";
 import { purgeExpiredReviews } from "../reviews/purge";
 import { TwilioSms, twilioConfigFromEnv } from "../sms/twilio";
+import { recordJobRun } from "./status";
 
 // A missing or malformed setting. Its message names the setting, never its value, so it is safe to log.
 export class JobConfigError extends Error {}
@@ -233,6 +234,11 @@ export async function runScheduled(message: ScheduleMessage): Promise<void> {
     return;
   }
   const result = await run();
+  // For the outside "jobs ran" check (src/jobs/status.ts). Losing this row only makes the check see the run late, so
+  // a failure to record it never fails or retries the job.
+  await recordJobRun(name, result.ok).catch((e) =>
+    console.error(`job ${name}: run not recorded (${e instanceof Error ? e.name : "unknown"})`),
+  );
   const line = `job ${name}: ${result.ok ? "ok" : "failed"} ${JSON.stringify(result.steps)}`;
   if (result.ok) return void console.log(line);
   console.error(line);

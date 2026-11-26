@@ -1,7 +1,7 @@
 // Scheduled-job dispatch and retries: each schedule name reaches its job code (mocked here), a missing setting is
 // named and not retried, a transient failure is retried with backoff and dropped after MAX_DELIVERIES. Runs against
 // the Postgres in DATABASE_URL for the sheet-source lookup. Fake data only.
-import { inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
@@ -133,6 +133,49 @@ describe("dispatch", () => {
     for (const m of [msg("nope"), msg("constructor"), {}, null])
       await expect(runScheduled(m as never)).resolves.toBeUndefined();
     expect(calls.list).toEqual([]);
+  });
+});
+
+describe("run records for the outside jobs-ran check", () => {
+  const lastRun = async (name: string) =>
+    (
+      await db
+        .select({ action: s.auditLog.action, locationId: s.auditLog.locationId })
+        .from(s.auditLog)
+        // status.test.ts writes job rows far in the future; only rows up to now are this test's.
+        .where(
+          and(
+            eq(s.auditLog.entity, "job"),
+            eq(s.auditLog.detail, `job=${name}`),
+            lte(s.auditLog.at, new Date(Date.now() + 60_000)),
+          ),
+        )
+        .orderBy(desc(s.auditLog.at), desc(s.auditLog.id))
+        .limit(1)
+    )[0];
+
+  it("records each finished run with its result, including runs that will be retried", async () => {
+    await runScheduled(msg("operator-alerts"));
+    expect(await lastRun("operator-alerts")).toEqual({ action: "job_ran", locationId: null });
+    calls.failPurge = true;
+    await expect(runScheduled(msg("purge"))).rejects.toBeInstanceOf(JobFailedError);
+    expect(await lastRun("purge")).toEqual({ action: "job_ran_failed", locationId: null });
+  });
+
+  it("records nothing for an unknown schedule name", async () => {
+    await runScheduled(msg("not-a-job"));
+    expect(await lastRun("not-a-job")).toBeUndefined();
+  });
+
+  it("still finishes the job when the run cannot be recorded", async () => {
+    vi.spyOn(db, "insert").mockImplementationOnce(() => {
+      throw new Error("connection reset");
+    });
+    await expect(runScheduled(msg("operator-alerts"))).resolves.toBeUndefined();
+    expect(calls.list).toEqual(["sendOperatorAlerts"]);
+    expect(vi.mocked(console.error).mock.calls.map((c) => String(c[0]))).toContain(
+      "job operator-alerts: run not recorded (Error)",
+    );
   });
 });
 

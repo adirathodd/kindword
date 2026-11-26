@@ -22,6 +22,7 @@ import { auditLog, businesses, locations, ownerAccounts, replyDrafts, reviews } 
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import { escapeHtml as e } from "../inbox/auth";
 import { OVERDUE_MS } from "../inbox/inbox";
+import { recordOwnerEmailFailure, utcDay } from "./sendFailures";
 
 // Local hour from which a location's digest may go out. The SPEC says one digest a day; the time of day is ours.
 export const DIGEST_HOUR = 8;
@@ -172,8 +173,10 @@ export async function sendDailyDigests(
     db,
     waiting.map((w) => w.locationId),
   )) {
+    let period = utcDay(now); // the local day once the time zone has been read
     try {
       const { day, hour } = localDayAndHour(now, r.timezone); // throws on a bad time zone: counted as failed
+      period = day;
       if (hour < digestHour) continue;
       const sent = await db.transaction(async (tx) => {
         await lockLocation(tx, "owner-digest", r.locationId);
@@ -216,10 +219,12 @@ export async function sendDailyDigests(
         return true;
       });
       if (sent) result.sent++;
-    } catch {
-      // The email provider refused or timed out: nothing was recorded, so the next run tries again under the same
-      // idempotency key. One location's failure does not stop the others. No details logged (they may hold the address).
+    } catch (err) {
+      // The email provider refused or timed out: no send was recorded, so the next run tries again under the same
+      // idempotency key. One location's failure does not stop the others. No details logged (they may hold the
+      // address); the failure record for operator alerts holds the location, the day and an error code only.
       result.failed++;
+      await recordOwnerEmailFailure({ locationId: r.locationId, kind: "digest", period, error: err, at: now }, db);
     }
   }
   return result;
@@ -338,8 +343,12 @@ export async function sendLowRatingAlerts(deps: OwnerEmailDeps, db: Db = default
         return true;
       });
       if (sent) result.sent++;
-    } catch {
+    } catch (err) {
       result.failed++; // retried on the next run under the same idempotency key; nothing logged
+      await recordOwnerEmailFailure(
+        { locationId: r.locationId, kind: "low_rating", period: utcDay(now), error: err, at: now },
+        db,
+      );
     }
   }
   return result;
