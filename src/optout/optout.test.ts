@@ -1,10 +1,11 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx numbers, example.test emails.
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import type { InboundSms, SmsProvider } from "../sms/provider";
+import { sendPendingConfirmations } from "./confirmations";
 import { handleInboundSms, isOptOutMessage, isSuppressed, optOutEmail, unsubscribeToken } from "./optout";
 
 process.env.UNSUBSCRIBE_SECRET ??= "test-only-secret-0123456789abcdef0123";
@@ -18,6 +19,15 @@ const TEST_ADDRESSES = [PHONE, EMAIL, "other@example.test", "+12015550101", "+12
 // Signature check faked: a request is valid when it carries the right header.
 class FakeSms implements SmsProvider {
   sent: { from: string; to: string; body: string }[] = [];
+  // Next send outcome: "timeout" (Twilio may have taken it, outcome unknown), "refused" (Twilio answered, did not
+  // take it). `accepted` records every text Twilio took, including timed-out ones, for sentSince.
+  failNext: ("timeout" | "refused")[] = [];
+  accepted: { from: string; to: string; at: Date }[] = [];
+  lookups = 0;
+  async sentSince(from: string, to: string, since: Date) {
+    this.lookups++;
+    return this.accepted.some((m) => m.from === from && m.to === to && m.at >= since);
+  }
   async parseInbound(req: Request): Promise<InboundSms | null> {
     if (req.headers.get("x-fake-signature") !== "valid") return null;
     const f = await req.formData();
@@ -29,6 +39,10 @@ class FakeSms implements SmsProvider {
     };
   }
   async send(from: string, to: string, body: string) {
+    const fail = this.failNext.shift();
+    if (fail === "refused") throw Object.assign(new Error("refused"), { refused: true });
+    this.accepted.push({ from, to, at: new Date() });
+    if (fail === "timeout") throw new DOMException("timed out", "TimeoutError"); // Twilio queued it; we never heard
     this.sent.push({ from, to, body });
   }
 }
@@ -269,6 +283,76 @@ describe("handleInboundSms", () => {
     });
     expect((await customer(B.customerId)).optedOutAt).toBeInstanceOf(Date);
     expect(sms.sent.map((m) => m.from)).toEqual([A_NUMBER, B_NUMBER]);
+  });
+});
+
+describe("confirmation outbox (audit F-9-2)", () => {
+  const row = async () =>
+    (await db.select().from(s.optOutConfirmations).where(eq(s.optOutConfirmations.locationId, A.locationId)))[0];
+  // Ages the row as if `seconds` had passed since the opt-out and the last attempt.
+  const age = (seconds: number) =>
+    db.execute(sql`update optout_confirmations set created_at = created_at - make_interval(secs => ${seconds}),
+      last_attempt_at = last_attempt_at - make_interval(secs => ${seconds}) where location_id = ${A.locationId}`);
+
+  it("a Twilio timeout that lost the text: the opt-out holds and the job sends the one confirmation", async () => {
+    // Timed out before Twilio took it: nothing reached Twilio.
+    sms.send = async () => {
+      throw new DOMException("timed out", "TimeoutError");
+    };
+    await expect(handleInboundSms(sms, inbound("STOP"))).rejects.toThrow();
+    expect(await isSuppressed(A.locationId, "sms", PHONE)).toBe(true); // immediate, whatever happens to the text
+    expect(await row()).toMatchObject({ status: "sending", attempts: 1 });
+
+    sms = new FakeSms();
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, open: 1 }); // the attempt may still be in flight
+    await age(60);
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 1, open: 0 });
+    expect(sms.lookups).toBe(1); // checked Twilio first: the earlier outcome was unknown
+    expect(sms.sent).toEqual([{ from: A_NUMBER, to: PHONE, body: expect.stringContaining("Alpha Plumbing") }]);
+    expect(await row()).toMatchObject({ status: "sent", attempts: 2 });
+
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, open: 0 }); // never twice
+    expect(sms.sent).toHaveLength(1);
+  });
+
+  it("a Twilio timeout after Twilio took the text: the job finds it and sends no second confirmation", async () => {
+    sms.failNext = ["timeout"];
+    await expect(handleInboundSms(sms, inbound("STOP"))).rejects.toThrow();
+    await age(60);
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, alreadySent: 1, open: 0 });
+    expect(sms.accepted).toHaveLength(1);
+    expect(await row()).toMatchObject({ status: "sent" });
+  });
+
+  it("a refused send is retried at once, and never after 5 minutes", async () => {
+    sms.failNext = ["refused"];
+    await expect(handleInboundSms(sms, inbound("STOP"))).rejects.toThrow();
+    expect(await row()).toMatchObject({ status: "pending" });
+    sms.failNext = ["refused"];
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, open: 1 });
+    expect(sms.lookups).toBe(0); // a refusal is a definite outcome: no lookup needed
+
+    await age(300);
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, expired: 1, open: 0 });
+    expect(sms.accepted).toHaveLength(0);
+    expect(await row()).toMatchObject({ status: "expired", attempts: 2 });
+  });
+
+  it("concurrent job runs send one confirmation", async () => {
+    sms.failNext = ["refused"];
+    await expect(handleInboundSms(sms, inbound("STOP"))).rejects.toThrow();
+    const runs = await Promise.all([sendPendingConfirmations(sms), sendPendingConfirmations(sms)]);
+    expect(runs.reduce((n, r) => n + r.sent, 0)).toBe(1);
+    expect(sms.sent).toHaveLength(1);
+  });
+
+  it("a confirmed, Twilio-handled or repeated opt-out leaves nothing for the job", async () => {
+    await handleInboundSms(sms, inbound("STOP"));
+    await handleInboundSms(sms, inbound("STOP"));
+    await handleInboundSms(sms, inbound("STOP", { to: B_NUMBER, optOutType: "STOP" }));
+    expect(await sendPendingConfirmations(sms)).toMatchObject({ sent: 0, open: 0 });
+    expect(sms.sent).toHaveLength(1);
+    expect(await row()).toMatchObject({ status: "sent", attempts: 1 });
   });
 });
 
