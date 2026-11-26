@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { GET as clickGET, HEAD as clickHEAD } from "../app/r/[id]/route";
 import { GET as unsubGET, POST as unsubPOST } from "../app/u/[token]/route";
 import { db } from "../db/client";
+import { ResendEmail } from "../email/resend";
 import * as s from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import type { InboundSms, SmsProvider } from "../sms/provider";
@@ -16,6 +17,7 @@ import {
   scheduleReviewRequests,
   sendConfigFromEnv,
   sendDueRequests,
+  EMAIL_RETRY_WINDOW_MS,
   type RequestJobOptions,
 } from "./requests";
 
@@ -445,6 +447,146 @@ describe("send-time checks", () => {
 });
 
 // The real Twilio adapter against a fake Twilio API: which of its errors may fall back to email (FR-6, FR-8).
+// F-12-2, F-12-3: a Resend outage or a long rate limit defers the email to a later run instead of failing it for
+// good. Uses the real Resend adapter over a fake fetch (no network), so the adapter's own error flags are exercised.
+describe("email retry across runs (F-12-2, F-12-3)", () => {
+  const MIN = 60_000;
+  type Reply = "ok" | "down" | "timeout" | "refused" | { retryAfterS: number };
+  function resend(replies: Reply[] | (() => Reply)) {
+    const keys: string[] = []; // Idempotency-Key of every HTTP call
+    let delivered = 0;
+    const next = () => (typeof replies === "function" ? replies() : (replies.shift() ?? "ok"));
+    const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
+      keys.push(new Headers(init?.headers).get("idempotency-key")!);
+      const r = next();
+      const res = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+        new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
+      if (r === "ok") return res(200, { id: `em_${++delivered}` });
+      if (r === "down") return res(503, { name: "internal_server_error" });
+      if (r === "timeout") throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      if (r === "refused") return res(422, { name: "validation_error" });
+      return res(429, { name: "rate_limit_exceeded" }, { "retry-after": String(r.retryAfterS) });
+    }) as typeof fetch;
+    const adapter = new ResendEmail(
+      { apiKey: "re_test_0123456789abcdef", fromAddress: "requests@mail.example.test" },
+      { fetchImpl, sleep: async () => {} },
+    );
+    return { adapter, keys, delivered: () => delivered };
+  }
+  const sendWith = (adapter: ResendEmail, now: Date) => sendDueRequests({ sms, email: adapter }, { now, config });
+  const auditOf = (id: string) =>
+    db.select().from(s.auditLog).where(eq(s.auditLog.entityId, id)).orderBy(s.auditLog.at);
+  const emailOnly = async () => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer({ phone: null }));
+    await scheduleReviewRequests({ now: VISIT });
+    return { t, v };
+  };
+
+  it("defers an email through an outage longer than the adapter's retries, then sends it once under one key", async () => {
+    const { v } = await emailOnly();
+    const r = resend(["down", "down", "down"]); // all three in-adapter attempts in the first run
+    expect(await sendWith(r.adapter, DUE)).toMatchObject({ sent: 0, failed: 0, retrying: 1 });
+    const row = await one(v);
+    expect(row).toMatchObject({ status: "scheduled", sentAt: null, sendAttempts: 1, outcomeUnknown: false });
+    expect(row.scheduledFor).toEqual(plus(DUE, 15 * MIN));
+    expect(row.maybeSentAt).toEqual(DUE); // a 503 may have been accepted
+    expect(sms.sent).toHaveLength(0); // never falls back to the other channel
+
+    // While it waits, its link works (it may have gone out) and it counts as asked (FR-7, FR-9).
+    const head = await clickHEAD(new Request(`${BASE}/r/${row.id}`, { method: "HEAD" }), ctx({ id: row.id }));
+    expect(head.status).toBe(302);
+
+    expect(await sendWith(r.adapter, plus(DUE, 10 * MIN))).toMatchObject({ sent: 0, retrying: 0 }); // not due yet
+    expect(await sendWith(r.adapter, plus(DUE, 15 * MIN))).toMatchObject({ sent: 1 });
+    expect(await one(v)).toMatchObject({ status: "sent", sendAttempts: 2, providerMessageId: "em_1" });
+    expect(r.delivered()).toBe(1);
+    expect(new Set(r.keys)).toEqual(new Set([`review-request/${row.id}`])); // same key on every call
+    expect(await sendWith(r.adapter, plus(DUE, DAY))).toMatchObject({ sent: 0, retrying: 0 }); // nothing left
+    expect((await auditOf(row.id)).map((a) => a.action)).toEqual(["scheduled", "retry_scheduled", "sent"]);
+  });
+
+  it("stops after 5 sends and marks the email failed with an unknown outcome", async () => {
+    const { v } = await emailOnly();
+    const r = resend(() => "timeout");
+    let now = DUE;
+    for (let i = 1; i <= 4; i++) {
+      expect(await sendWith(r.adapter, now)).toMatchObject({ retrying: 1 });
+      now = (await one(v)).scheduledFor;
+    }
+    expect(now).toEqual(plus(DUE, (15 + 30 + 60 + 120) * MIN));
+    expect(await sendWith(r.adapter, now)).toMatchObject({ retrying: 0, failed: 1 });
+    expect(await one(v)).toMatchObject({ status: "failed", sendAttempts: 5, outcomeUnknown: true, maybeSentAt: DUE });
+    expect(r.keys).toHaveLength(15); // 5 sends x 3 adapter attempts, all one key
+    expect(new Set(r.keys).size).toBe(1);
+    expect(await sendWith(r.adapter, plus(now, DAY))).toMatchObject({ failed: 0, retrying: 0 });
+  });
+
+  it("honors a Retry-After longer than the adapter will sleep by deferring the row (F-12-3)", async () => {
+    const { v } = await emailOnly();
+    const r = resend([{ retryAfterS: 2 * 3600 }]);
+    expect(await sendWith(r.adapter, DUE)).toMatchObject({ retrying: 1 });
+    expect(r.keys).toHaveLength(1); // no early retry inside the adapter
+    const row = await one(v);
+    expect(row.scheduledFor).toEqual(plus(DUE, 2 * HOUR));
+    expect(row.maybeSentAt).toBeNull(); // a 429 was definitely not sent
+    expect(await sendWith(r.adapter, plus(DUE, HOUR))).toMatchObject({ sent: 0 });
+    expect(await sendWith(r.adapter, plus(DUE, 2 * HOUR))).toMatchObject({ sent: 1 });
+    expect(r.delivered()).toBe(1);
+  });
+
+  it("fails a rate-limited email as definitely not sent once its retries run out", async () => {
+    const { v } = await emailOnly();
+    const r = resend(() => ({ retryAfterS: 60 }));
+    let now = DUE;
+    for (let i = 0; i < 5; i++) {
+      await sendWith(r.adapter, now);
+      now = (await one(v)).scheduledFor;
+    }
+    expect(await one(v)).toMatchObject({ status: "failed", outcomeUnknown: false, maybeSentAt: null });
+    const { id } = await one(v);
+    expect((await clickGET(new Request(`${BASE}/r/${id}`), ctx({ id }))).status).toBe(404);
+  });
+
+  it("keeps the retry inside the 9 a.m. to 8 p.m. window", async () => {
+    const { v } = await emailOnly();
+    const r = resend(["down", "down", "down"]);
+    const evening = new Date("2026-11-24T00:50:00Z"); // 7:50 p.m. New York
+    expect(await sendWith(r.adapter, evening)).toMatchObject({ retrying: 1 });
+    expect((await one(v)).scheduledFor).toEqual(new Date("2026-11-24T14:00:00Z")); // 9 a.m. next day
+  });
+
+  it("does not retry after Resend's idempotency key may have expired; fails as outcome unknown instead", async () => {
+    const { t, v } = await emailOnly();
+    const r = resend(["timeout", "timeout", "timeout"]);
+    await sendWith(r.adapter, DUE);
+    await db.update(s.businesses).set({ status: "paused" }).where(eq(s.businesses.id, t.businessId));
+    expect(await sendWith(r.adapter, plus(DUE, HOUR))).toMatchObject({ waiting: 1 });
+    await db.update(s.businesses).set({ status: "live" }).where(eq(s.businesses.id, t.businessId));
+    const late = plus(DUE, EMAIL_RETRY_WINDOW_MS + MIN);
+    expect(await sendWith(r.adapter, late)).toMatchObject({ sent: 0, failed: 1 });
+    expect(await one(v)).toMatchObject({ status: "failed", outcomeUnknown: true });
+    expect(r.keys).toHaveLength(3); // nothing called after the first run
+  });
+
+  it("keeps a refused email final, with no retry", async () => {
+    const { v } = await emailOnly();
+    const r = resend(["refused"]);
+    expect(await sendWith(r.adapter, DUE)).toMatchObject({ failed: 1, retrying: 0 });
+    expect(await one(v)).toMatchObject({ status: "failed", outcomeUnknown: false, sendAttempts: 1 });
+    expect(r.keys).toHaveLength(1);
+  });
+
+  it("does not retry a text (Twilio has no idempotency key)", async () => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    sms.failWith = Object.assign(new Error("Twilio send failed: status=503"), { retryable: true });
+    expect(await send(DUE)).toMatchObject({ failed: 1, retrying: 0 });
+    expect(await one(v)).toMatchObject({ status: "failed", outcomeUnknown: true });
+  });
+});
+
 describe("Twilio adapter errors (FR-6, FR-8)", () => {
   const twilio = (respond: () => Response | Promise<Response>) => {
     let calls = 0;
@@ -617,6 +759,24 @@ describe("90-day rule (FR-9)", () => {
     const v = await t.visit(c);
     await scheduleReviewRequests({ now: VISIT });
     expect((await one(v)).status).toBe("scheduled");
+  });
+
+  // F-7-4 (decided 2026-11-26): a duplicate skip is final; the customer's next visit is asked as usual.
+  it("keeps a duplicate skip when the request it duplicated fails, and asks the next visit", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ mail: null });
+    const first = await t.visit(c);
+    const second = await t.visit(c, plus(VISIT, HOUR));
+    expect(await scheduleReviewRequests({ now: VISIT })).toEqual({ scheduled: 1, skipped: { duplicate: 1 } });
+    sms.fail = true;
+    await send(DUE);
+    expect(await one(first)).toMatchObject({ status: "failed", outcomeUnknown: false });
+    sms.fail = false;
+    const later = plus(VISIT, 30 * DAY);
+    const third = await t.visit(c, later);
+    expect(await scheduleReviewRequests({ now: later })).toEqual({ scheduled: 1, skipped: {} });
+    expect((await one(second)).skipReason).toBe("duplicate");
+    expect((await one(third)).status).toBe("scheduled");
   });
 
   it("applies per location: the same phone at another business is asked", async () => {

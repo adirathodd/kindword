@@ -1,5 +1,5 @@
 {
-  "id": "78d372e2-f9f0-42fd-9adf-c75ae0e2961f",
+  "id": "a5998108-5ef7-49c8-9dc2-ab0fd1939cab",
   "prevId": "98586d5f-1f75-42e0-8462-de915cebf6b3",
   "version": "7",
   "dialect": "postgresql",
@@ -809,128 +809,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.optout_confirmations": {
-      "name": "optout_confirmations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "suppression_id": {
-          "name": "suppression_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_id": {
-          "name": "location_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "from_number": {
-          "name": "from_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'sending'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "last_attempt_at": {
-          "name": "last_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "optout_confirmations_status_index": {
-          "name": "optout_confirmations_status_index",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "optout_confirmations_suppression_id_suppression_list_id_fk": {
-          "name": "optout_confirmations_suppression_id_suppression_list_id_fk",
-          "tableFrom": "optout_confirmations",
-          "tableTo": "suppression_list",
-          "columnsFrom": [
-            "suppression_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "optout_confirmations_location_id_locations_id_fk": {
-          "name": "optout_confirmations_location_id_locations_id_fk",
-          "tableFrom": "optout_confirmations",
-          "tableTo": "locations",
-          "columnsFrom": [
-            "location_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "optout_confirmations_suppression_id_unique": {
-          "name": "optout_confirmations_suppression_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "suppression_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "optout_confirmation_status": {
-          "name": "optout_confirmation_status",
-          "value": "\"optout_confirmations\".\"status\" in ('sending', 'pending', 'sent', 'provider', 'expired')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.owner_accounts": {
       "name": "owner_accounts",
       "schema": "",
@@ -1406,6 +1284,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "send_attempts": {
+          "name": "send_attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "maybe_sent_at": {
+          "name": "maybe_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
