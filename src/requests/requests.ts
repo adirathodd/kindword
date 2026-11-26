@@ -468,13 +468,23 @@ export async function runReviewRequestJobs(
   return { scheduled, reminders, sent };
 }
 
-// The redirect link (FR-7): records the first click on a sent message and returns the location's review link.
+// A message whose link may be in the customer's hands: it went out, or its send failed with an unknown outcome
+// (timeout, lost connection, ambiguous 5xx), which clears sent_at but may still have delivered it (F-12-4, #43).
+// Its link must keep working (FR-7, Flow 2: the review link goes through our redirect). A definite refusal and a
+// request never sent stay 404.
+const linkMayHaveGoneOut = or(
+  isNotNull(reviewRequests.sentAt),
+  and(eq(reviewRequests.status, "failed"), eq(reviewRequests.outcomeUnknown, true)),
+);
+
+// The redirect link (FR-7): records the first click on a message that may have gone out and returns the location's
+// review link.
 export async function recordClick(requestId: string, now: Date = new Date(), db: Db = defaultDb) {
   if (!z.uuid().safeParse(requestId).success) return null;
   const [hit] = await db
     .update(reviewRequests)
     .set({ clickedAt: sql`coalesce(${reviewRequests.clickedAt}, ${now.toISOString()}::timestamptz)` })
-    .where(and(eq(reviewRequests.id, requestId), isNotNull(reviewRequests.sentAt)))
+    .where(and(eq(reviewRequests.id, requestId), linkMayHaveGoneOut))
     .returning({ visitId: reviewRequests.visitId });
   return hit ? reviewLinkForVisit(hit.visitId, db) : null;
 }
@@ -485,7 +495,7 @@ export async function reviewLinkFor(requestId: string, db: Db = defaultDb) {
   const [rr] = await db
     .select({ visitId: reviewRequests.visitId })
     .from(reviewRequests)
-    .where(and(eq(reviewRequests.id, requestId), isNotNull(reviewRequests.sentAt)));
+    .where(and(eq(reviewRequests.id, requestId), linkMayHaveGoneOut));
   return rr ? reviewLinkForVisit(rr.visitId, db) : null;
 }
 
