@@ -1,4 +1,5 @@
 // Runs against the Postgres in DATABASE_URL. Each test runs in a transaction that is rolled back.
+import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client } from "pg";
@@ -75,6 +76,26 @@ beforeEach(async () => {
   other = await makeTenant("Other HVAC");
 });
 afterEach(() => client.query("rollback"));
+
+// F-7-5 part 1: a zone Intl rejects makes every send-window check throw, so it must never be stored.
+describe("locations: timezone must be an IANA zone", () => {
+  const loc = (timezone: string) => ({ businessId, name: "Branch", timezone, reviewLink: "https://g.page/r/b" });
+
+  it.each(["America/New_York", "America/Los_Angeles", "UTC"])("accepts %s", async (tz) => {
+    await db.insert(s.locations).values(loc(tz));
+  });
+
+  it.each(["America/New_Yrok", "", "EST5EDT+1", "localtime", "posixrules", "Factory"])("rejects %j", async (tz) => {
+    await rejects(() => db.insert(s.locations).values(loc(tz)), "locations_timezone_valid");
+  });
+
+  it("rejects changing a zone to a bad one", async () => {
+    await rejects(
+      () => db.update(s.locations).set({ timezone: "Mars/Olympus" }).where(eq(s.locations.id, locationId)),
+      "locations_timezone_valid",
+    );
+  });
+});
 
 describe("customers: phone requires consent", () => {
   it("accepts a phone with a full consent record", async () => {
