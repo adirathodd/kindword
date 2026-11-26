@@ -1,7 +1,7 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx numbers, example.test emails.
 import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import { importCsv } from "./importCsv";
@@ -31,11 +31,18 @@ const run = (text: string, ctx = t.ctx) => importCsv(t.locationId, text, ctx);
 const customersOf = () => db.select().from(s.customers).where(eq(s.customers.locationId, t.locationId));
 const visitsOf = () => db.select().from(s.visits).where(eq(s.visits.locationId, t.locationId));
 
+// The fixtures use fixed 2026 visit dates; the importer refuses visits more than 12 months old (customer
+// retention), so the clock is pinned (Date only; timers stay real) to keep these tests from expiring.
+const PINNED_NOW = new Date("2026-11-26T12:00:00Z");
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"], now: PINNED_NOW });
+});
 beforeAll(() => migrate(db, { migrationsFolder: "./drizzle" }));
 beforeEach(async () => {
   t = await makeTenant("Test Plumbing");
 });
 afterAll(async () => {
+  vi.useRealTimers();
   if (businessIds.length) await db.delete(s.businesses).where(inArray(s.businesses.id, businessIds));
   await db.$client.end();
 });
@@ -104,6 +111,23 @@ describe("importCsv", () => {
       "no_contact",
     ]);
     expect(await customersOf()).toHaveLength(0);
+  });
+
+  it("rejects a visit more than 12 months old (customer retention) and keeps a newer one", async () => {
+    // PINNED_NOW is 2026-11-26 12:00 UTC, so the cutoff is 2025-11-26 12:00 UTC (07:00 in New York).
+    const r = await run(
+      csv(
+        `A,201-555-0123,a@example.test,2025-11-26 07:00,${CONSENT}`, // exactly 12 months: past the window
+        "B,,b@example.test,2024-03-01 10:00,,,",
+        "C,,c@example.test,2025-11-26 07:01,,,", // one minute inside the window
+      ),
+    );
+    expect(r.ok && r.rows.map((x) => `${x.status}:${x.reason}`)).toEqual([
+      "rejected:visit_past_retention",
+      "rejected:visit_past_retention",
+      "inserted:ok",
+    ]);
+    expect((await customersOf()).map((c) => c.normalizedEmail)).toEqual(["c@example.test"]);
   });
 
   it("skips a duplicate phone and a duplicate email in one file", async () => {

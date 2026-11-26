@@ -10,7 +10,7 @@
 // - reviews: unique google_review_id (poll), at most one draft per review (draft), per-location advisory lock plus
 //   audit check plus idempotency key (low-rating email).
 // - owner-digest: per-location advisory lock, one audit row per local day, idempotency key.
-// - purge: deletes under row locks; a rerun finds nothing left.
+// - purge: deletes under row locks (customers also under the importer's per-location lock); a rerun finds nothing left.
 //
 // Results are counts and short codes only: never phone numbers, emails, message text, review text or names.
 import { isNotNull, and } from "drizzle-orm";
@@ -25,6 +25,7 @@ import { pollSheet } from "../intake/pollSheet";
 import { sendMonthlyReports } from "../reports/monthly";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
 import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
+import { purgeExpiredCustomers } from "../retention/customers";
 import { draftPendingReviews } from "../reviews/draft";
 import { pollReviews } from "../reviews/poll";
 import { purgeExpiredReviews } from "../reviews/purge";
@@ -127,13 +128,15 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       }),
     }),
 
-  // FR-22: daily, with a one-day margin inside the 30-day limit.
+  // FR-22: daily, with a one-day margin inside the 30-day limit. Then the SPEC Security retention rule: customers
+  // whose last visit is more than 12 months old.
   purge: () =>
     steps({
       purge: async () => {
         const r = await purgeExpiredReviews();
         return { reviews: r.reviews, drafts: r.drafts };
       },
+      customers: async () => ({ customers: (await purgeExpiredCustomers()).customers }),
     }),
 
   // FR-17: hourly; each location gets last month's report on the first run at or after DIGEST_HOUR local time on
