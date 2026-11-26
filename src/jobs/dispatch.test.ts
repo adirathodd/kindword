@@ -33,6 +33,16 @@ vi.mock("../notifications/ownerEmails", () => ({
 vi.mock("../reviews/purge", () => ({
   purgeExpiredReviews: track("purgeExpiredReviews", { reviews: 0, drafts: 0, cutoff: new Date() }),
 }));
+vi.mock("../notifications/operatorAlerts", async (orig) => ({
+  ...(await orig<object>()),
+  sendOperatorAlerts: track("sendOperatorAlerts", {
+    sent: 0,
+    failed: 0,
+    staleChecks: 0,
+    expiredTokens: 0,
+    failedSends: 0,
+  }),
+}));
 vi.mock("../reports/monthly", () => ({
   sendMonthlyReports: track("sendMonthlyReports", { sent: 0, failed: 0, waiting: 0 }),
 }));
@@ -54,6 +64,7 @@ const ENV = {
   GOOGLE_TOKEN_SECRET: "test-only-google-token-secret-0123456789",
   DRAFT_PROVIDER: "groq",
   GROQ_API_KEY: "gsk_test",
+  OPERATOR_EMAIL: "operator@example.test",
 };
 const msg = (name: string) => ({ name, executionId: "exec-1", scheduledAt: "2026-11-25T12:00:00Z" });
 
@@ -98,6 +109,7 @@ describe("dispatch", () => {
     ["owner-digest", ["sendDailyDigests"]],
     ["purge", ["purgeExpiredReviews"]],
     ["monthly-report", ["sendMonthlyReports"]],
+    ["operator-alerts", ["sendOperatorAlerts"]],
   ])("%s calls its job code", async (job, expected) => {
     await expect(runScheduled(msg(job))).resolves.toBeUndefined();
     expect(calls.list).toEqual(expected);
@@ -129,6 +141,13 @@ describe("failures and retries", () => {
     const line = String(vi.mocked(console.error).mock.calls[0][0]);
     expect(line).toContain("GOOGLE_OAUTH_CLIENT_ID missing or not an OAuth client ID");
     expect(line).not.toContain(ENV.GOOGLE_OAUTH_CLIENT_SECRET);
+  });
+
+  it("does not run operator alerts without OPERATOR_EMAIL, naming the setting", async () => {
+    vi.stubEnv("OPERATOR_EMAIL", "");
+    await expect(runScheduled(msg("operator-alerts"))).resolves.toBeUndefined();
+    expect(calls.list).toEqual([]);
+    expect(String(vi.mocked(console.error).mock.calls[0][0])).toContain("OPERATOR_EMAIL missing");
   });
 
   it("does not send review requests when sending is misconfigured", async () => {

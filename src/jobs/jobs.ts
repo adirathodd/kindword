@@ -11,6 +11,7 @@
 //   audit check plus idempotency key (low-rating email).
 // - owner-digest: per-location advisory lock, one audit row per local day, idempotency key.
 // - purge: deletes under row locks; a rerun finds nothing left.
+// - operator-alerts: one advisory lock, each problem recorded in the audit log with the send, idempotency key.
 //
 // Results are counts and short codes only: never phone numbers, emails, message text, review text or names.
 import { isNotNull, and } from "drizzle-orm";
@@ -24,6 +25,7 @@ import { GoogleSheetsError, GoogleSheetsReader, googleSheetsConfigFromEnv } from
 import { pollSheet } from "../intake/pollSheet";
 import { sendMonthlyReports } from "../reports/monthly";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
+import { operatorEmailFromEnv, sendOperatorAlerts } from "../notifications/operatorAlerts";
 import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
 import { draftPendingReviews } from "../reviews/draft";
 import { pollReviews } from "../reviews/poll";
@@ -156,6 +158,15 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
           })),
         };
       },
+    }),
+
+  // SPEC Reliability: every 15 minutes, email the operator about failed sends, expired Google connections and
+  // review checks not run in 3 hours. Each problem is reported once; a quiet run sends nothing.
+  "operator-alerts": () =>
+    steps({
+      alert: async () => ({
+        ...(await sendOperatorAlerts({ email: email(), operatorEmail: configure(() => operatorEmailFromEnv()) })),
+      }),
     }),
 };
 
