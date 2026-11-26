@@ -235,7 +235,7 @@ const hours = (from: Date, to: Date) => Math.floor((to.getTime() - from.getTime(
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const ERROR_LABEL: Record<string, string> = {
   provider_rejected: "refused by the provider",
-  outcome_unknown: "outcome unknown (may have reached the customer; not retried)",
+  outcome_unknown: "outcome unknown (may have reached the customer; no more retries)",
   provider_opted_out: "customer had opted out at the provider (now suppressed)",
 };
 
