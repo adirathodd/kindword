@@ -1,84 +1,112 @@
 {
-  "audit_id": "audit-2026-11-27-02",
-  "started_at": "2026-11-27T09:40Z",
+  "audit_id": "audit-2026-11-27-03",
+  "started_at": "2026-11-27T19:45Z",
   "completed_at": "2026-11-27",
   "status": "complete_with_documented_issues",
   "target_branch": "main",
   "repository_note": "GitHub reports the repository as adirathodd/kindword; adirathodd/review-automation redirects.",
   "previous_audit": {
-    "audit_id": "audit-2026-11-27-01",
+    "audit_id": "audit-2026-11-27-02",
     "status": "complete_with_documented_issues",
-    "end_sha": "113f99f5b52470bb737704068afc5819c06b3a8c",
-    "record": "this file before this audit (merged with #81)"
+    "end_sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
+    "record": "this file before this audit (merged with #87)"
   },
   "baseline": {
-    "sha": "113f99f5b52470bb737704068afc5819c06b3a8c",
+    "sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
     "inferred": false,
-    "reasoning": "next_audit_starts_after of audit-2026-11-27-01"
+    "reasoning": "next_audit_starts_after of audit-2026-11-27-02"
   },
-  "end_sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
-  "end_sha_note": "origin/main was 9d771e1 when this audit started and when it ended.",
+  "end_sha": "c8b15b95e870e79488983c38980c5132a0a91227",
+  "end_sha_note": "origin/main was c8b15b9 when this audit started; rechecked before the record PR was opened.",
   "spec": {
     "file": "docs/SPEC.md",
-    "note": "The Claude Doc was not read (no Claude Docs connector in this session). This audit does not edit the SPEC.",
+    "note": "The Claude Doc was not read or written (no Claude Docs connector). This audit does not edit the SPEC.",
     "changes_in_period": [
-      "#83: header and Implementation status 'synced against' lines moved to 113f99f",
-      "#82: FR-9 requirement text (owner decision 2026-11-27, O-43-1), FR-9 status row, review_requests notes, new ticked Decisions item 'Which date an ask counts from'"
+      "#89: FR-9 Implementation status row (gap A-82-1, T-82-1 notes)",
+      "#86: new Implementation status row 'Google least privilege (Provider notes)'"
     ]
   },
   "in_scope": [
     {
-      "pr": 83,
-      "title": "SPEC sync at main 113f99f (sync-2026-11-27-01)",
-      "url": "https://github.com/adirathodd/kindword/pull/83",
+      "pr": 91,
+      "title": "Sheet intake: accept a service-account key with CRLF line endings (FR-2a, audit O-41-2)",
+      "url": "https://github.com/adirathodd/kindword/pull/91",
       "author": "adirathodd",
-      "merge_commit": "41fa7d9fcb90fdae2dee4c9950b4e7a43e94e45e",
+      "merge_commit": "4c03f9349c517202f21930f977fd82b0e43538d2",
       "merge_type": "squash",
-      "merged_at": "2026-11-27T02:53:34Z",
-      "depends_on": "#80",
+      "merged_at": "2026-11-27T19:39Z",
+      "depends_on": "#37",
+      "changed_files": ["src/intake/googleSheets.ts", "src/intake/googleSheets.test.ts"],
+      "previously_audited": false,
+      "audit_status": "audited (no findings)",
+      "findings": []
+    },
+    {
+      "pr": 87,
+      "title": "Audit fix for #82: date a failed last email retry by when it went out (FR-9, A-82-1) + audit record",
+      "url": "https://github.com/adirathodd/kindword/pull/87",
+      "author": "adirathodd",
+      "merge_commit": "dbcd50d7c9e4c51fd3380b92e3bf69961e072717",
+      "merge_type": "squash",
+      "merged_at": "2026-11-27T19:39Z",
+      "depends_on": "#82",
+      "changed_files": ["docs/audits/last-audit.json", "src/requests/requests.ts", "src/requests/requests.test.ts"],
+      "previously_audited": "fix PR of audit-2026-11-27-02; its merged code audited here",
+      "audit_status": "audited (no findings; O-87-1 SPEC drift)",
+      "findings": []
+    },
+    {
+      "pr": 88,
+      "title": "FR-9 regression test: a request that may have gone out still counts after it is skipped (T-82-1)",
+      "url": "https://github.com/adirathodd/kindword/pull/88",
+      "author": "adirathodd",
+      "merge_commit": "21373ce7d57366adc535b2d8e5b50ef9cba64321",
+      "merge_type": "squash",
+      "merged_at": "2026-11-27T19:39Z",
+      "depends_on": "#82",
+      "changed_files": ["src/requests/requests.test.ts"],
+      "previously_audited": false,
+      "audit_status": "audited (test only; no findings)",
+      "findings": []
+    },
+    {
+      "pr": 89,
+      "title": "SPEC sync rerun at main 9d771e1: FR-9 gap A-82-1 (sync-2026-11-27-04; supersedes #85)",
+      "url": "https://github.com/adirathodd/kindword/pull/89",
+      "author": "adirathodd",
+      "merge_commit": "320c6677ceb4d5d6be6ff98523871237bb7e2fb1",
+      "merge_type": "squash",
+      "merged_at": "2026-11-27T19:40Z",
+      "depends_on": "none",
       "changed_files": ["docs/SPEC.md", "docs/sync/last-sync.json", "docs/sync/proposed-spec-changes.md"],
       "previously_audited": false,
-      "audit_status": "audited (docs only; no findings)",
+      "audit_status": "audited (docs only; O-87-1)",
       "findings": []
     },
     {
-      "pr": 81,
-      "title": "Record SPEC audit audit-2026-11-27-01 (main b0d74de..113f99f)",
-      "url": "https://github.com/adirathodd/kindword/pull/81",
+      "pr": 86,
+      "title": "Repo-wide test that fails the build on any other Google endpoint (SPEC Provider notes: Google OAuth)",
+      "url": "https://github.com/adirathodd/kindword/pull/86",
       "author": "adirathodd",
-      "merge_commit": "2e444cdaad292e49b8442bffee3ea18cac3aa3a5",
+      "merge_commit": "c8b15b95e870e79488983c38980c5132a0a91227",
       "merge_type": "squash",
-      "merged_at": "2026-11-27T02:53:49Z",
+      "merged_at": "2026-11-27T19:44:04Z",
       "depends_on": "none",
-      "changed_files": ["docs/audits/last-audit.json"],
-      "previously_audited": false,
-      "audit_status": "audited (audit record only; no findings)",
-      "findings": []
-    },
-    {
-      "pr": 82,
-      "title": "FR-9: date the 90-day window by when a request may have reached the customer (audit O-43-1)",
-      "url": "https://github.com/adirathodd/kindword/pull/82",
-      "author": "adirathodd",
-      "merge_commit": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
-      "merge_type": "squash",
-      "merged_at": "2026-11-27T03:01:59Z",
-      "depends_on": "#43/#60 (outcome_unknown), #71 (maybe_sent_at, email retries), #69 (duplicate skip is final)",
       "changed_files": [
         "docs/SPEC.md",
         "docs/sync/proposed-spec-changes.md",
-        "src/requests/requests.ts",
-        "src/requests/requests.test.ts"
+        "src/google/endpointGuard.ts",
+        "src/google/endpointGuard.test.ts"
       ],
       "previously_audited": false,
-      "audit_status": "audited (A-82-1 verified and fixed in this PR; O-82-1)",
-      "findings": ["A-82-1", "O-82-1"]
+      "audit_status": "audited (A-86-1 verified and fixed in this PR)",
+      "findings": ["A-86-1", "O-86-1", "O-86-2"]
     }
   ],
-  "not_in_scope": ["open, unmerged PRs: next cycle if merged"],
+  "not_in_scope": ["open, unmerged PRs #49, #51, #78, #79: next cycle if merged"],
   "direct_commits_outside_prs": [],
   "worktrees": {
-    "note": "Three squash commits, one with code (#82, the last commit on main), so main at 9d771e1 is #82's exact state; #81 and #83 are docs only. Reviewed as diffs against their parents and traced on main; no finding needed an older tree, so no separate worktree was created."
+    "note": "Five squash commits in order 4c03f93 (#91), dbcd50d (#87), 21373ce (#88), 320c667 (#89), c8b15b9 (#86). Each was reviewed as a diff against its parent and traced on main; #86 is the last commit, so main at c8b15b9 is its exact state and its finding was reproduced there. #87, #88 and #91 touch separate code from #86; no finding needed an older tree, so no separate worktree was created."
   },
   "completed_stages": [
     "scope_inventory",
@@ -91,87 +119,78 @@
     "report"
   ],
   "spec_requirements_reviewed": [
-    "FR-9 (new text): a request counts from the first time it may have reached the customer to the last; an unknown-outcome send counts; it still counts if later skipped. askedRecently spans coalesce(maybe_sent_at, sent_at, scheduled_for)..greatest(sent_at, maybe_sent_at, scheduled_for) and keeps isNotNull(maybe_sent_at) in the status filter; skip() and failRequest() never clear maybe_sent_at; the only writer is deliver(), which sets it once at the first send that may have gone out",
-    "FR-9: a duplicate skip stays final (#69 test unchanged and passing); scheduled rows unchanged in behaviour (all three dates equal scheduled_for)",
-    "FR-9 / D-19: a carrier-failed text (accepted then undelivered) is a definite failure: sent_at cleared, outcome_unknown false, maybe_sent_at null, so it does not count; the fallback email row does",
-    "FR-9: only attempt 1 counts (the one reminder is part of the same ask, FR-5)",
-    "Hard constraints: no phone numbers, message or review text added to logs; no schema change (drizzle-kit generate: no changes)",
-    "SPEC sync: #82's Doc edits listed in docs/sync/proposed-spec-changes.md"
+    "Provider notes, Google OAuth: 'no other endpoint is called anywhere; a test fails the build if another Google method is called' (#86 guard: allowlist, constant uses, imports, SDKs, manifests, directory walk)",
+    "FR-2a: service-account key read from env; CRLF (real and escaped) normalised before the PEM check; errors name the setting only, never the value (#91)",
+    "FR-9: #87 sets scheduled_for to the send time only when a failed send may have gone out and was not refused; scheduled_for is read by no report or reminder code (grep), so the change only moves the end of the 90-day span; stale, deferred, refused and retry paths over-count at most (O-82-2)",
+    "FR-9 T-82-1 (#88): the test exercises the isNotNull(maybe_sent_at) clause through a skipped opted-out retry",
+    "Hard constraints: no phone numbers, message or review text added to logs; no schema change"
   ],
   "findings": [
     {
-      "id": "A-82-1",
-      "pr": 82,
-      "classification": "exposed by #82 (the lost send time dates from #71; #82's new upper bound made it the deciding value)",
+      "id": "A-86-1",
+      "pr": 86,
+      "classification": "introduced by #86",
       "severity": "low",
       "status": "fixed in this PR",
-      "spec": "FR-9: never ask the same customer more than once in 90 days at a location; a request counts from the first time it may have reached the customer to the last (decided 2026-11-27, O-43-1).",
-      "summary": "An email retried through a Resend outage whose last send had an unknown outcome (timeout, or the 5th send) is marked failed with sent_at cleared and maybe_sent_at at the first send. The time the last send went out was not kept, so askedRecently ended the span at that retry's scheduled_for. Sends run every 15 minutes, so the real send is up to about 15 minutes later (more if a run is late), and a new visit due inside that gap 90 days on was scheduled: the customer could be asked twice within 90 days.",
-      "reproduction": "src/requests/requests.test.ts 'counts an email whose last retry had an unknown outcome until 90 days after that retry went out': failed before the fix (later visit status 'scheduled', expected 'skipped'/'duplicate').",
-      "fix": "deliver(): when a failed send may have gone out, also set scheduled_for to the send time (src/requests/requests.ts). A refused last send keeps its due time (over-counts by at most one run interval, on the safe side).",
+      "spec": "Provider notes, Google OAuth: 'no other endpoint is called anywhere; a test fails the build if another Google method is called'.",
+      "summary": "The repo scan in endpointGuard.test.ts skipped every directory named design, coverage, .next, .vercel or .claude at any depth, not only the repo-root build and tool folders. A Google call in src/app/design/ (a plausible Next.js route) or src/reports/coverage/ passed npm test and CI. No such folder exists on main or the open PRs today, so nothing is exposed yet.",
+      "reproduction": "Planted a fetch of the Business Profile account-management API (the #86 plant) in src/app/design/zzplant.ts and src/reports/coverage/zzplant.ts on main: guard 26/26 passed. The same file in src/x/ failed as expected. After the fix the src/app/design plant fails the repo scan. Plants removed.",
+      "fix": "skipDir() in src/google/endpointGuard.ts: node_modules and .git skipped at any depth; .next, .claude, .vercel, coverage and design only at the repo root. The test's walker uses it.",
       "regression_tests": [
-        "counts an email whose last retry had an unknown outcome until 90 days after that retry went out",
-        "keeps the due time of a refused last retry after an earlier send that may have gone out"
+        "scans source in nested folders that share a name with a skipped root folder (temp-dir tree; failed with the old name-based skip, passes now)"
       ]
     }
   ],
   "observations": [
     {
-      "id": "O-82-2",
-      "pr": 82,
-      "classification": "introduced by #82 (by design)",
-      "severity": "nit",
-      "status": "open (not a SPEC violation)",
-      "summary": "A row that expires without sending (stale or past the 20-hour key window at claim time) or whose last retry was refused ends its span at that unsent retry's scheduled_for, a little after its last possible send. This over-counts by at most the run delay and never lets a customer be asked twice."
-    },
-    {
-      "id": "O-82-1",
-      "pr": 82,
+      "id": "O-87-1",
+      "pr": "87, 88, 89",
       "classification": "SPEC drift (docs)",
       "severity": "nit",
       "status": "open (for the SPEC sync routine)",
-      "summary": "docs/SPEC.md's Implementation status header says 'on main at 113f99f', but its FR-9 row now describes #82 (9d771e1). The Doc still needs the #80 and #82 edits listed in docs/sync/proposed-spec-changes.md."
+      "summary": "docs/SPEC.md's FR-9 Implementation status row (from #89) still says 'Implemented, one failure-path gap (noncompliant)', 'test in open #88' and 'fix in open #87'; both merged, so on main the gap A-82-1 is fixed and T-82-1 is pinned. Header and table still say synced at 9d771e1. The FR-2a row does not mention #91's CRLF handling (O-41-2 closed). The Doc still needs the #80, #82, #86 and #89 edits listed in docs/sync/proposed-spec-changes.md."
     },
-    "Closed in this period: A-82-1 (by this PR), O-43-1 (by #82, owner decision 2026-11-27), O-80-4 (by #83). Still open from earlier audits: O-80-1, O-80-2, O-72-1, O-72-2, O-59-1, A-45-1/D-13, A-5..A-8, S-1..S-5, S-8, S-9, O-37-1, O-40-1, O-40-2, O-41-1..O-41-3, O-46-1, O-53-1, O-53-2, F-7-5 part 2 data check."
-  ],
-  "spec_drift": ["O-82-1"],
-  "fix_prs": [
     {
-      "pr": 87,
-      "url": "https://github.com/adirathodd/kindword/pull/87",
-      "branch": "claude/cool-meitner-oum9gw",
-      "base": "main",
-      "remediates": [82],
-      "findings": ["A-82-1"]
-    }
+      "id": "O-86-1",
+      "pr": 86,
+      "classification": "documented limit of #86",
+      "severity": "nit",
+      "status": "open (owner question in #86)",
+      "summary": "The guard checks paths, not HTTP methods (DELETE on the post-reply path would pass); businessProfile.test.ts checks methods for today's calls. Owner to decide whether the guard should pin methods."
+    },
+    {
+      "id": "O-86-2",
+      "pr": 86,
+      "classification": "SPEC ambiguity",
+      "severity": "nit",
+      "status": "open (owner question in #86)",
+      "summary": "Provider notes say 'one Google client module that exposes only list reviews and post reply; no other endpoint is called anywhere', but the SPEC also requires the Sheets read (FR-2a) and the landing page loads Google Fonts; the consent and revoke endpoints (connect step, FR-20) are not listed. The guard allows the first two. Recommend the note say it covers the owner's Business Profile grant and list these exceptions."
+    },
+    "Closed in this period: A-82-1 (by #87), T-82-1 (by #88), O-41-2 (by #91), O-82-1 (by #89 header move, now superseded by O-87-1). Still open from earlier audits: O-82-2, O-80-1, O-80-2, O-72-1, O-72-2, O-59-1, A-45-1/D-13, A-5..A-8, S-1..S-5, S-8, S-9, O-37-1, O-40-1, O-40-2, O-41-1, O-41-3, O-46-1, O-53-1, O-53-2, F-7-5 part 2 data check."
   ],
+  "spec_drift": ["O-87-1"],
+  "fix_prs": [],
   "validation": {
-    "environment": "local Postgres 16 (CI uses 17); Node 24.22.3 (session default Node 22 is too old for the Argon2 and runtime tests)",
+    "environment": "local Postgres 16 (CI uses 17); Node 24.22.3 via npx node@24 (session default Node 22 is too old for the Argon2 and runtime tests)",
     "main_at_end_sha": {
-      "vitest": "719/719 passed (39 files) at 9d771e1",
-      "prettier": "clean",
-      "eslint": "clean",
-      "drizzle_kit_generate": "no schema changes",
+      "vitest": "750/750 passed (40 files) at c8b15b9",
       "migrations": "0000..0017 applied to a fresh database"
     },
-    "record_pr": "docs/audits/last-audit.json only; prettier checked",
     "fix_branch": {
-      "vitest": "721/721 passed (2 new)",
       "prettier": "clean",
       "eslint": "clean",
-      "next_build": "passed (TypeScript included)",
+      "vitest": "751/751 passed (1 new)",
+      "tsc": "passed",
+      "next_build": "passed",
       "drizzle_kit_generate": "no schema changes",
-      "new_test_before_fix": "failed as expected"
+      "new_test_before_fix": "failed with the old name-based skip, as expected",
+      "planted_call": "src/app/design plant passes on main, fails the repo scan on this branch"
     }
   },
-  "merge_order": [
-    "this PR (independent; based on main 9d771e1). Close #84 unmerged: it holds the same record without A-82-1 and would conflict on docs/audits/last-audit.json."
-  ],
+  "merge_order": ["this PR (independent; based on main c8b15b9)"],
   "unresolved": [
-    "Claude Doc edits for #80 and #82 still pending (no Claude Docs connector here); listed in docs/sync/proposed-spec-changes.md",
-    "O-82-1 and the earlier items listed in observations",
-    "SPEC FR-9 Implementation status row could note A-82-1 (last retry dated by when it went out); this audit does not edit the SPEC, left for the SPEC sync routine (open PR #85)."
+    "Claude Doc edits for #80, #82, #86 and #89 still pending (no Claude Docs connector here); listed in docs/sync/proposed-spec-changes.md",
+    "O-87-1 (SPEC status rows behind main), O-86-1, O-86-2 and the earlier items listed in observations"
   ],
-  "next_audit_starts_after": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
-  "rerun_note": "Second run against the same range (113f99f..9d771e1). The first run's record is in open PR #84 (no verified bugs). This run keeps that record and adds verified finding A-82-1 and its fix. This PR replaces #84; close #84 unmerged."
+  "next_audit_starts_after": "c8b15b95e870e79488983c38980c5132a0a91227"
 }

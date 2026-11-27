@@ -1,29 +1,30 @@
 // SPEC Provider notes (Google OAuth): "a test fails the build if another Google method is called". The first block
 // runs the guard over the whole repo; the rest prove the guard catches each way a new Google call could be added.
 // No network. Fixture strings only.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { checkManifest, checkSourceFile, formatViolation, type Violation } from "./endpointGuard";
+import { checkManifest, checkSourceFile, formatViolation, skipDir, type Violation } from "./endpointGuard";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const SKIP_DIRS = new Set(["node_modules", ".next", ".git", ".claude", ".vercel", "coverage", "design"]);
 const SOURCE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|html|css|json|ya?ml|sh)$/;
 // Test files hold fake URLs on purpose; the runtime tests next to each client check what it really requests.
 const TEST_FILE = /\.test\.(?:ts|tsx|mts|js|mjs)$/;
 
-function sourceFiles(dir: string, out: string[] = []) {
+const relTo = (root: string, full: string) => relative(root, full).split(sep).join("/");
+function sourceFiles(root: string, dir = root, out: string[] = []) {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) {
-      if (!SKIP_DIRS.has(name)) sourceFiles(full, out);
+      if (!skipDir(relTo(root, full))) sourceFiles(root, full, out);
     } else if (SOURCE.test(name) && !TEST_FILE.test(name) && name !== "package-lock.json") out.push(full);
   }
   return out;
 }
 
-const rel = (full: string) => relative(ROOT, full).split(sep).join("/");
+const rel = (full: string) => relTo(ROOT, full);
 const repoPath = (p: string) => join(ROOT, p);
 const GUARD = "src/google/endpointGuard.ts";
 
@@ -35,6 +36,47 @@ describe("the repo calls no Google endpoint outside the allowlist", () => {
       .filter((f) => rel(f) !== GUARD) // the rules themselves; checked below to call and import nothing
       .flatMap((f) => checkSourceFile({ path: rel(f), text: readFileSync(f, "utf8") }));
     expect(violations.map(formatViolation)).toEqual([]);
+  });
+
+  // Audit A-86-1: the walk skipped every directory named design, coverage, .next, .vercel or .claude at any depth, so a
+  // Google call in, say, src/app/design/ (a plausible route) passed. Only the repo-root build and tool folders are
+  // skipped now; node_modules and .git anywhere.
+  it("scans source in nested folders that share a name with a skipped root folder", () => {
+    const root = mkdtempSync(join(tmpdir(), "endpoint-guard-"));
+    try {
+      const files = [
+        "src/app/design/page.tsx",
+        "src/reports/coverage/x.ts",
+        "src/lib/.next/x.ts",
+        "src/lib/.vercel/x.ts",
+        "src/lib/.claude/x.ts",
+        "design/x.ts",
+        "coverage/x.js",
+        ".next/server/x.js",
+        ".vercel/output/x.js",
+        ".claude/worktrees/a/src/x.ts",
+        "node_modules/a/x.js",
+        "src/lib/node_modules/a/x.js",
+        ".git/hooks/x.sh",
+      ];
+      for (const f of files) {
+        mkdirSync(join(root, f, ".."), { recursive: true });
+        writeFileSync(join(root, f), "");
+      }
+      expect(
+        sourceFiles(root)
+          .map((f) => relTo(root, f))
+          .sort(),
+      ).toEqual([
+        "src/app/design/page.tsx",
+        "src/lib/.claude/x.ts",
+        "src/lib/.next/x.ts",
+        "src/lib/.vercel/x.ts",
+        "src/reports/coverage/x.ts",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("the guard module, which names the allowed hosts, makes no calls and imports nothing", () => {
