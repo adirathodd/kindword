@@ -739,6 +739,54 @@ describe("90-day rule (FR-9)", () => {
     expect((await one(second)).skipReason).toBe("duplicate");
   });
 
+  // O-43-1: a send with an unknown outcome is dated by when it may have reached the customer (maybe_sent_at), not by
+  // when it was due. Here the text went out 2 days late (for example the business went live late), then timed out.
+  it("dates an unknown-outcome send by when it went out, not when it was due", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ mail: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    const late = plus(DUE, 2 * DAY); // noon in New York, still inside the 72-hour stale limit
+    sms.failWith = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    expect(await send(late)).toMatchObject({ sent: 0, failed: 1 });
+    expect(await one(first)).toMatchObject({ status: "failed", outcomeUnknown: true, maybeSentAt: late });
+    sms.failWith = null;
+
+    // Due 89 days after the send went out (91 days after it was due): still within 90 days, so not asked.
+    const v89 = await t.visit(c, plus(VISIT, 2 * DAY + 89 * DAY));
+    expect(await scheduleReviewRequests({ now: plus(VISIT, 2 * DAY + 89 * DAY) })).toEqual({
+      scheduled: 0,
+      skipped: { duplicate: 1 },
+    });
+    expect((await one(v89)).skipReason).toBe("duplicate");
+
+    // Due 91 days after the send went out: asked as usual.
+    const v91 = await t.visit(c, plus(VISIT, 2 * DAY + 91 * DAY));
+    await scheduleReviewRequests({ now: plus(VISIT, 2 * DAY + 91 * DAY) });
+    expect((await one(v91)).status).toBe("scheduled");
+  });
+
+  // O-43-1: an email retried through an outage may have reached the customer at its first send (maybe_sent_at), even
+  // though it is marked sent at its last one. An earlier visit imported afterwards is checked against both.
+  it("counts an email retried through an outage from its first possible send", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true }); // may have been accepted
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    email.failWith = null;
+    const retryAt = (await one(first)).scheduledFor;
+    expect(await send(retryAt)).toMatchObject({ sent: 1 });
+    expect(await one(first)).toMatchObject({ status: "sent", sentAt: retryAt, maybeSentAt: DUE });
+
+    // An older visit, due 90 days minus 5 minutes before the first send (but more than 90 days before the last).
+    const dueEarlier = plus(DUE, -90 * DAY + 5 * 60_000);
+    const earlier = await t.visit(c, plus(dueEarlier, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueEarlier, -2 * HOUR) });
+    expect(await one(earlier)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
+  });
+
   it("does not count an email the provider refused", async () => {
     const t = await makeTenant();
     const c = await t.customer({ phone: null });
