@@ -1275,3 +1275,121 @@ describe("receipts that arrive before the send records the message ID (O-66-1)",
     expect(await handleReceipt("email", "x".repeat(201), "delivered", null)).toBe("unknown");
   });
 });
+
+// Audit O-46-1: the database write after a provider call (sent, failed, retry scheduled) can hit a blip. It must not
+// abort the rest of the batch, must not leave a refused text recorded as sent (FR-6 email fallback), and a retried
+// write must never be applied twice.
+describe("a database error after the provider call (O-46-1)", () => {
+  type Step = "ok" | "throw" | "commit-then-throw";
+  const dbError = () => Object.assign(new Error("Connection terminated unexpectedly"), { name: "DatabaseError" });
+  // Plays `plan` against db.transaction calls in order (index 0 is the first row's claim); later calls run normally.
+  const failTransactions = (plan: Step[]) => {
+    const real = db.transaction.bind(db);
+    let n = 0;
+    const spy = vi.spyOn(db, "transaction").mockImplementation((async (...args: Parameters<typeof real>) => {
+      const step = plan[n++] ?? "ok";
+      if (step === "throw") throw dbError();
+      const r = await real(...args);
+      if (step === "commit-then-throw") throw dbError(); // committed, but the reply was lost
+      return r;
+    }) as typeof db.transaction);
+    onTestFinished(() => spy.mockRestore());
+    return spy;
+  };
+  const actions = (locationId: string, action: string) =>
+    db
+      .select()
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.locationId, locationId), eq(s.auditLog.action, action)));
+  const quietErrors = () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => spy.mockRestore());
+    return spy;
+  };
+
+  it.each<[string, Step]>([
+    ["fails once", "throw"],
+    ["commits but loses the reply", "commit-then-throw"],
+  ])("records a refused text once and falls back to email when the write %s", async (_label, step) => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    sms.fail = true;
+    failTransactions(["ok", step]);
+    expect(await send(DUE)).toMatchObject({ sent: 0, failed: 1 });
+    const rows = await requestsOf(v);
+    expect(rows.map((r) => [r.channel, r.status]).sort()).toEqual([
+      ["email", "scheduled"],
+      ["sms", "failed"],
+    ]);
+    expect(await actions(t.locationId, "failed")).toHaveLength(1);
+    expect(
+      await actions(t.locationId, "scheduled").then((r) => r.filter((x) => x.detail?.includes("fallback"))),
+    ).toHaveLength(1);
+
+    expect(await send(plus(DUE, 60_000))).toMatchObject({ sent: 1 });
+    expect(email.sent).toHaveLength(1);
+    expect(sms.sent).toEqual([]);
+  });
+
+  it.each<[string, Step]>([
+    ["fails once", "throw"],
+    ["commits but loses the reply", "commit-then-throw"],
+  ])("records a sent text once with its message ID when the write %s", async (_label, step) => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    failTransactions(["ok", step]);
+    expect(await send(DUE)).toMatchObject({ sent: 1, failed: 0 });
+    expect(await one(v)).toMatchObject({ status: "sent", providerMessageId: "SM1" });
+    expect(await actions(t.locationId, "sent")).toHaveLength(1);
+    expect(sms.sent).toHaveLength(1);
+  });
+
+  it("schedules an email retry once when the write commits but loses the reply", async () => {
+    const t = await makeTenant({ smsNumber: null });
+    const v = await t.visit(await t.customer({ phone: null }));
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true });
+    failTransactions(["ok", "commit-then-throw"]);
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    expect(await one(v)).toMatchObject({ status: "scheduled", sendAttempts: 1, sentAt: null });
+    expect(await actions(t.locationId, "retry_scheduled")).toHaveLength(1);
+  });
+
+  it("keeps sending the rest of the batch when the write keeps failing, and never sends that row again", async () => {
+    const a = await makeTenant();
+    const vA = await a.visit(await a.customer());
+    const smsA = sms;
+    const b = await makeTenant({ smsNumber: "+12015550181" });
+    const vB = await b.visit(await b.customer({ phone: "+12015550111", mail: "lee@example.test" }));
+    sms = smsA; // one fake for both tenants, so a single run sends both
+    await scheduleReviewRequests({ now: VISIT });
+    sms.fail = true;
+    const errors = quietErrors();
+    // First row: its claim, then the failure write and both retries fail. Second row: runs normally.
+    failTransactions(["ok", "throw", "throw", "throw"]);
+    await expect(send(DUE)).resolves.toMatchObject({ sent: 0, failed: 1, errors: 1 });
+    expect(errors.mock.calls.flat().join(" ")).toMatch(
+      /send_due_requests_outcome: row failed id=\S+ error=DatabaseError/,
+    );
+    for (const x of [PHONE, EMAIL, "+12015550111", "lee@example.test"])
+      expect(errors.mock.calls.flat().join(" ")).not.toContain(x);
+
+    const [rowsA, rowsB] = await Promise.all([requestsOf(vA), requestsOf(vB)]);
+    const stuck = [rowsA, rowsB].find((r) => r.length === 1)!;
+    const handled = [rowsA, rowsB].find((r) => r.length === 2)!;
+    expect(stuck).toBeDefined();
+    expect(handled).toBeDefined();
+    expect(stuck[0]).toMatchObject({ channel: "sms", status: "sent" }); // left claimed: no double send
+    expect(handled.map((r) => [r.channel, r.status]).sort()).toEqual([
+      ["email", "scheduled"],
+      ["sms", "failed"],
+    ]);
+
+    sms.fail = false;
+    await send(plus(DUE, 60_000));
+    expect(sms.sent).toEqual([]); // the stuck row is never picked up again
+    expect(email.sent).toHaveLength(1); // only the handled row's fallback
+  });
+});
