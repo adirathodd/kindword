@@ -36,3 +36,5 @@ The D-19 PR (audit-2026-11-26-04, owner decision 2026-11-27) also changed, outsi
 sync-2026-11-27-02 (SPEC sync at main 9d771e1) moved the header line to 9d771e1, the first sentence under **Implementation status** to "Status of each requirement on main at 9d771e1 (2026-11-27).", and added a last sentence to the FR-9 status row ("A request that may have gone out still counts after it is later skipped …"). Copy them from `docs/SPEC.md`.
 
 sync-2026-11-27-04 (SPEC sync rerun at main 9d771e1) changed the **Implementation status** FR-9 row: its status is now "Implemented, one failure-path gap (noncompliant)", and the row ends with the T-82-1 note (test in #88) and the A-82-1 gap (fix in #87). Copy the row from `docs/SPEC.md`.
+
+The Google endpoint guard PR #86 (2026-11-27, SPEC Provider notes: Google OAuth) adds one **Implementation status** row after "Retention (Security)": "Google least privilege (Provider notes)". Copy the row from `docs/SPEC.md` into the Doc.
