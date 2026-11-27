@@ -22,8 +22,9 @@ export type SourceFile = { path: string; text: string };
 export type Violation = { path: string; line: number; rule: string; detail: string };
 
 type ModuleRule = {
-  // Exact string literals, quotes included, that may appear in this file.
-  literals?: string[];
+  // Constants this file may declare, each as `export const NAME = "<url>";` exactly once. Only that one occurrence
+  // is allowed: a second copy of the URL anywhere in the file (with another path, or inside new URL()) is reported.
+  constants?: Record<string, string>;
   // Patterns that may appear in this file (for URLs whose query string may change, such as font weights).
   patterns?: RegExp[];
   // Endpoint base constants declared in this file, with the only path shapes they may be extended by. A shape is the
@@ -31,19 +32,19 @@ type ModuleRule = {
   bases?: Record<string, string[]>;
 };
 
-const TOKEN = '"https://oauth2.googleapis.com/token"';
+const TOKEN = "https://oauth2.googleapis.com/token";
 
 export const GOOGLE_ALLOWLIST: Record<string, ModuleRule> = {
   "src/google/businessProfile.ts": {
-    literals: [TOKEN, '"https://mybusiness.googleapis.com/v4"'],
+    constants: { TOKEN_URL: TOKEN, REVIEWS_API: "https://mybusiness.googleapis.com/v4" },
     bases: { REVIEWS_API: ["/{}/reviews?{}", "/{}/reviews/{}/reply"] },
   },
   "src/intake/googleSheets.ts": {
-    literals: [
-      TOKEN,
-      '"https://sheets.googleapis.com/v4/spreadsheets"',
-      '"https://www.googleapis.com/auth/spreadsheets.readonly"',
-    ],
+    constants: {
+      TOKEN_URL: TOKEN,
+      SHEETS_API: "https://sheets.googleapis.com/v4/spreadsheets",
+      SCOPE: "https://www.googleapis.com/auth/spreadsheets.readonly",
+    },
     bases: { SHEETS_API: ["/{}/values/{}"] },
   },
   "public/landing/index.html": {
@@ -135,13 +136,19 @@ export function checkSourceFile(file: SourceFile): Violation[] {
   const rule = GOOGLE_ALLOWLIST[file.path] ?? {};
   let text = file.text;
 
-  for (const literal of rule.literals ?? []) {
-    let at = text.indexOf(literal);
-    while (at !== -1) {
-      text = blank(text, at, at + literal.length);
-      at = text.indexOf(literal, at + literal.length);
-    }
+  for (const [name, url] of Object.entries(rule.constants ?? {})) {
+    const declaration = `export const ${name} = "${url}";`;
+    const at = text.indexOf(declaration);
+    if (at === -1 || text.indexOf(declaration, at + 1) !== -1)
+      out.push({ path: file.path, line: 1, rule: "google_allowlist_stale", detail: name });
+    else text = blank(text, at, at + declaration.length);
   }
+  // The token endpoint is called as is: no path, query or other URL may be built from it.
+  if (rule.constants?.TOKEN_URL)
+    for (const m of file.text.matchAll(
+      /\$\{TOKEN_URL\}|\bTOKEN_URL\s*\+|\+\s*TOKEN_URL\b|new URL\([^)]*\bTOKEN_URL\b/g,
+    ))
+      out.push({ path: file.path, line: lineOf(file.text, m.index), rule: "google_base_misused", detail: "TOKEN_URL" });
   for (const pattern of rule.patterns ?? [])
     for (const m of [...text.matchAll(pattern)]) text = blank(text, m.index, m.index + m[0].length);
 

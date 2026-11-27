@@ -109,6 +109,22 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
       expect(rules(checkSourceFile({ path: BP, text: bpModule(extra) }))).toEqual(["google_base_misused REVIEWS_API"]);
   });
 
+  it("rejects a second copy of an allowed URL in the allowed module", () => {
+    for (const extra of [
+      'const accounts = "https://mybusiness.googleapis.com/v4/accounts";',
+      'const u = new URL("/v1/accounts", "https://mybusiness.googleapis.com/v4");',
+      'const t = "https://oauth2.googleapis.com/token";',
+    ])
+      expect(checkSourceFile({ path: BP, text: bpModule(extra) }).map((v) => v.rule)).toContain(
+        "google_api_not_allowed",
+      );
+  });
+
+  it("rejects building another URL from the token endpoint", () => {
+    for (const extra of ["const r = `${TOKEN_URL}/revoke`;", 'const r = TOKEN_URL + "info";', "new URL(TOKEN_URL)"])
+      expect(rules(checkSourceFile({ path: BP, text: bpModule(extra) }))).toEqual(["google_base_misused TOKEN_URL"]);
+  });
+
   it("rejects a changed base URL in the allowed module", () => {
     const text = bpModule().replace("mybusiness.googleapis.com/v4", "mybusinessaccountmanagement.googleapis.com/v1");
     expect(rules(checkSourceFile({ path: BP, text }))).toContain(
