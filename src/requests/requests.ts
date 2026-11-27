@@ -111,6 +111,13 @@ async function isOptedOut(tx: Tx, locationId: string, c: Customer) {
 // FR-9: the same person (same customer, or same normalized phone or email) asked at this location within 90 days of
 // `at`, by a request that went out, is still due, or failed in a way that may have reached them (outcome unknown).
 // Skipped requests and definite failures do not count.
+// A request is dated by when it may have reached the customer, not only by when it was due (audit O-43-1): it spans
+// from its first possible send (maybe_sent_at, else sent_at, else scheduled_for) to its last (the latest of sent_at,
+// maybe_sent_at and scheduled_for; greatest() skips nulls), and counts if any part of that span is within 90 days.
+// A send that went out late is then dated by when it went out, and an email retried through an outage by both its
+// first and its last send.
+const firstContact = sql`coalesce(${reviewRequests.maybeSentAt}, ${reviewRequests.sentAt}, ${reviewRequests.scheduledFor})`;
+const lastContact = sql`greatest(${reviewRequests.sentAt}, ${reviewRequests.maybeSentAt}, ${reviewRequests.scheduledFor})`;
 async function askedRecently(tx: Tx, locationId: string, visitId: string, c: Customer, at: Date, dedupMs: number) {
   const [hit] = await tx
     .select({ id: reviewRequests.id })
@@ -132,8 +139,8 @@ async function askedRecently(tx: Tx, locationId: string, visitId: string, c: Cus
           c.normalizedPhone ? eq(customers.normalizedPhone, c.normalizedPhone) : undefined,
           c.normalizedEmail ? eq(customers.normalizedEmail, c.normalizedEmail) : undefined,
         ),
-        gt(sql`coalesce(${reviewRequests.sentAt}, ${reviewRequests.scheduledFor})`, new Date(at.getTime() - dedupMs)),
-        lt(sql`coalesce(${reviewRequests.sentAt}, ${reviewRequests.scheduledFor})`, new Date(at.getTime() + dedupMs)),
+        gt(lastContact, new Date(at.getTime() - dedupMs)),
+        lt(firstContact, new Date(at.getTime() + dedupMs)),
       ),
     )
     .limit(1);
