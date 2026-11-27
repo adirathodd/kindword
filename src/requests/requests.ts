@@ -297,7 +297,9 @@ export type SendResult = {
   retrying: number; // email send hit a retryable provider error; scheduled again for a later run (F-12-2)
   waiting: number; // business not live, or no texting number yet; left as is until it is or the row goes stale
   skipped: Partial<Record<SkipReason, number>>;
-  errors?: number; // rows that threw before a claim (e.g. a bad time zone); left scheduled for the next run
+  // Rows that threw before a claim (e.g. a bad time zone), left scheduled for the next run; or whose outcome could
+  // not be written after the provider call (O-46-1), left claimed (sent) and never sent again.
+  errors?: number;
 };
 
 type Claimed = {
@@ -417,9 +419,51 @@ export async function sendDueRequests(
       result.skipped[step] = (result.skipped[step] ?? 0) + 1;
       continue;
     }
-    result[await deliver(providers, cfg, step, now, db)]++;
+    // O-46-1: a database error after the provider call (see recordOutcome) skips only this row; the rest of the
+    // batch still goes out. The row stays claimed (sent), so it is never sent again.
+    const outcome = await deliver(providers, cfg, step, now, db).catch(rowError("send_due_requests", id));
+    if (outcome === "error") result.errors = (result.errors ?? 0) + 1;
+    else result[outcome]++;
   }
   return result;
+}
+
+// O-46-1: what a send did (sent, failed, retry scheduled) is written after the provider call, in its own
+// transaction. A database blip there used to abort the whole run and leave a failed send recorded as sent, so a
+// refused text never fell back to email (FR-6). The write is retried a few times. Each try first checks, under the
+// row lock, that the outcome is not already recorded, so a try whose commit went through but whose reply was lost
+// is not applied twice (no second audit row, no second fallback).
+const OUTCOME_WRITE_RETRY_DELAYS_MS = [100, 500];
+async function recordOutcome(
+  db: Db,
+  requestId: string,
+  claimedAt: Date,
+  write: (tx: Tx) => Promise<void>,
+  applied: (tx: Tx) => Promise<boolean> = async () => false,
+) {
+  for (let i = 0; ; i++) {
+    try {
+      await db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ id: reviewRequests.id })
+          .from(reviewRequests)
+          .where(
+            and(
+              eq(reviewRequests.id, requestId),
+              eq(reviewRequests.status, "sent"),
+              eq(reviewRequests.sentAt, claimedAt),
+            ),
+          )
+          .for("update");
+        if (!row || (await applied(tx))) return; // already recorded by an earlier try
+        await write(tx);
+      });
+      return;
+    } catch (e) {
+      if (i >= OUTCOME_WRITE_RETRY_DELAYS_MS.length) throw e;
+      await new Promise((r) => setTimeout(r, OUTCOME_WRITE_RETRY_DELAYS_MS[i]));
+    }
+  }
 }
 
 type Failure = "provider_opted_out" | "provider_rejected" | "outcome_unknown" | "carrier_undelivered";
@@ -489,7 +533,7 @@ async function deliver(
       const next = nextSendTime(new Date(now.getTime() + wait), l.timezone);
       const keyValid = !maybeSentAt || next.getTime() <= maybeSentAt.getTime() + EMAIL_RETRY_WINDOW_MS;
       if (next.getTime() <= s.staleAt && keyValid) {
-        await db.transaction(async (tx) => {
+        await recordOutcome(db, rr.id, now, async (tx) => {
           await tx
             .update(reviewRequests)
             .set({ status: "scheduled", sentAt: null, scheduledFor: next, maybeSentAt })
@@ -505,7 +549,7 @@ async function deliver(
         return "retrying";
       }
     }
-    await db.transaction(async (tx) => {
+    await recordOutcome(db, rr.id, now, async (tx) => {
       // FR-9 dates a request up to its last possible send (askedRecently). failRequest clears sent_at, and this send
       // ran after the row was due, so when it may have gone out its time is kept in scheduled_for (audit A-82-1).
       if (maybeSentAt)
@@ -536,11 +580,35 @@ async function deliver(
     });
     return "failed";
   }
-  await db
-    .update(reviewRequests)
-    .set({ providerMessageId: messageId || null })
-    .where(eq(reviewRequests.id, rr.id));
-  await audit(db, l.id, rr.id, "sent", `attempt=${rr.attempt};channel=${rr.channel}`);
+  // The row stays sent, so the "already recorded" check is the one sent audit row a row ever gets (an email retried
+  // through an outage gets it only for the send that went through).
+  await recordOutcome(
+    db,
+    rr.id,
+    now,
+    async (tx) => {
+      await tx
+        .update(reviewRequests)
+        .set({ providerMessageId: messageId || null })
+        .where(eq(reviewRequests.id, rr.id));
+      await audit(tx, l.id, rr.id, "sent", `attempt=${rr.attempt};channel=${rr.channel}`);
+    },
+    async (tx) =>
+      (
+        await tx
+          .select({ id: auditLog.id })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.locationId, l.id),
+              eq(auditLog.entity, "review_request"),
+              eq(auditLog.entityId, rr.id),
+              eq(auditLog.action, "sent"),
+            ),
+          )
+          .limit(1)
+      ).length > 0,
+  );
   // A receipt can beat the line above that records the message ID (audit O-66-1); apply any that did. Never changes
   // the outcome of this send.
   if (messageId)
