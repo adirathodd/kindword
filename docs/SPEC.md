@@ -1,4 +1,4 @@
-> **Source of truth for intended behavior, kept in sync with the Claude Doc (https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs) (owner decision 2026-11-24).** The Notion project page "Kindword (v1.0)" tracks status and priorities. Every SPEC change lands in both this file (by PR) and the Doc. The Doc was brought level with this file at main 33bea94 on 2026-11-26 (Doc rev 268); later Implementation status edits still pending in the Doc are listed in docs/sync/proposed-spec-changes.md. Two diagrams (architecture, build plan) are not included here. Last synced against main 6a3b21d on 2026-11-26 (see Implementation status and docs/sync/last-sync.json).
+> **Source of truth for intended behavior, kept in sync with the Claude Doc (https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs) (owner decision 2026-11-24).** The Notion project page "Kindword (v1.0)" tracks status and priorities. Every SPEC change lands in both this file (by PR) and the Doc. The Doc was brought level with this file at main 33bea94 on 2026-11-26 (Doc rev 268); later Implementation status edits still pending in the Doc are listed in docs/sync/proposed-spec-changes.md. Two diagrams (architecture, build plan) are not included here. Last synced against main 113f99f on 2026-11-27 (see Implementation status and docs/sync/last-sync.json).
 
 # SPEC: Kindword (v1.0 MVP, approved 2026-11-22)
 
@@ -158,7 +158,7 @@ Priority: **Must** is needed for the first live pilot, **Should** is wanted in v
 
 ## Implementation status
 
-Status of each requirement on main at 6a3b21d (2026-11-26). The requirement text above is the intended behavior; this table says how much of it exists. Notion tracks the same status and the remaining work.
+Status of each requirement on main at 113f99f (2026-11-27). The requirement text above is the intended behavior; this table says how much of it exists. Notion tracks the same status and the remaining work.
 
 | ID | Status | What exists / what is missing |
 | --- | --- | --- |

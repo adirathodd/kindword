@@ -23,6 +23,8 @@ sync-2026-11-26-04 also changed, outside the table: the header line (then 9f7a11
 
 sync-2026-11-26-05 also moved the header line to 6a3b21d.
 
+sync-2026-11-27-01 (SPEC sync at main 113f99f) moved the header line to 113f99f and the first sentence under **Implementation status** to "Status of each requirement on main at 113f99f (2026-11-27)." No row changed.
+
 When a later PR changes `docs/SPEC.md`, make the same edit in the Doc, or list it here.
 
 The D-2 and multi-business accounts PR (2026-11-26: change note, FR-13, new FR-25 and its status row, account\_businesses in the Data model, the Security scoping line, the Week 2 gate, D-2 decided, the F-40-1 note, new items D-14 to D-18) was applied to the Doc directly (Doc rev 279) and needs no further Doc edit. In the Doc, D-14 to D-18 sit at the end of the list, where D-13 will also go once the items above are applied.
