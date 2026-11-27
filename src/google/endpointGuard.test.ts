@@ -129,6 +129,9 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
       'fetch(TOKEN_URL.replace("token", "revoke"));',
       'fetch(TOKEN_URL.concat("info"));',
       'fetch([TOKEN_URL, "x"].join("/"));',
+      'fetch(String(TOKEN_URL).replace("token", "revoke"));',
+      "const o = { u: TOKEN_URL };",
+      '/* x */ const r = TOKEN_URL + "info";',
     ])
       expect(rules(checkSourceFile({ path: BP, text: bpModule(extra) }))).toEqual(["google_base_misused TOKEN_URL"]);
   });
@@ -140,6 +143,14 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
     expect(rules(checkSourceFile({ path: BP, text: bpModule("const x = `${ REVIEWS_API }/${l}`;") }))).toEqual([
       "google_path_not_allowed REVIEWS_API/{}",
     ]);
+  });
+
+  it("rejects rewriting an allowed path after the template literal", () => {
+    for (const extra of [
+      'fetch(`${REVIEWS_API}/${l}/reviews?${q}`.replace("/reviews?", "/accounts?"));',
+      'const u = `${REVIEWS_API}/${l}/reviews?${q}` + "/../accounts";',
+    ])
+      expect(rules(checkSourceFile({ path: BP, text: bpModule(extra) }))).toEqual(["google_base_misused REVIEWS_API"]);
   });
 
   it("rejects a changed base URL in the allowed module", () => {
@@ -198,6 +209,7 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
       ['import { TOKEN_URL } from "../businessProfile";', "TOKEN_URL"],
       ['const bp = await import("../google/businessProfile"); fetch(bp.TOKEN_URL);', "dynamic"],
       ['const { TOKEN_URL } = require("../google/businessProfile");', "dynamic"],
+      ['/* x */ import { TOKEN_URL } from "../google/businessProfile";', "TOKEN_URL"],
     ])
       expect(rules(checkSourceFile({ path: "src/google/other.ts", text }))).toContain(
         `google_endpoint_imported ${name}`,

@@ -78,9 +78,10 @@ const lineOf = (text: string, index: number) => text.slice(0, index).split("\n")
 function blank(text: string, start: number, end: number) {
   return text.slice(0, start) + text.slice(start, end).replace(/[^\n]/g, " ") + text.slice(end);
 }
-// Blanks whole-line comments (// ..., /* ..., * ...) so a constant named in a comment is not counted as a use.
+// Blanks comments that start a line (// to the end of the line; /* up to its */ only, so code after */ is kept)
+// so a constant named in a comment is not counted as a use.
 const withoutLineComments = (text: string) =>
-  text.replace(/^[ \t]*(?:\/\/|\/\*|\*).*$/gm, (line) => line.replace(/[^\n]/g, " "));
+  text.replace(/^[ \t]*(?:\/\/.*$|\/\*[\s\S]*?\*\/)/gm, (c) => c.replace(/[^\n]/g, " "));
 
 // Each use of an endpoint constant in its own module must be one of: its declaration; for a base, the start of a
 // template literal whose rest is an allowed path shape; for any other constant (TOKEN_URL, SCOPE), a plain value
@@ -98,11 +99,17 @@ function checkConstantUses(file: SourceFile, rule: ModuleRule, out: Violation[])
       const template = /`\$\{\s*$/.exec(before) && /^\s*\}([^`]*)`/.exec(after);
       if (template && shapes) {
         const shape = template[1].replace(/\$\{[^}]*\}/g, "{}");
+        // After the closing backtick only a constant query string may follow (+ "?..."), then the end of the
+        // expression: no .replace() or further concatenation that could turn it into another path.
+        const rest = after.slice(template[0].length);
         if (!shapes.includes(shape))
           out.push({ path: file.path, line, rule: "google_path_not_allowed", detail: `${name}${shape}` });
+        else if (!/^\s*(?:\+\s*"\?[^"/]*"\s*)?[,;)]/.test(rest))
+          out.push({ path: file.path, line, rule: "google_base_misused", detail: name });
         continue;
       }
-      if (!shapes && /[(,:]\s*$/.test(before) && !/\bURL\(\s*$/.test(before) && /^\s*[,)}]/.test(after)) continue;
+      // The only plain uses: the token endpoint passed to the module's own call(), and the JWT's aud and scope.
+      if (!shapes && /(?:\bthis\.call\(|\baud:|\bscope:)\s*$/.test(before) && /^\s*,/.test(after)) continue;
       out.push({ path: file.path, line, rule: "google_base_misused", detail: name });
     }
   }
