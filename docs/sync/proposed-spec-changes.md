@@ -33,4 +33,8 @@ The D-19 PR (audit-2026-11-26-04, owner decision 2026-11-27) also changed, outsi
 
 #82 (FR-9 window, audit O-43-1) changed the **Implementation status** FR-9 row and the end of the **Data model** review\_requests notes ("; maybe\_sent\_at is the first time a send (text or email) may have reached the customer and also dates the 90-day rule (FR-9, #82)"). It also changed FR-9's requirement text (adds "; a request counts from the first time it may have reached the customer to the last (a send whose outcome is unknown counts, and still counts if the request is later skipped) (decided 2026-11-27, O-43-1)" before " | Must") and added a ticked item under **Decisions needed**, "Which date an ask counts from (O-43-1, FR-9)", after D-19 (owner decision 2026-11-27). Copy all four from `docs/SPEC.md`.
 
+sync-2026-11-27-02 (SPEC sync at main 9d771e1) moved the header line to 9d771e1, the first sentence under **Implementation status** to "Status of each requirement on main at 9d771e1 (2026-11-27).", and added a last sentence to the FR-9 status row ("A request that may have gone out still counts after it is later skipped …"). Copy them from `docs/SPEC.md`.
+
+sync-2026-11-27-04 (SPEC sync rerun at main 9d771e1) changed the **Implementation status** FR-9 row: its status is now "Implemented, one failure-path gap (noncompliant)", and the row ends with the T-82-1 note (test in #88) and the A-82-1 gap (fix in #87). Copy the row from `docs/SPEC.md`.
+
 The Google endpoint guard PR #86 (2026-11-27, SPEC Provider notes: Google OAuth) adds one **Implementation status** row after "Retention (Security)": "Google least privilege (Provider notes)". Copy the row from `docs/SPEC.md` into the Doc.

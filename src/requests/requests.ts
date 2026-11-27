@@ -506,7 +506,13 @@ async function deliver(
       }
     }
     await db.transaction(async (tx) => {
-      if (maybeSentAt) await tx.update(reviewRequests).set({ maybeSentAt }).where(eq(reviewRequests.id, rr.id));
+      // FR-9 dates a request up to its last possible send (askedRecently). failRequest clears sent_at, and this send
+      // ran after the row was due, so when it may have gone out its time is kept in scheduled_for (audit A-82-1).
+      if (maybeSentAt)
+        await tx
+          .update(reviewRequests)
+          .set(refused ? { maybeSentAt } : { maybeSentAt, scheduledFor: now })
+          .where(eq(reviewRequests.id, rr.id));
       await failRequest(tx, rr, l.id, error);
       if (providerOptOut) {
         await optOut(tx, l.id, "sms", s.address, "provider_sms");
