@@ -1,25 +1,25 @@
 {
-  "sync_id": "sync-2026-11-27-04",
-  "synced_at": "2026-11-27 ~11:45-12:30 UTC (scheduled rerun at the same SHA; sync-2026-11-27-03 was a Notion-only rerun)",
+  "sync_id": "sync-2026-11-27-07",
+  "synced_at": "2026-11-27 ~20:40-21:20 UTC (scheduled)",
   "repository": "adirathodd/review-automation (GitHub reports adirathodd/kindword)",
   "target_branch": "main",
-  "audited_sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
+  "audited_sha": "c8b15b95e870e79488983c38980c5132a0a91227",
   "main_moved_during_run": false,
   "previous_sync": {
-    "sync_id": "sync-2026-11-27-02",
+    "sync_id": "sync-2026-11-27-04",
     "audited_sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
     "status": "complete_with_documented_discrepancies",
-    "pr": "#85 (open; this PR builds on it and supersedes it)"
+    "pr": "#89 (merged as 320c667)"
   },
-  "commits_reviewed": "No new commits on main since 9d771e1. Rechecked #82's code after audit-2026-11-27-02 rerun (open PR #87) reported A-82-1. Open PRs #49, #51, #78, #79, #84, #85, #86, #87, #88 not used as evidence of implementation; #87's new test was run against main's code only to confirm the gap",
+  "commits_reviewed": "9d771e1..c8b15b9: #91 (FR-2a CRLF key, O-41-2), #87 (FR-9 A-82-1 fix + audit record), #88 (FR-9 T-82-1 test), #89 (previous SPEC sync), #86 (repo-wide Google endpoint guard). Open PRs #49, #51, #78, #79, #92 not used as evidence; #92 (audit-2026-11-27-03, same range) read only to cross-check",
   "sources_of_truth": {
     "spec": "docs/SPEC.md and the Claude Doc https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs, always kept in sync (owner decision D-1, 2026-11-24)",
     "status_and_priorities": "Notion: Kindword (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
     "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
     "doc_status": "Read via the Artifact tool: it is a Claude Docs document; no Claude Docs connector in this session, so its text could not be read or written. Edits the Doc still needs: docs/sync/proposed-spec-changes.md"
   },
-  "evidence": "Code read on main: src/requests/requests.ts deliver() failure path (maybeSentAt kept from the first send, failRequest clears sent_at, scheduled_for left at the retry's due time) and askedRecently lastContact. #87's test 'counts an email whose last retry had an unknown outcome until 90 days after that retry went out' run against main's requests.ts fails (scheduledFor 17:15, retry went out 17:29). Node 22.23.5 + Postgres 16: 702/719 vitest pass; the 17 failures are all crypto.argon2 tests that need Node 24 (runtime, password, account routes, sign-in link); sync-2026-11-27-03 recorded 719/719 on Node 24 at this SHA. Prettier and eslint clean",
-  "requirements_reviewed": "FR-9 (status row, A-82-1); other rows unchanged since sync-2026-11-27-02 (no code changes)",
+  "evidence": "Code read on main: deliver() failure path now sets scheduled_for to the send time when a failed last retry may have gone out (not on a refusal); #87's two tests and #88's test present in src/requests/requests.test.ts; googleSheetsConfigFromEnv CRLF handling; src/google/endpointGuard.ts and endpointGuard.test.ts (SKIP_DIRS matched by name at any depth: A-86-1 confirmed). Node 22.23.5 + Postgres 16, migrations 0000..0017: 733/750 vitest pass; the 17 failures are all crypto.argon2 tests that need Node 24 (Node 24 not available in this session); src/requests, src/google, src/intake 215/215. #92 reports 750/750 on Node 24 at this SHA",
+  "requirements_reviewed": "FR-2a, FR-9 and Google least privilege (Provider notes) rows (changed code); header and status intro; other rows unchanged since sync-2026-11-27-04 (no code changes in their areas)",
   "requirements": {
     "implemented": [
       "FR-3",
@@ -31,29 +31,33 @@
       "FR-14",
       "FR-16",
       "FR-22",
-      "Retention (Security)"
+      "Retention (Security)",
+      "FR-9"
     ],
     "partial": ["FR-2", "FR-2a", "FR-5", "FR-11", "FR-13", "FR-17", "FR-19", "FR-20", "FR-23", "FR-24"],
     "not_implemented": ["FR-1", "FR-15", "FR-18", "FR-25"],
     "later": ["FR-4", "FR-21"],
     "noncompliant": [
-      "FR-13: D-2 entry point decided (#73) but not built: no Sign in link on /, /account does not go straight to a single location's inbox",
+      "FR-13: D-2 entry point decided (#73) but not built: no Sign in link on /, /account does not go straight to a single location's inbox (open #78)",
       "FR-24: imports not refused for onboarding businesses (S-5)",
-      "FR-9: last email retry with an unknown outcome dated by its due time, not when it went out (A-82-1, fix in open #87)"
+      "Google least privilege (Provider notes): endpoint guard skips folders named design/coverage/.next/.vercel/.claude at any depth (A-86-1, fix in open #92)"
     ],
     "status_changes_since_last_sync": {
-      "FR-9": "Implemented -> Implemented, one failure-path gap (noncompliant) (A-82-1)"
+      "FR-9": "Implemented, one failure-path gap (noncompliant) -> Implemented (#87, #88)",
+      "Google least privilege (Provider notes)": "new on main via #86 as Implemented -> Implemented, one coverage gap (noncompliant) (A-86-1)"
     }
   },
   "spec_changes": [
-    "Header: last synced against 9d771e1",
-    "Implementation status intro: on main at 9d771e1 (closes audit O-82-1)",
-    "FR-9 row: the 'still counts if later skipped' clause is met by the maybe_sent_at condition (#71) but no test pins it",
-    "FR-9 status row: noncompliant failure-path gap A-82-1 (fix in #87); T-82-1 test in #88"
+    "Header: last synced against c8b15b9",
+    "Implementation status intro: on main at c8b15b9",
+    "FR-9 row: back to Implemented; records #87 (A-82-1) and #88 (T-82-1)",
+    "FR-2a row: CRLF key line endings accepted (#91, O-41-2)",
+    "Google least privilege row: coverage gap A-86-1 (fix in #92); methods and run-time URLs not checked",
+    "Decisions needed: new open item Google guard scope (O-86-1, O-86-2)"
   ],
-  "doc_edits_pending": "docs/sync/proposed-spec-changes.md (sync-2026-11-27-02 edits plus this sync's FR-9 row); no Claude Docs connector in this session",
-  "notion_changes": "see the SPEC sync log entry sync-2026-11-27-04 (new to-do for A-82-1)",
-  "open_documentation_prs": ["this PR (sync-2026-11-27-04, includes #85's commit; close #85 if this merges)"],
+  "doc_edits_pending": "docs/sync/proposed-spec-changes.md (all earlier edits plus this sync's); no Claude Docs connector in this session",
+  "notion_changes": "see the SPEC sync log entry sync-2026-11-27-07",
+  "open_documentation_prs": ["this PR (sync-2026-11-27-07)"],
   "open_decisions": [
     "D-3 password change (FR-24)",
     "D-4 breached-password check outage (FR-24)",
@@ -72,7 +76,8 @@
     "D-13 consent evidence retention (lawyer)",
     "Google-connect location ID lookup (Notion)",
     "Bounce and complaint handling (Notion; the undelivered-text part is done by #80, D-19)",
-    "D-14 to D-18 (FR-25, #73; D-18 a lawyer should check)"
+    "D-14 to D-18 (FR-25, #73; D-18 a lawyer should check)",
+    "Google guard scope (O-86-1 HTTP methods, O-86-2 Provider note exceptions)"
   ],
   "open_observations": [
     "O-1 no E.164 check on locations.sms_number",
@@ -84,14 +89,13 @@
     "O-72-2 clock skew over 1 s in the confirmation lookup",
     "O-59-1 purgeOffboardedBusinesses has no per-business catch",
     "O-80-1 a clock running ahead can make /api/status/jobs report a job late for up to an hour (false alarm only)",
-    "O-80-2 simultaneous delivered and undelivered receipts for one SID could both apply (not seen with real Twilio)",
-    "T-82-1 no test pins that a possibly-sent request still counts for FR-9 after it is skipped"
+    "O-80-2 simultaneous delivered and undelivered receipts for one SID could both apply (not seen with real Twilio)"
   ],
   "owner_actions": [
     "Point an uptime monitor outside Vercel at GET /api/status/jobs (#62); until then the Stack 'daily check that jobs ran' has no watcher",
     "Resend webhook for email.delivered (RESEND_WEBHOOK_SECRET, #66)"
   ],
-  "cross_check": "audit-2026-11-27-02 rerun (open PR #87) found A-82-1; confirmed independently here by reading main and running #87's test against main's code",
+  "cross_check": "audit-2026-11-27-03 (open PR #92) agrees: no bugs in #91, #87, #88, #89; A-86-1 in #86 (confirmed here by reading SKIP_DIRS); O-87-1 SPEC drift fixed by this sync",
   "status": "complete_with_documented_discrepancies",
-  "next_sync_starts_after": "9d771e167474cfb9c99f07ea8b2b349350c718d7"
+  "next_sync_starts_after": "c8b15b95e870e79488983c38980c5132a0a91227"
 }
