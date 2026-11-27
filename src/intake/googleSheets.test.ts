@@ -257,6 +257,10 @@ describe("googleSheetsConfigFromEnv", () => {
       privateKey.replace(/\n/g, "\r\n"), // multi-line value pasted from a file saved on Windows
       privateKey.trim().replace(/\n/g, "\\r\\n"), // one-line value with escaped CRLF
       `${privateKey.trim().replace(/\n/g, "\r\n")}\r\n`, // trailing CRLF
+      privateKey
+        .trim()
+        .split("\n")
+        .reduce((acc, line, i) => (i === 0 ? line : `${acc}${i % 2 ? "\r\n" : "\\r\\n"}${line}`), ""), // real and escaped CRLF mixed in one value
     ];
     for (const key of crlfKeys) {
       const c = googleSheetsConfigFromEnv({
