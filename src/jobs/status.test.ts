@@ -1,8 +1,9 @@
 // Outside "jobs ran" check (SPEC Stack, Monitoring): run records, per-job lateness and the public status route.
-// Runs against the Postgres in DATABASE_URL. audit_log is append-only, so each test works in its own random far-future
-// week: rows from other tests and earlier runs fall outside the 7-day lookback. Fake data only.
+// Runs against the Postgres in DATABASE_URL. job_runs is emptied before each test; audit_log (the pre-job_runs record,
+// still read during the transition) is append-only, so each test works in its own random far-future week: audit rows
+// from other tests and earlier runs fall outside the 7-day lookback. Fake data only.
 import { readFile } from "node:fs/promises";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
@@ -20,7 +21,8 @@ const ago = (ms: number) => new Date(now.getTime() - ms);
 const recordAll = (at: Date) => Promise.all(NAMES.map((n) => recordJobRun(n, true, db, at)));
 
 beforeAll(() => migrate(db, { migrationsFolder: "./drizzle" }));
-beforeEach(() => {
+beforeEach(async () => {
+  await db.delete(s.jobRuns);
   now = new Date(Date.UTC(2040, 0, 1) + Math.floor(Math.random() * 100_000) * 14 * 24 * HOUR);
   vi.useFakeTimers({ toFake: ["Date"], now });
   return () => {
@@ -43,20 +45,24 @@ describe("limits", () => {
 });
 
 describe("recordJobRun", () => {
-  it("stores the job name and result only, with no location", async () => {
-    await recordJobRun("reviews", false, db, now);
-    const rows = await db
+  it("keeps one row per job with the latest run only, writing nothing to audit_log (O-62-1)", async () => {
+    await recordJobRun("reviews", true, db, ago(30 * MIN));
+    await recordJobRun("reviews", false, db, ago(5 * MIN));
+    await recordJobRun("reviews", true, db, ago(20 * MIN)); // an overlapping retry finishing late
+    const rows = await db.select().from(s.jobRuns).where(eq(s.jobRuns.name, "reviews"));
+    expect(rows).toEqual([{ name: "reviews", lastRunAt: ago(5 * MIN), lastResult: "failed" }]);
+    const audit = await db
       .select()
       .from(s.auditLog)
-      .where(and(eq(s.auditLog.entity, "job"), eq(s.auditLog.at, now)));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      locationId: null,
-      entityId: null,
-      action: JOB_RUN_ACTIONS.failed,
-      actor: "system:jobs",
-      detail: "job=reviews",
-    });
+      .where(and(eq(s.auditLog.entity, "job"), gte(s.auditLog.at, ago(HOUR)), lte(s.auditLog.at, now)));
+    expect(audit).toHaveLength(0);
+  });
+
+  it("replaces a stored run more than an hour ahead of a new run (a clock error)", async () => {
+    await recordJobRun("purge", true, db, new Date(now.getTime() + 365 * 24 * HOUR));
+    await recordJobRun("purge", false, db, now);
+    const [row] = await db.select().from(s.jobRuns).where(eq(s.jobRuns.name, "purge"));
+    expect(row).toMatchObject({ lastRunAt: now, lastResult: "failed" });
   });
 });
 
@@ -106,10 +112,31 @@ describe("jobsStatus", () => {
       { entity: "job", action: "something_else", actor: "system:jobs", detail: "job=reviews", at: ago(MIN) },
       { entity: "location", action: JOB_RUN_ACTIONS.ok, actor: "system:jobs", detail: "job=reviews", at: ago(MIN) },
     ]);
-    await recordJobRun("purge", true, db, ago(8 * 24 * HOUR));
+    await db.insert(s.auditLog).values({
+      entity: "job",
+      action: JOB_RUN_ACTIONS.ok,
+      actor: "system:jobs",
+      detail: "job=purge",
+      at: ago(8 * 24 * HOUR),
+    });
+    await recordJobRun("monthly-report", true, db, new Date(now.getTime() + MIN)); // ahead of the check's clock
     const st = await jobsStatus(now, db);
     expect(st.jobs.reviews.state).toBe("never");
     expect(st.jobs.purge.state).toBe("never");
+    expect(st.jobs["monthly-report"].state).toBe("never");
+  });
+
+  it("still counts runs recorded in audit_log before job_runs existed (transition)", async () => {
+    await db.insert(s.auditLog).values({
+      entity: "job",
+      action: JOB_RUN_ACTIONS.ok,
+      actor: "system:jobs",
+      detail: "job=purge",
+      at: ago(HOUR),
+    });
+    expect((await jobsStatus(now, db)).jobs.purge).toMatchObject({ state: "ok", lastResult: "ok" });
+    await recordJobRun("purge", false, db, ago(MIN));
+    expect((await jobsStatus(now, db)).jobs.purge).toMatchObject({ state: "ok", lastResult: "failed" });
   });
 });
 

@@ -4,7 +4,7 @@
 // email that is not a review request (owner emails), is acknowledged and ignored. Nothing is ever sent from here.
 // Logs carry outcome codes only, never addresses, subjects or email IDs.
 import { parseResendEvent, resendWebhookSecretFromEnv } from "../../../../email/resendWebhook";
-import { recordDelivery } from "../../../../requests/delivery";
+import { handleReceipt } from "../../../../requests/requests";
 
 const headers = { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" };
 
@@ -20,7 +20,8 @@ export async function POST(req: Request) {
   try {
     const event = await parseResendEvent(req, key);
     if (!event) return new Response("Forbidden", { status: 403, headers });
-    if (event.type === "email.delivered" && event.emailId) await recordDelivery("email", event.emailId);
+    if (event.type === "email.delivered" && event.emailId)
+      await handleReceipt("email", event.emailId, "delivered", null);
     return new Response(null, { status: 204, headers });
   } catch (e) {
     // Resend retries a failed delivery of the event with backoff, and a repeat is recorded once.

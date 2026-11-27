@@ -359,6 +359,7 @@ const ERROR_LABEL: Record<string, string> = {
   provider_rejected: "refused by the provider",
   outcome_unknown: "outcome unknown (may have reached the customer; no more retries)",
   provider_opted_out: "customer had opted out at the provider (now suppressed)",
+  carrier_undelivered: "accepted, then reported undelivered by the carrier (sent by email instead when possible)",
 };
 
 const OWNER_EMAIL_LABEL: Record<string, string> = {

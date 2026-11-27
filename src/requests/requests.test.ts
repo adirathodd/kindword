@@ -11,6 +11,10 @@ import type { EmailMessage, EmailProvider } from "../email/provider";
 import type { InboundSms, SmsProvider } from "../sms/provider";
 import { TwilioSms } from "../sms/twilio";
 import {
+  applyPendingReceipts,
+  handleReceipt,
+  purgePendingReceipts,
+  PENDING_RECEIPT_MAX_AGE_MS,
   recordClick,
   runReviewRequestJobs,
   scheduleReminders,
@@ -1039,5 +1043,80 @@ describe("end to end", () => {
     expect(text).not.toContain(PHONE);
     expect(text).not.toContain("5550110");
     expect(text).not.toContain(EMAIL);
+  });
+});
+
+// O-66-1: Twilio's status callback can arrive before deliver() records the message ID, and Twilio does not retry it.
+// The fake below posts the receipt from inside send(), before it returns the SID, so the receipt always wins the race.
+describe("receipts that arrive before the send records the message ID (O-66-1)", () => {
+  let n = 0;
+  class RacingSms extends FakeSms {
+    constructor(
+      private readonly status: "delivered" | "undelivered",
+      readonly sid = `SM-race-${Date.now().toString(36)}-${++n}`,
+    ) {
+      super();
+    }
+    async send(from: string, to: string, body: string) {
+      this.sent.push({ from, to, body });
+      this.early = await handleReceipt("sms", this.sid, this.status, this.status === "delivered" ? null : 30003);
+      return this.sid;
+    }
+    early = "";
+  }
+  const pending = (id: string) =>
+    db.select().from(s.pendingReceipts).where(eq(s.pendingReceipts.providerMessageId, id));
+
+  it("keeps an early 'delivered' receipt and records it once the send has the ID", async () => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    const racing = new RacingSms("delivered");
+    sms = racing;
+    await send(DUE);
+    expect(racing.early).toBe("pending"); // the request had no message ID yet
+    const rr = await one(v);
+    expect(rr).toMatchObject({ status: "sent", providerMessageId: racing.sid });
+    const receipts = await db
+      .select()
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.entityId, rr.id), eq(s.auditLog.action, "delivered")));
+    expect(receipts).toHaveLength(1);
+    expect(await pending(racing.sid)).toHaveLength(0);
+    expect(await applyPendingReceipts("sms", racing.sid)).toBe(0); // nothing left to apply twice
+  });
+
+  it("keeps an early 'undelivered' receipt, then sends the request by email (FR-6)", async () => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    const racing = new RacingSms("undelivered");
+    sms = racing;
+    await send(DUE);
+    expect(racing.early).toBe("pending");
+    const rows = await db.select().from(s.reviewRequests).where(eq(s.reviewRequests.visitId, v));
+    expect(rows.find((r) => r.channel === "sms")).toMatchObject({ status: "failed", sentAt: null });
+    expect(rows.find((r) => r.channel === "email")).toMatchObject({ status: "scheduled", attempt: 1 });
+    expect(await pending(racing.sid)).toHaveLength(0);
+    await send(plus(DUE, 60_000));
+    expect(email.sent.map((m) => m.to)).toEqual([EMAIL]); // one email, after the one text that failed
+    expect(racing.sent).toHaveLength(1);
+  });
+
+  it("a receipt matching nothing stays pending for a day, then the purge job deletes it", async () => {
+    const id = `SM-orphan-${Date.now().toString(36)}-${++n}`;
+    expect(await handleReceipt("sms", id, "delivered", null)).toBe("pending");
+    expect(await handleReceipt("sms", id, "delivered", null)).toBe("pending"); // a repeat adds no row
+    expect(await pending(id)).toHaveLength(1);
+    const [row] = await pending(id);
+    await purgePendingReceipts(new Date(row.receivedAt.getTime() + PENDING_RECEIPT_MAX_AGE_MS - 1000));
+    expect(await pending(id)).toHaveLength(1);
+    await purgePendingReceipts(new Date(row.receivedAt.getTime() + PENDING_RECEIPT_MAX_AGE_MS + 1000));
+    expect(await pending(id)).toHaveLength(0);
+  });
+
+  it("refuses empty and oversized IDs without storing anything", async () => {
+    expect(await handleReceipt("email", "  ", "delivered", null)).toBe("unknown");
+    expect(await handleReceipt("email", "x".repeat(201), "delivered", null)).toBe("unknown");
   });
 });
