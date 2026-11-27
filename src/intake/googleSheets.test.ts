@@ -248,6 +248,39 @@ describe("googleSheetsConfigFromEnv", () => {
     expect(() => serviceAccountAssertion(c, NOW)).not.toThrow();
   });
 
+  it("accepts a key with Windows line endings, real or escaped, and signs as with the plain key (O-41-2)", () => {
+    const plain = googleSheetsConfigFromEnv({
+      GOOGLE_SHEETS_CLIENT_EMAIL: config.clientEmail,
+      GOOGLE_SHEETS_PRIVATE_KEY: privateKey,
+    });
+    const crlfKeys = [
+      privateKey.replace(/\n/g, "\r\n"), // multi-line value pasted from a file saved on Windows
+      privateKey.trim().replace(/\n/g, "\\r\\n"), // one-line value with escaped CRLF
+      `${privateKey.trim().replace(/\n/g, "\r\n")}\r\n`, // trailing CRLF
+    ];
+    for (const key of crlfKeys) {
+      const c = googleSheetsConfigFromEnv({
+        GOOGLE_SHEETS_CLIENT_EMAIL: config.clientEmail,
+        GOOGLE_SHEETS_PRIVATE_KEY: key,
+      });
+      expect(c.privateKey).toBe(privateKey);
+      expect(c.privateKey).not.toContain("\r");
+      expect(serviceAccountAssertion(c, NOW)).toBe(serviceAccountAssertion(plain, NOW));
+    }
+  });
+
+  it("still refuses a CRLF value that is not a PEM private key, without echoing it", () => {
+    for (const key of ["hunter2\r\n", "-----BEGIN PUBLIC KEY-----\r\nAAAA\r\n-----END PUBLIC KEY-----\r\n"]) {
+      let err: Error | undefined;
+      try {
+        googleSheetsConfigFromEnv({ GOOGLE_SHEETS_CLIENT_EMAIL: config.clientEmail, GOOGLE_SHEETS_PRIVATE_KEY: key });
+      } catch (e) {
+        err = e as Error;
+      }
+      expect(err?.message).toBe("GOOGLE_SHEETS_PRIVATE_KEY missing or not a PEM private key");
+    }
+  });
+
   it("names the missing or malformed setting without echoing its value", () => {
     expect(() => googleSheetsConfigFromEnv({ GOOGLE_SHEETS_PRIVATE_KEY: oneLine })).toThrow(
       "GOOGLE_SHEETS_CLIENT_EMAIL",
