@@ -767,7 +767,9 @@ describe("90-day rule (FR-9)", () => {
   });
 
   // O-43-1: an email retried through an outage may have reached the customer at its first send (maybe_sent_at), even
-  // though it is marked sent at its last one. An earlier visit imported afterwards is checked against both.
+  // though it is marked sent at its last one, so the window runs from the first send. The scheduler only schedules
+  // forward from now, so in production this lower bound is a safeguard; the test reaches it by scheduling an older
+  // visit with an earlier `now`.
   it("counts an email retried through an outage from its first possible send", async () => {
     const t = await makeTenant();
     const c = await t.customer({ phone: null });
