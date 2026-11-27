@@ -6,20 +6,20 @@ Every page Kindword shows follows this guide: the landing page, the owner inbox,
 
 One source: `src/ui/brand.ts`. `src/app/globals.css` and the landing page's `:root` carry the same values, and `src/ui/brand.test.ts` fails when they drift. Server-rendered pages (inbox, account) get the tokens as `--k-*` CSS variables through `BRAND_CSS_VARS`. Never write a colour, font or radius by hand; add a token first.
 
-| Token                    | Value                 | Use                                                     |
-| ------------------------ | --------------------- | ------------------------------------------------------- |
-| `bg`                     | `#f7f9f8`             | Page background (off-white)                             |
-| `surface`                | `#ebf0ee`             | Panels, quiet fills, secondary buttons, the reply box   |
-| `card`                   | `#ffffff`             | Cards and form fields on the background                 |
-| `ink`                    | `#06525c`             | Deep teal: all text, primary buttons, links, focus ring |
-| `muted`                  | `#2f737d`             | Labels, dates and meta only (5.1:1); never body text    |
-| `inkOn`                  | `#f7f9f8`             | Text on a filled teal button                            |
-| `line`                   | `rgb(6 82 92 / 0.14)` | Hairlines and borders                                   |
-| `warnBg` / `warnLine`    | `#fff4e5` / `#f0b46c` | "Needs extra care" on a held draft                      |
-| `okBg` / `okLine`        | `#e8f4ea` / `#7fbf8a` | A notice that something worked                          |
-| `errorBg` / `errorLine`  | `#fdecea` / `#e08a83` | An error the owner must fix                             |
-| `alert`                  | `#b3261e`             | The overdue badge only                                  |
-| `radiusSm` / `Md` / `Lg` | 4 / 6 / 8 px          | Chips; buttons and fields; cards and windows            |
+| Token                    | Value                 | Use                                                         |
+| ------------------------ | --------------------- | ----------------------------------------------------------- |
+| `bg`                     | `#f7f9f8`             | Page background (off-white)                                 |
+| `surface`                | `#ebf0ee`             | Panels, quiet fills, secondary buttons, the reply box       |
+| `card`                   | `#ffffff`             | Cards and form fields on the background                     |
+| `ink`                    | `#06525c`             | Deep teal: all text, primary buttons, links, focus ring     |
+| `muted`                  | `#2f737d`             | Labels, dates, meta and form-field borders; never body text |
+| `inkOn`                  | `#f7f9f8`             | Text on a filled teal button                                |
+| `line`                   | `rgb(6 82 92 / 0.14)` | Hairlines and borders                                       |
+| `warnBg` / `warnLine`    | `#fff4e5` / `#f0b46c` | "Needs extra care" on a held draft                          |
+| `okBg` / `okLine`        | `#e8f4ea` / `#7fbf8a` | A notice that something worked                              |
+| `errorBg` / `errorLine`  | `#fdecea` / `#e08a83` | An error the owner must fix                                 |
+| `alert`                  | `#b3261e`             | The overdue badge only                                      |
+| `radiusSm` / `Md` / `Lg` | 4 / 6 / 8 px          | Chips; buttons and fields; cards and windows                |
 
 **Colour rules.** The interface is about 95% neutral: teal on off-white, one accent (the teal itself). Status colours only mark state. No violet or lavender, no gradients or glows in page backgrounds (a fade at the foot of a UI mock is fine), no dark mode for now.
 
@@ -44,6 +44,7 @@ One source: `src/ui/brand.ts`. `src/app/globals.css` and the landing page's `:ro
 - **Chips:** small rounded labels for status ("Draft", "Posted", "Needs you", "Opted out").
 - **App window:** the inbox mock: list of reviews on the left, the open draft with Approve, Edit and Reject on the right, and the reply checks under it.
 - **Focus:** a 2px teal outline on every focusable element, shown at once.
+- **Sign-in pages** (sign-up, sign-in, sign-in link, reset): one narrow card under the wordmark, a "Back to …" text link at the top, fields with `muted` borders (3:1 against white), errors under the field they belong to, and other ways in as tonal secondary buttons under the primary.
 
 ## Voice
 
