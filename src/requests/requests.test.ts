@@ -1,7 +1,7 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx numbers, example.test emails. No live sends.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { GET as clickGET, HEAD as clickHEAD } from "../app/r/[id]/route";
 import { GET as unsubGET, POST as unsubPOST } from "../app/u/[token]/route";
 import { db } from "../db/client";
@@ -9,6 +9,7 @@ import { ResendEmail } from "../email/resend";
 import * as s from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import type { InboundSms, SmsProvider } from "../sms/provider";
+import { optOutEmail, unsubscribeToken } from "../optout/optout";
 import { TwilioSms } from "../sms/twilio";
 import {
   applyPendingReceipts,
@@ -830,6 +831,53 @@ describe("90-day rule (FR-9)", () => {
     expect(await scheduleReviewRequests({ now: later })).toEqual({ scheduled: 1, skipped: {} });
     expect((await one(second)).skipReason).toBe("duplicate");
     expect((await one(third)).status).toBe("scheduled");
+  });
+
+  // T-82-1 (FR-9, decided 2026-11-27): a request that may have reached the customer still counts if it is later
+  // skipped. Here the first email send gets a 503 (it may have been accepted), the customer unsubscribes, and the retry
+  // is skipped as opted_out. Today an opted-out customer's next visit is skipped as opted_out before the 90-day check
+  // runs (FR-8), so this only matters once an opt-out can end (for example a future re-subscribe). The test clears the
+  // opt-out (suppression rows and the customer's opted_out_at) to stand in for that, and checks the 90-day rule still
+  // sees the skipped request.
+  it("counts a request that may have gone out even after its retry is skipped as opted out", async () => {
+    // Its own address: the unsubscribe is also platform-wide, which the tenant cleanup does not remove.
+    const mail = "unsubscribed-t82@example.test";
+    const dropOptOut = () => db.delete(s.suppressionList).where(eq(s.suppressionList.address, mail));
+    onTestFinished(() => dropOptOut().then(() => {}));
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null, mail });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true }); // may have been accepted
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    email.failWith = null;
+    const retryAt = (await one(first)).scheduledFor;
+    expect(await optOutEmail(unsubscribeToken(t.locationId, mail))).toBe("opted_out"); // the email's /u link
+    expect(await send(retryAt)).toMatchObject({ sent: 0, skipped: { opted_out: 1 } });
+    expect(await one(first)).toMatchObject({ status: "skipped", skipReason: "opted_out", maybeSentAt: DUE });
+    expect(email.sent).toHaveLength(0);
+
+    // While the opt-out stands, the next visit is skipped as opted_out (FR-8 comes first).
+    const v30 = await t.visit(c, plus(VISIT, 30 * DAY));
+    await scheduleReviewRequests({ now: plus(VISIT, 30 * DAY) });
+    expect(await one(v30)).toMatchObject({ status: "skipped", skipReason: "opted_out" });
+
+    // Once the opt-out is gone, a visit due 90 days minus 10 minutes after the first possible send is a duplicate.
+    await dropOptOut();
+    await db.update(s.customers).set({ optedOutAt: null }).where(eq(s.customers.id, c));
+    const dueInside = plus(DUE, 90 * DAY - 10 * 60_000);
+    const inside = await t.visit(c, plus(dueInside, -2 * HOUR));
+    expect(await scheduleReviewRequests({ now: plus(dueInside, -2 * HOUR) })).toEqual({
+      scheduled: 0,
+      skipped: { duplicate: 1 },
+    });
+    expect(await one(inside)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
+
+    // Due 1 minute past 90 days after the skipped retry was due (the request's last date): asked as usual.
+    const dueAfter = plus(retryAt, 90 * DAY + 60_000);
+    const after = await t.visit(c, plus(dueAfter, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueAfter, -2 * HOUR) });
+    expect((await one(after)).status).toBe("scheduled");
   });
 
   it("applies per location: the same phone at another business is asked", async () => {
