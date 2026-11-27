@@ -194,4 +194,15 @@ export function checkManifest(path: string, text: string): Violation[] {
   return out;
 }
 
+// Folders the repo scan does not enter, by repo-relative path (forward slashes). Dependencies and git internals are
+// skipped wherever they are; build output, local tool state and the design-kit folder only at the repo root, so a
+// source folder that happens to share one of those names (src/app/design/, src/reports/coverage/) is still scanned
+// (audit A-86-1).
+const SKIP_ANY_DEPTH = new Set(["node_modules", ".git"]);
+const SKIP_AT_ROOT = new Set([".next", ".claude", ".vercel", "coverage", "design"]);
+export function skipDir(relDir: string) {
+  const parts = relDir.split("/");
+  return SKIP_ANY_DEPTH.has(parts[parts.length - 1]) || (parts.length === 1 && SKIP_AT_ROOT.has(parts[0]));
+}
+
 export const formatViolation = (v: Violation) => `${v.path}:${v.line} ${v.rule} ${v.detail}`;
