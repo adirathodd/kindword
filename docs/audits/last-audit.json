@@ -169,7 +169,16 @@
     "Closed in this period: A-82-1 (by #87), T-82-1 (by #88), O-41-2 (by #91), O-82-1 (by #89 header move, now superseded by O-87-1). Still open from earlier audits: O-82-2, O-80-1, O-80-2, O-72-1, O-72-2, O-59-1, A-45-1/D-13, A-5..A-8, S-1..S-5, S-8, S-9, O-37-1, O-40-1, O-40-2, O-41-1, O-41-3, O-46-1, O-53-1, O-53-2, F-7-5 part 2 data check."
   ],
   "spec_drift": ["O-87-1"],
-  "fix_prs": [],
+  "fix_prs": [
+    {
+      "pr": 92,
+      "url": "https://github.com/adirathodd/kindword/pull/92",
+      "branch": "claude/cool-meitner-ncp7e5",
+      "base": "main (c8b15b9)",
+      "remediates": [86],
+      "findings": ["A-86-1"]
+    }
+  ],
   "validation": {
     "environment": "local Postgres 16 (CI uses 17); Node 24.22.3 via npx node@24 (session default Node 22 is too old for the Argon2 and runtime tests)",
     "main_at_end_sha": {
