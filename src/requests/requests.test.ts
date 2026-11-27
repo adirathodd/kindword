@@ -789,6 +789,54 @@ describe("90-day rule (FR-9)", () => {
     expect(await one(earlier)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
   });
 
+  // F-82-1: a retried email whose last send may have reached the customer counts until that send, even when the send
+  // job ran late (sent_at is cleared on failure, so the row was dated by when the retry was due, not when it went out).
+  it("counts a retried email to its last possible send, even when that send ran late", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true }); // may have been accepted
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    const retryAt = (await one(first)).scheduledFor;
+    const last = plus(retryAt, 5 * HOUR); // the send job was down for 5 hours; still inside the retry window
+    email.failWith = new Error("socket hang up"); // not a refusal and not retryable: may have gone out, fails now
+    expect(await send(last)).toMatchObject({ failed: 1 });
+    email.failWith = null;
+    expect(await one(first)).toMatchObject({ status: "failed", outcomeUnknown: true, maybeSentAt: DUE });
+
+    // Due 1 hour before 90 days after the last send (but after 90 days from when that send was due): not asked.
+    const v89 = await t.visit(c, plus(last, 90 * DAY - 3 * HOUR));
+    await scheduleReviewRequests({ now: plus(last, 90 * DAY - 3 * HOUR) });
+    expect(await one(v89)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
+
+    // Due after 90 days from the last send: asked as usual.
+    const v90 = await t.visit(c, plus(last, 90 * DAY + HOUR));
+    await scheduleReviewRequests({ now: plus(last, 90 * DAY + HOUR) });
+    expect((await one(v90)).status).toBe("scheduled");
+  });
+
+  // F-82-1: the last refused try did not reach the customer, so the row is not re-dated by it (it still counts from
+  // its earlier ambiguous send).
+  it("does not extend the window to a final send the provider refused", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true });
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    const retryAt = (await one(first)).scheduledFor;
+    email.failWith = Object.assign(new Error("resend 422"), { refused: true });
+    expect(await send(plus(retryAt, 5 * HOUR))).toMatchObject({ failed: 1 });
+    email.failWith = null;
+    expect(await one(first)).toMatchObject({
+      status: "failed",
+      outcomeUnknown: true,
+      maybeSentAt: DUE,
+      scheduledFor: retryAt,
+    });
+  });
+
   it("does not count an email the provider refused", async () => {
     const t = await makeTenant();
     const c = await t.customer({ phone: null });

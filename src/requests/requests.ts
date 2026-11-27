@@ -115,7 +115,7 @@ async function isOptedOut(tx: Tx, locationId: string, c: Customer) {
 // from its first possible send (maybe_sent_at, else sent_at, else scheduled_for) to its last (the latest of sent_at,
 // maybe_sent_at and scheduled_for; greatest() skips nulls), and counts if any part of that span is within 90 days.
 // A send that went out late is then dated by when it went out, and an email retried through an outage by both its
-// first and its last send.
+// first and its last send (a failed send that may have gone out moves scheduled_for to when it went out, F-82-1).
 const firstContact = sql`coalesce(${reviewRequests.maybeSentAt}, ${reviewRequests.sentAt}, ${reviewRequests.scheduledFor})`;
 const lastContact = sql`greatest(${reviewRequests.sentAt}, ${reviewRequests.maybeSentAt}, ${reviewRequests.scheduledFor})`;
 async function askedRecently(tx: Tx, locationId: string, visitId: string, c: Customer, at: Date, dedupMs: number) {
@@ -506,7 +506,15 @@ async function deliver(
       }
     }
     await db.transaction(async (tx) => {
-      if (maybeSentAt) await tx.update(reviewRequests).set({ maybeSentAt }).where(eq(reviewRequests.id, rr.id));
+      // FR-9 (audit F-82-1): failRequest clears sent_at, so a send that may have reached the customer moves
+      // scheduled_for to now; askedRecently then counts the row until this send, even when the job ran late. A refused
+      // send did not reach the customer and leaves the row's dates as they were.
+      if (maybeSentAt) {
+        await tx
+          .update(reviewRequests)
+          .set(refused ? { maybeSentAt } : { maybeSentAt, scheduledFor: now })
+          .where(eq(reviewRequests.id, rr.id));
+      }
       await failRequest(tx, rr, l.id, error);
       if (providerOptOut) {
         await optOut(tx, l.id, "sms", s.address, "provider_sms");
