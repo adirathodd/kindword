@@ -1,6 +1,6 @@
 // Delivery receipts (FR-17 "delivered") through recordDelivery and the two webhook routes, against the Postgres in
 // DATABASE_URL. Fake data only: example.test addresses, made-up provider IDs, no outside calls.
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
@@ -185,6 +185,23 @@ describe("POST /api/sms/status", () => {
     ];
     for (const req of bad) expect((await smsStatus(req)).status).toBe(403);
     expect(await receipts(id)).toHaveLength(0);
+  });
+
+  it("answers 503 naming the setting when TWILIO_STATUS_CALLBACK_URL is malformed (O-66-3)", async () => {
+    vi.stubEnv("TWILIO_STATUS_CALLBACK_URL", "not a url");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await smsStatus(callback(fields(smsSid(), "delivered")))).status).toBe(503);
+    const logged = errors.mock.calls.flat().join(" ");
+    expect(logged).toContain("TWILIO_STATUS_CALLBACK_URL");
+    expect(logged).not.toContain("not a url");
+    errors.mockRestore();
+  });
+
+  it("looks requests up by an index on provider_message_id (O-66-2)", async () => {
+    const { rows } = await db.execute<{ indexdef: string }>(
+      sql`select indexdef from pg_indexes where tablename = 'review_requests'`,
+    );
+    expect(rows.some((r) => /\(provider_message_id\)/.test(r.indexdef))).toBe(true);
   });
 
   it("answers 503 naming nothing secret when Twilio is not configured", async () => {

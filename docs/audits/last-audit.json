@@ -25,7 +25,7 @@
       "#73 owner decision: D-2 decided, FR-25 (multi-business accounts), D-14..D-18 opened, account_businesses data model row",
       "#74 sync at 9f7a119 (status rows, data model rows, F-40-1 ticked, D-11 wording)",
       "#77 sync at 6a3b21d (FR-8, FR-13, FR-17, FR-19 status rows)",
-      "#80 (this audit, owner decision 2026-11-27): FR-6 text and status row, D-19 decided"
+      "#80 (this audit, owner decisions 2026-11-27): FR-6 text and status row, D-19 decided; FR-17 and FR-19 status rows and Data model rows pending_receipts and job_runs for the O-66-1/O-66-3/O-62-1 fixes"
     ]
   },
   "in_scope": [
@@ -170,13 +170,45 @@
       "spec": "FR-6 (email if the text fails; one channel per request, never both); hard constraint: at most 2 messages per job",
       "summary": "A text Twilio accepted but later reported undelivered or failed stayed 'sent' and never fell back to email. #66 started reading these statuses but ignored them.",
       "reproduction": "src/requests/delivery.test.ts 'a signed \"undelivered\" status sends the request by email instead' (no recordSmsFailure on main; the route acknowledged the status and left the text sent)"
+    },
+    {
+      "id": "O-66-1",
+      "pr": 66,
+      "classification": "introduced by #66",
+      "severity": "nit",
+      "status": "fixed in #80 at the owner's request (2026-11-27)",
+      "summary": "A receipt that arrived before deliver() recorded the message ID matched no row and was dropped (Twilio does not retry). Now kept in pending_receipts and applied by deliver(); write-then-read on both sides, idempotent apply; unmatched rows purged after 24 h.",
+      "reproduction": "src/requests/requests.test.ts 'receipts that arrive before the send records the message ID (O-66-1)': the two race tests fail with the deliver() apply disabled and pass with it"
+    },
+    {
+      "id": "O-66-2",
+      "pr": 66,
+      "classification": "introduced by #66",
+      "severity": "nit",
+      "status": "fixed in #80 at the owner's request (2026-11-27)",
+      "summary": "review_requests.provider_message_id had no index; every receipt scanned the table. Index added (migration 0017).",
+      "reproduction": "src/requests/delivery.test.ts 'looks requests up by an index on provider_message_id (O-66-2)'"
+    },
+    {
+      "id": "O-66-3",
+      "pr": 66,
+      "classification": "introduced by #66",
+      "severity": "nit",
+      "status": "fixed in #80 at the owner's request (2026-11-27)",
+      "summary": "A malformed TWILIO_STATUS_CALLBACK_URL threw in twilioConfigFromEnv, making sends, the inbound STOP webhook and confirmations answer 'not configured'. Now receipts are turned off (logged by setting name) and only /api/sms/status answers 503.",
+      "reproduction": "src/sms/twilio.test.ts 'turns receipts off ... (O-66-3)' (main threw) and delivery.test.ts route 503 test"
+    },
+    {
+      "id": "O-62-1",
+      "pr": 62,
+      "classification": "introduced by #62",
+      "severity": "nit",
+      "status": "fixed in #80 at the owner's request (2026-11-27)",
+      "summary": "Job runs wrote ~480 audit_log rows a day that can never be deleted (append-only trigger). Now one overwritten job_runs row per job; old audit rows still read for the 7-day lookback during the transition.",
+      "reproduction": "src/jobs/status.test.ts 'keeps one row per job ... writing nothing to audit_log (O-62-1)'"
     }
   ],
   "observations": [
-    "O-66-1 (unconfirmed, no change): deliver() writes provider_message_id in a separate statement after the provider returns; a 'delivered' status callback arriving before that write matches no row and is dropped (Twilio does not retry status callbacks). Only lowers the report's delivered count; in practice the write takes milliseconds and 'delivered' comes seconds later.",
-    "O-66-2 (no change): review_requests.provider_message_id has no index, so each delivery receipt scans review_requests. Fine at pilot size; add an index if the table grows.",
-    "O-66-3 (no change): every Twilio use (review requests, the inbound STOP webhook, confirmations) now reads TWILIO_STATUS_CALLBACK_URL, so a malformed value makes the inbound webhook answer 503 'not configured'. Misconfiguration only; unset is fine.",
-    "O-62-1 (no change): job-run audit rows (about 480 a day) are never purged; IDs and job names only, so no personal data, but audit_log grows without bound.",
     "#63: failure details hold a sanitized code only (Resend name regex, Twilio numeric code, class name); one alert per location, kind and period via a prefix match on detail; offboarded businesses excluded.",
     "#62: the route returns job names, states and times only; a run that throws inside a step is recorded as failed, so a working scheduler never reads as late.",
     "Still open from earlier audits: O-72-1, O-72-2, O-59-1, A-45-1/D-13, A-5..A-8, S-1..S-5, S-8, S-9, O-37-1, O-40-1, O-40-2, O-41-1..O-41-3, O-43-1, O-46-1, O-53-1, O-53-2, F-7-5 part 2 data check. Closed in this period: F-72-1 (#75), S-10 (#74)."
@@ -188,8 +220,8 @@
       "url": "https://github.com/adirathodd/kindword/pull/80",
       "branch": "claude/cool-meitner-ctdq4f",
       "base": "main @ b0d74de",
-      "remediates": [66],
-      "findings": ["O-66-4 / D-19"],
+      "remediates": [66, 62],
+      "findings": ["O-66-4 / D-19", "O-66-1", "O-66-2", "O-66-3", "O-62-1"],
       "depends_on": [],
       "state": "open, not merged",
       "note": "same PR carries this audit record (one branch allowed for this session)"
@@ -202,15 +234,16 @@
     },
     "record_pr": "docs/audits/last-audit.json only; prettier checked",
     "fix": {
-      "vitest": "708/708 passed",
+      "vitest": "717/717 passed",
       "prettier": "clean",
       "eslint": "clean",
-      "next_build": "passed"
+      "next_build": "passed",
+      "migration": "0017 applied to a fresh database",
+      "regression": "O-66-1 race tests fail with the fix disabled"
     }
   },
   "merge_order": ["#80 (independent)"],
   "unresolved": [
-    "O-66-1..O-66-3, O-62-1 (observations)",
     "Claude Doc edits for D-19 (FR-6 text, FR-6 status row, D-19 item) pending: no Claude Docs connector; listed in docs/sync/proposed-spec-changes.md, the PR and Notion",
     "earlier items listed in observations"
   ],

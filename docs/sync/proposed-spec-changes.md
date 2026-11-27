@@ -11,7 +11,7 @@ The Claude Doc (https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs) was last brou
 | #72 (opt-out confirmation, F-9-2)                       | FR-8                                                                                         |
 | sync-2026-11-26-04 (SPEC sync at main 9f7a119, #74)     | FR-5, FR-6, FR-7, FR-8, FR-9, FR-13, FR-17, FR-19, FR-20, FR-23, FR-24, Retention (Security) |
 | sync-2026-11-26-05 (SPEC sync at main 6a3b21d)          | FR-8, FR-13, FR-17, FR-19                                                                    |
-| D-19 carrier-failure fallback (audit-2026-11-26-04)     | FR-6                                                                                         |
+| D-19 carrier-failure fallback (audit-2026-11-26-04)     | FR-6, FR-17, FR-19                                                                           |
 
 sync-2026-11-26-02 also changed two lines outside the table: the header line ("Last synced against main f3d6d49") and a new item under **Decisions needed**, "Consent evidence retention (D-13, …)", added after D-12.
 
@@ -27,4 +27,4 @@ When a later PR changes `docs/SPEC.md`, make the same edit in the Doc, or list i
 
 The D-2 and multi-business accounts PR (2026-11-26: change note, FR-13, new FR-25 and its status row, account\_businesses in the Data model, the Security scoping line, the Week 2 gate, D-2 decided, the F-40-1 note, new items D-14 to D-18) was applied to the Doc directly (Doc rev 279) and needs no further Doc edit. In the Doc, D-14 to D-18 sit at the end of the list, where D-13 will also go once the items above are applied.
 
-The D-19 PR (audit-2026-11-26-04, owner decision 2026-11-27) also changed, outside the table: FR-6's requirement text (adds "a text Twilio accepted but later reports undelivered or failed counts as failed (decided 2026-11-27, D-19)" before "; email carries") and a new ticked item under **Decisions needed**, "Carrier failure after Twilio accepts a text (D-19, FR-6)", after D-18.
+The D-19 PR (audit-2026-11-26-04, owner decision 2026-11-27) also changed, outside the table: FR-6's requirement text (adds "a text Twilio accepted but later reports undelivered or failed counts as failed (decided 2026-11-27, D-19)" before "; email carries") and a new ticked item under **Decisions needed**, "Carrier failure after Twilio accepts a text (D-19, FR-6)", after D-18. The same PR (audit fixes O-66-1, O-66-3, O-62-1) also adds two **Data model** rows after optout\_confirmations: pending\_receipts and job\_runs (copy them from `docs/SPEC.md`).

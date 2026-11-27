@@ -11,6 +11,7 @@ import {
   auditLog,
   businesses,
   customers,
+  pendingReceipts,
   locations,
   reviewRequests,
   skipReason,
@@ -21,7 +22,7 @@ import {
 import type { EmailProvider } from "../email/provider";
 import { optOut, unsubscribeToken } from "../optout/optout";
 import type { SmsProvider } from "../sms/provider";
-import { DELIVERED_ACTION } from "./delivery";
+import { DELIVERED_ACTION, recordDelivery, type DeliveryChannel } from "./delivery";
 import { pickLanguage, reviewEmail, smsBody, type Attempt } from "./messages";
 import { inSendWindow, nextSendTime } from "./window";
 
@@ -527,6 +528,14 @@ async function deliver(
     .set({ providerMessageId: messageId || null })
     .where(eq(reviewRequests.id, rr.id));
   await audit(db, l.id, rr.id, "sent", `attempt=${rr.attempt};channel=${rr.channel}`);
+  // A receipt can beat the line above that records the message ID (audit O-66-1); apply any that did. Never changes
+  // the outcome of this send.
+  if (messageId)
+    await applyPendingReceipts(rr.channel, messageId, now, db).catch((e) =>
+      console.error(
+        `send_due_requests: pending receipts not applied id=${rr.id} error=${e instanceof Error ? e.name : "unknown"}`,
+      ),
+    );
   return "sent";
 }
 
@@ -613,6 +622,81 @@ export async function recordSmsFailure(
     if (fb) await audit(tx, found.locationId, fb.id, "scheduled", "attempt=1;channel=email;fallback=sms_undelivered");
     return "failed";
   });
+}
+
+// Delivery receipts from /api/sms/status and /api/email/events (FR-17 "delivered", FR-6 carrier failures). Twilio
+// does not retry status callbacks, and a receipt can arrive before deliver() has recorded the message ID (audit
+// O-66-1), so a receipt that matches no request is kept in pending_receipts (IDs and status only) and applied by
+// deliver() once it records the ID. Each side writes first and reads second, so whichever runs last sees the other;
+// applying a receipt twice changes nothing (recordDelivery and recordSmsFailure are idempotent). Receipts for
+// messages that are not review requests (owner emails, opt-out confirmations) stay pending until the purge job
+// deletes them after PENDING_RECEIPT_MAX_AGE_MS.
+export type ReceiptStatus = "delivered" | (typeof CARRIER_FAILURE_STATUSES)[number];
+export const PENDING_RECEIPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function applyReceipt(
+  channel: DeliveryChannel,
+  id: string,
+  status: ReceiptStatus,
+  errorCode: number | null,
+  now: Date,
+  db: Db,
+) {
+  if (status === "delivered") return recordDelivery(channel, id, db);
+  return channel === "sms" ? recordSmsFailure(id, errorCode, now, db) : Promise.resolve("unknown" as const);
+}
+
+export async function handleReceipt(
+  channel: DeliveryChannel,
+  providerMessageId: string,
+  status: ReceiptStatus,
+  errorCode: number | null,
+  db: Db = defaultDb,
+): Promise<"recorded" | "duplicate" | "failed" | "ignored" | "pending" | "unknown"> {
+  const id = providerMessageId.trim();
+  if (!id || id.length > 200) return "unknown";
+  const now = new Date();
+  const first = await applyReceipt(channel, id, status, errorCode, now, db);
+  if (first !== "unknown") return first;
+  await db.insert(pendingReceipts).values({ channel, providerMessageId: id, status, errorCode }).onConflictDoNothing();
+  const again = await applyReceipt(channel, id, status, errorCode, now, db);
+  if (again === "unknown") return "pending";
+  await db
+    .delete(pendingReceipts)
+    .where(
+      and(
+        eq(pendingReceipts.channel, channel),
+        eq(pendingReceipts.providerMessageId, id),
+        eq(pendingReceipts.status, status),
+      ),
+    );
+  return again;
+}
+
+export async function applyPendingReceipts(
+  channel: DeliveryChannel,
+  providerMessageId: string,
+  now: Date = new Date(),
+  db: Db = defaultDb,
+) {
+  const waiting = await db
+    .select()
+    .from(pendingReceipts)
+    .where(and(eq(pendingReceipts.channel, channel), eq(pendingReceipts.providerMessageId, providerMessageId)));
+  for (const r of waiting) {
+    await applyReceipt(channel, providerMessageId, r.status as ReceiptStatus, r.errorCode, now, db);
+    await db.delete(pendingReceipts).where(eq(pendingReceipts.id, r.id));
+  }
+  return waiting.length;
+}
+
+// Daily purge job step: receipts still unmatched after a day are for messages that are not review requests.
+export async function purgePendingReceipts(now: Date = new Date(), db: Db = defaultDb) {
+  const gone = await db
+    .delete(pendingReceipts)
+    .where(lt(pendingReceipts.receivedAt, new Date(now.getTime() - PENDING_RECEIPT_MAX_AGE_MS)))
+    .returning({ id: pendingReceipts.id });
+  return gone.length;
 }
 
 export async function runReviewRequestJobs(

@@ -214,8 +214,9 @@ class TwilioRetryable {
 }
 
 // Reads TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WEBHOOK_URL (or APP_BASE_URL + /api/sms/inbound) and
-// TWILIO_STATUS_CALLBACK_URL (or APP_BASE_URL + /api/sms/status, else the same origin as the webhook URL).
-// Throws with the name of the missing setting, never its value.
+// TWILIO_STATUS_CALLBACK_URL (or APP_BASE_URL + /api/sms/status, else the same origin as the webhook URL; left out,
+// with an error log naming the setting, when malformed). Throws with the name of a missing required setting, never its
+// value.
 export function twilioConfigFromEnv(env: Record<string, string | undefined> = process.env): TwilioConfig {
   const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
   if (!accountSid || !/^AC[0-9a-fA-F]{32}$/.test(accountSid))
@@ -229,7 +230,11 @@ export function twilioConfigFromEnv(env: Record<string, string | undefined> = pr
   const statusCallbackUrl =
     env.TWILIO_STATUS_CALLBACK_URL?.trim() ||
     (base ? `${base}/api/sms/status` : new URL("/api/sms/status", webhookUrl).href);
-  if (!/^https?:\/\//.test(statusCallbackUrl) || !URL.canParse(statusCallbackUrl))
-    throw new Error("TWILIO_STATUS_CALLBACK_URL not an http(s) URL");
+  // Delivery receipts are optional, so a malformed setting turns them off instead of failing every Twilio use (sends,
+  // the inbound STOP webhook, opt-out confirmations; audit O-66-3). /api/sms/status then answers 503 naming it.
+  if (!/^https?:\/\//.test(statusCallbackUrl) || !URL.canParse(statusCallbackUrl)) {
+    console.error("twilio: TWILIO_STATUS_CALLBACK_URL not an http(s) URL; delivery receipts are off"); // name only
+    return { accountSid, authToken, webhookUrl };
+  }
   return { accountSid, authToken, webhookUrl, statusCallbackUrl };
 }
