@@ -789,6 +789,62 @@ describe("90-day rule (FR-9)", () => {
     expect(await one(earlier)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
   });
 
+  // A-82-1: the last send of an email retried through an outage can go out after the retry was due (sends run every
+  // 15 minutes). If that send's outcome is unknown, the request counts until 90 days after it went out, not 90 days
+  // after it was due.
+  it("counts an email whose last retry had an unknown outcome until 90 days after that retry went out", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true });
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    const retryAt = (await one(first)).scheduledFor;
+    const wentOut = plus(retryAt, 14 * 60_000); // the next run, 14 minutes after the retry was due
+    email.failWith = new DOMException("The operation was aborted due to timeout", "TimeoutError"); // final
+    expect(await send(wentOut)).toMatchObject({ failed: 1 });
+    expect(await one(first)).toMatchObject({
+      status: "failed",
+      outcomeUnknown: true,
+      maybeSentAt: DUE,
+      sentAt: null,
+      scheduledFor: wentOut,
+    });
+    email.failWith = null;
+
+    // Due 90 days after the retry was due plus 10 minutes: still 4 minutes inside 90 days of when it went out.
+    const dueLater = plus(retryAt, 90 * DAY + 10 * 60_000);
+    const later = await t.visit(c, plus(dueLater, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueLater, -2 * HOUR) });
+    expect(await one(later)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
+
+    // Due just after 90 days from when it went out: asked as usual.
+    const dueAfter = plus(wentOut, 90 * DAY + 60_000);
+    const after = await t.visit(c, plus(dueAfter, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueAfter, -2 * HOUR) });
+    expect((await one(after)).status).toBe("scheduled");
+  });
+
+  // A-82-1: a refused last retry did not reach the customer, so the request keeps the earlier dates.
+  it("keeps the due time of a refused last retry after an earlier send that may have gone out", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true });
+    await send(DUE);
+    email.failWith = null;
+    const retryAt = (await one(first)).scheduledFor;
+    email.fail = true;
+    expect(await send(plus(retryAt, 14 * 60_000))).toMatchObject({ failed: 1 });
+    expect(await one(first)).toMatchObject({
+      status: "failed",
+      outcomeUnknown: true,
+      maybeSentAt: DUE,
+      scheduledFor: retryAt,
+    });
+  });
+
   it("does not count an email the provider refused", async () => {
     const t = await makeTenant();
     const c = await t.customer({ phone: null });
