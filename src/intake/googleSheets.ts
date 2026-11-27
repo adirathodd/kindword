@@ -170,13 +170,16 @@ export class GoogleSheetsReader implements SheetReader {
 }
 
 // Reads GOOGLE_SHEETS_CLIENT_EMAIL and GOOGLE_SHEETS_PRIVATE_KEY (the service account's client_email and
-// private_key from its JSON key file; "\n" escapes in the key are accepted, as hosts often store one-line values).
+// private_key from its JSON key file; "\n" escapes in the key are accepted, as hosts often store one-line values,
+// and so are Windows line endings, real or escaped as "\r\n" (audit O-41-2), which become "\n").
 // Throws with the name of the missing setting, never its value.
 export function googleSheetsConfigFromEnv(env: Record<string, string | undefined> = process.env): GoogleSheetsConfig {
   const clientEmail = env.GOOGLE_SHEETS_CLIENT_EMAIL?.trim().toLowerCase();
   if (!clientEmail || !CLIENT_EMAIL_RE.test(clientEmail))
     throw new Error("GOOGLE_SHEETS_CLIENT_EMAIL missing or not a service-account address");
-  const privateKey = env.GOOGLE_SHEETS_PRIVATE_KEY?.replace(/\\n/g, "\n").trim();
+  const privateKey = env.GOOGLE_SHEETS_PRIVATE_KEY?.replace(/\\r\\n|\\n/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .trim();
   if (!privateKey || !/^-----BEGIN PRIVATE KEY-----\n[\s\S]+\n-----END PRIVATE KEY-----$/.test(privateKey))
     throw new Error("GOOGLE_SHEETS_PRIVATE_KEY missing or not a PEM private key");
   return { clientEmail, privateKey: `${privateKey}\n` };
