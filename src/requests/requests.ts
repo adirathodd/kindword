@@ -420,8 +420,10 @@ export async function sendDueRequests(
       continue;
     }
     // O-46-1: a database error after the provider call (see recordOutcome) skips only this row; the rest of the
-    // batch still goes out. The row stays claimed (sent), so it is never sent again.
-    const outcome = await deliver(providers, cfg, step, now, db).catch(rowError("send_due_requests", id));
+    // batch still goes out. The row stays claimed (sent), so this message is never sent again; it is logged under its
+    // own tag because, unlike a row that failed before its claim, it needs the operator. Known gap (owner to decide,
+    // PR #94): the reminder query treats it as sent, so its reminder is still scheduled 3 days later.
+    const outcome = await deliver(providers, cfg, step, now, db).catch(rowError("send_due_requests_outcome", id));
     if (outcome === "error") result.errors = (result.errors ?? 0) + 1;
     else result[outcome]++;
   }

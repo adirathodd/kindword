@@ -38,3 +38,5 @@ sync-2026-11-27-02 (SPEC sync at main 9d771e1) moved the header line to 9d771e1,
 sync-2026-11-27-04 (SPEC sync rerun at main 9d771e1) changed the **Implementation status** FR-9 row: its status is now "Implemented, one failure-path gap (noncompliant)", and the row ends with the T-82-1 note (test in #88) and the A-82-1 gap (fix in #87). Copy the row from `docs/SPEC.md`.
 
 The Google endpoint guard PR #86 (2026-11-27, SPEC Provider notes: Google OAuth) adds one **Implementation status** row after "Retention (Security)": "Google least privilege (Provider notes)". Copy the row from `docs/SPEC.md` into the Doc.
+
+#94 (audit O-46-1, 2026-11-27) changed the **Implementation status** FR-6 row: after "refusals are final and texts are not retried (#71, audit F-12-2, F-12-3)." it adds two sentences on a database error after the provider call (#94) and the gap left for the owner (the reminder and the operator alert). Copy the row from `docs/SPEC.md`.

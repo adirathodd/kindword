@@ -1370,7 +1370,9 @@ describe("a database error after the provider call (O-46-1)", () => {
     // First row: its claim, then the failure write and both retries fail. Second row: runs normally.
     failTransactions(["ok", "throw", "throw", "throw"]);
     await expect(send(DUE)).resolves.toMatchObject({ sent: 0, failed: 1, errors: 1 });
-    expect(errors.mock.calls.flat().join(" ")).toMatch(/send_due_requests: row failed id=\S+ error=DatabaseError/);
+    expect(errors.mock.calls.flat().join(" ")).toMatch(
+      /send_due_requests_outcome: row failed id=\S+ error=DatabaseError/,
+    );
     for (const x of [PHONE, EMAIL, "+12015550111", "lee@example.test"])
       expect(errors.mock.calls.flat().join(" ")).not.toContain(x);
 
