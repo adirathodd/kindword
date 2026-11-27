@@ -41,7 +41,8 @@ export type TwilioConfig = {
 
 // A signed status callback for one message we sent (https://www.twilio.com/docs/messaging/guides/track-outbound-message-status).
 // MessageStatus is queued, sending, sent, delivered, undelivered, failed, read or canceled.
-export type SmsStatus = { messageSid: string; status: string };
+// errorCode: Twilio's numeric ErrorCode on an undelivered or failed status (e.g. 30003 unreachable), else null.
+export type SmsStatus = { messageSid: string; status: string; errorCode: number | null };
 
 // Twilio's request signature: base64(HMAC-SHA1(authToken, url + each key+value, keys sorted)).
 export function twilioSignature(authToken: string, url: string, params: URLSearchParams) {
@@ -123,7 +124,7 @@ export class TwilioSms implements ConfirmationSms {
     };
   }
 
-  // Checks the signature against statusCallbackUrl. Reads only the message SID and status, never the numbers.
+  // Checks the signature against statusCallbackUrl. Reads only the message SID, status and error code, never the numbers.
   async parseStatusCallback(req: Request): Promise<SmsStatus | null> {
     if (!this.config.statusCallbackUrl) return null;
     const params = await this.signedParams(req, this.config.statusCallbackUrl);
@@ -131,7 +132,9 @@ export class TwilioSms implements ConfirmationSms {
     const messageSid = params.get("MessageSid") ?? params.get("SmsSid");
     const status = (params.get("MessageStatus") ?? params.get("SmsStatus"))?.toLowerCase();
     if (!messageSid || !/^(SM|MM)[0-9a-fA-F]{32}$/.test(messageSid) || !status) return null;
-    return { messageSid, status };
+    const code = params.get("ErrorCode");
+    const errorCode = code && /^\d{1,6}$/.test(code) ? Number(code) : null;
+    return { messageSid, status, errorCode };
   }
 
   async send(from: string, to: string, body: string): Promise<string | void> {

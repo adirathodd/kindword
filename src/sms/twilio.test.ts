@@ -135,11 +135,21 @@ describe("TwilioSms.parseStatusCallback", () => {
       body: new URLSearchParams(params),
     });
 
-  it("reads the SID and status of a signed callback", async () => {
+  it("reads the SID, status and error code of a signed callback", async () => {
     const sms = new TwilioSms({ ...config, statusCallbackUrl: STATUS_URL });
-    expect(await sms.parseStatusCallback(req(fields))).toEqual({ messageSid: MSG, status: "delivered" });
-    const legacy = { AccountSid: SID, SmsSid: MSG, SmsStatus: "Undelivered" };
-    expect(await sms.parseStatusCallback(req(legacy))).toEqual({ messageSid: MSG, status: "undelivered" });
+    expect(await sms.parseStatusCallback(req(fields))).toEqual({
+      messageSid: MSG,
+      status: "delivered",
+      errorCode: null,
+    });
+    const legacy = { AccountSid: SID, SmsSid: MSG, SmsStatus: "Undelivered", ErrorCode: "30003" };
+    expect(await sms.parseStatusCallback(req(legacy))).toEqual({
+      messageSid: MSG,
+      status: "undelivered",
+      errorCode: 30003,
+    });
+    const odd = { ...legacy, ErrorCode: "not-a-code" };
+    expect(await sms.parseStatusCallback(req(odd))).toMatchObject({ errorCode: null });
   });
 
   it("refuses an inbound-message signature, another token or account, and a bad SID", async () => {
