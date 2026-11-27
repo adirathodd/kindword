@@ -30,6 +30,11 @@ describe("brand tokens", () => {
     for (const v of [BRAND.bg, BRAND.surface, BRAND.ink, BRAND.muted]) expect(page).toContain(v);
   });
 
+  it("the landing page links owners to /account to sign in (D-2, FR-13)", () => {
+    const page = read("public/landing/index.html");
+    expect(page).toMatch(/<div class="nav__actions">\s*<a class="nav__link" href="\/account">Sign in<\/a>/);
+  });
+
   it("owner pages get every token and no colours of their own", async () => {
     const body = await html(200, "Test", "<p>x</p>").text();
     expect(body).toContain(BRAND_CSS_VARS);
