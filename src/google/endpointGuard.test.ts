@@ -9,7 +9,7 @@ import { checkManifest, checkSourceFile, formatViolation, type Violation } from 
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const SKIP_DIRS = new Set(["node_modules", ".next", ".git", ".claude", ".vercel", "coverage", "design"]);
-const SOURCE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|html|json)$/;
+const SOURCE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|html|css|json|ya?ml|sh)$/;
 // Test files hold fake URLs on purpose; the runtime tests next to each client check what it really requests.
 const TEST_FILE = /\.test\.(?:ts|tsx|mts|js|mjs)$/;
 
@@ -39,7 +39,7 @@ describe("the repo calls no Google endpoint outside the allowlist", () => {
 
   it("the guard module, which names the allowed hosts, makes no calls and imports nothing", () => {
     const guard = readFileSync(repoPath(GUARD), "utf8");
-    expect(guard).not.toMatch(/\bfetch\s*\(|^\s*import\s|\bimport\s*\(|\brequire\s*\(/m);
+    expect(guard).not.toMatch(/\bfetch\s*\(|^\s*import\s|=\s*(?:await\s+)?(?:import|require)\s*\(/m);
   });
 
   it("has no Google SDK in package.json or package-lock.json", () => {
@@ -91,7 +91,7 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
     expect(vs[0].line).toBe(6);
   });
 
-  it("rejects deleting a reply (same path as post reply, different suffix)", () => {
+  it("rejects an unlisted suffix on an allowed path (paths only: the HTTP method is checked by the client's own test)", () => {
     const vs = checkSourceFile({
       path: BP,
       text: bpModule("const d = `${REVIEWS_API}/${l}/reviews/${r}/reply:delete`;"),
@@ -121,8 +121,25 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
   });
 
   it("rejects building another URL from the token endpoint", () => {
-    for (const extra of ["const r = `${TOKEN_URL}/revoke`;", 'const r = TOKEN_URL + "info";', "new URL(TOKEN_URL)"])
+    for (const extra of [
+      "const r = `${TOKEN_URL}/revoke`;",
+      "const r = `${ TOKEN_URL }/revoke`;",
+      'const r = TOKEN_URL + "info";',
+      "new URL(TOKEN_URL)",
+      'fetch(TOKEN_URL.replace("token", "revoke"));',
+      'fetch(TOKEN_URL.concat("info"));',
+      'fetch([TOKEN_URL, "x"].join("/"));',
+    ])
       expect(rules(checkSourceFile({ path: BP, text: bpModule(extra) }))).toEqual(["google_base_misused TOKEN_URL"]);
+  });
+
+  it("ignores constants named in whole-line comments but checks spaced templates", () => {
+    expect(checkSourceFile({ path: BP, text: bpModule("// REVIEWS_API is the v4 base; TOKEN_URL the token") })).toEqual(
+      [],
+    );
+    expect(rules(checkSourceFile({ path: BP, text: bpModule("const x = `${ REVIEWS_API }/${l}`;") }))).toEqual([
+      "google_path_not_allowed REVIEWS_API/{}",
+    ]);
   });
 
   it("rejects a changed base URL in the allowed module", () => {
@@ -137,6 +154,7 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
       'await fetch("https://mybusinessbusinessinformation.googleapis.com/v1/locations/1");',
       "const u = `https://oauth2.googleapis.com/revoke?token=${t}`;",
       'const host = "googleapis" + ".com";',
+      'const host = "https://mybusiness.google" + "apis.com/v4/accounts";',
       "// call https://www.googleapis.com/oauth2/v3/tokeninfo",
     ])
       expect(checkSourceFile({ path: "src/reviews/new.ts", text }).map((v) => v.rule)).toContain(
@@ -176,6 +194,10 @@ const url = \`\${SHEETS_API}/\${sheetId}/values/\${encodeURIComponent(RANGE)}\` 
       ['import { SCOPE } from "../intake/googleSheets";', "SCOPE"],
       ['import * as bp from "./businessProfile";', "*"],
       ['export { SHEETS_API } from "./googleSheets";', "SHEETS_API"],
+      ['import { TOKEN_URL } from "../google/businessProfile.js";', "TOKEN_URL"],
+      ['import { TOKEN_URL } from "../businessProfile";', "TOKEN_URL"],
+      ['const bp = await import("../google/businessProfile"); fetch(bp.TOKEN_URL);', "dynamic"],
+      ['const { TOKEN_URL } = require("../google/businessProfile");', "dynamic"],
     ])
       expect(rules(checkSourceFile({ path: "src/google/other.ts", text }))).toContain(
         `google_endpoint_imported ${name}`,
@@ -212,6 +234,8 @@ import { GoogleSheetsReader } from "../intake/googleSheets";`;
     });
     expect(vs).toEqual([{ path: "src/a.ts", line: 2, rule: "google_api_not_allowed", detail: "x.googleapis.com" }]);
     expect(formatViolation(vs[0])).not.toContain("s3cr3t");
+    const phone = checkSourceFile({ path: "src/a.ts", text: 'const u = "Call+15551234567now.googleapis.com";' });
+    expect(phone.map((v) => v.detail)).toEqual(["now.googleapis.com"]);
   });
 });
 
@@ -219,11 +243,12 @@ describe("checkManifest", () => {
   it("rejects a Google SDK in any dependency field", () => {
     const pkg = JSON.stringify({
       dependencies: { next: "16", googleapis: "1" },
-      devDependencies: { "@google-cloud/local-auth": "1" },
+      devDependencies: { "@google-cloud/local-auth": "1", gtoken: "1" },
     });
     expect(rules(checkManifest("package.json", pkg))).toEqual([
       "google_sdk googleapis",
       "google_sdk @google-cloud/local-auth",
+      "google_sdk gtoken",
     ]);
   });
 

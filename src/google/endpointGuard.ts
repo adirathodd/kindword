@@ -52,65 +52,68 @@ export const GOOGLE_ALLOWLIST: Record<string, ModuleRule> = {
   },
 };
 
-// Modules that hold Google endpoint constants. Nothing else may import those constants or the whole module.
-const ENDPOINT_MODULES =
-  /(?:^|\/)(?:google\/businessProfile|intake\/googleSheets|\.\/businessProfile|\.\/googleSheets)$/;
+// Modules that hold Google endpoint constants. Nothing else may import those constants or the whole module, by any
+// path spelling (with or without an extension, from any directory) or by dynamic import() or require().
+const ENDPOINT_MODULE = /(?:^|\/)(?:businessProfile|googleSheets)(?:\.[cm]?[jt]sx?)?$/;
 const ENDPOINT_NAMES = new Set(["TOKEN_URL", "REVIEWS_API", "SHEETS_API", "SCOPE"]);
 
-// Google API client libraries. The SPEC's client is hand-written so that each call is visible; an SDK exposes every
-// method of every API.
-export const GOOGLE_SDK =
-  /^(?:googleapis|google-auth-library|google-gax|gaxios|@googleapis\/.+|@google-cloud\/.+|@google\/.+)$/;
-const SDK_SPECIFIER =
-  /["'`](googleapis|google-auth-library|google-gax|gaxios|@googleapis\/[\w./-]+|@google-cloud\/[\w./-]+|@google\/[\w./-]+)["'`]/g;
+// Google API client libraries and their auth helpers. The SPEC's client is hand-written so that each call is
+// visible; an SDK exposes every method of every API.
+const SDK_NAMES =
+  "googleapis|googleapis-common|google-auth-library|google-gax|gaxios|gtoken|gcp-metadata|google-p12-pem|" +
+  "@googleapis\\/[\\w./-]+|@google-cloud\\/[\\w./-]+|@google\\/[\\w./-]+";
+export const GOOGLE_SDK = new RegExp(`^(?:${SDK_NAMES})$`);
+const SDK_SPECIFIER = new RegExp(`["'\`](${SDK_NAMES})["'\`]`, "g");
 
 // Google OAuth hosts other than the token endpoint: the consent screen, token info and revoke.
 const GOOGLE_OAUTH_HOST = /\b(?:accounts|oauth2)\.google\.com\b/gi;
+// Any Google API host. The detail keeps only host-like labels (letters, at most one trailing digit), so nearby text
+// such as a phone number never ends up in the output.
+const GOOGLE_API_HOST = /(?:[a-z][a-z-]*[0-9]?\.)*googleapis(?:\.com)?/gi;
+// The second half of a host split to hide it ("...google" + "apis.com").
+const SPLIT_API_HOST = /(?<!google)apis\.com\b/gi;
 
 const lineOf = (text: string, index: number) => text.slice(0, index).split("\n").length;
-// Blanks out an allowed span while keeping offsets and line numbers.
+// Blanks out a span while keeping offsets and line numbers.
 function blank(text: string, start: number, end: number) {
   return text.slice(0, start) + text.slice(start, end).replace(/[^\n]/g, " ") + text.slice(end);
 }
+// Blanks whole-line comments (// ..., /* ..., * ...) so a constant named in a comment is not counted as a use.
+const withoutLineComments = (text: string) =>
+  text.replace(/^[ \t]*(?:\/\/|\/\*|\*).*$/gm, (line) => line.replace(/[^\n]/g, " "));
 
-function checkBases(file: SourceFile, rule: ModuleRule, out: Violation[]) {
-  for (const [base, shapes] of Object.entries(rule.bases ?? {})) {
-    const uses = [...file.text.matchAll(new RegExp(`\\b${base}\\b`, "g"))];
-    const declarations = [...file.text.matchAll(new RegExp(`\\bexport const ${base} = "`, "g"))];
-    const templates = [...file.text.matchAll(new RegExp(`\`\\$\\{${base}\\}([^\`]*)\``, "g"))];
-    for (const t of templates) {
-      const shape = t[1].replace(/\$\{[^}]*\}/g, "{}");
-      if (!shapes.includes(shape))
-        out.push({
-          path: file.path,
-          line: lineOf(file.text, t.index),
-          rule: "google_path_not_allowed",
-          detail: `${base}${shape}`,
-        });
-    }
-    // Every other use (string concatenation, new URL(), passing the base around) could build any path.
-    const other = uses.length - declarations.length - templates.length;
-    if (declarations.length !== 1 || other !== 0) {
-      const at = uses.find(
-        (u) => !templates.some((t) => t.index + 3 === u.index) && !isDeclaration(file.text, u.index),
-      );
-      out.push({
-        path: file.path,
-        line: at ? lineOf(file.text, at.index) : 1,
-        rule: "google_base_misused",
-        detail: base,
-      });
+// Each use of an endpoint constant in its own module must be one of: its declaration; for a base, the start of a
+// template literal whose rest is an allowed path shape; for any other constant (TOKEN_URL, SCOPE), a plain value
+// passed as an argument or object property. Anything else (concatenation, .replace(), .concat(), new URL(), arrays,
+// a template on the token endpoint) could build another URL.
+function checkConstantUses(file: SourceFile, rule: ModuleRule, out: Violation[]) {
+  const code = withoutLineComments(file.text);
+  for (const name of Object.keys(rule.constants ?? {})) {
+    const shapes = rule.bases?.[name];
+    for (const u of code.matchAll(new RegExp(`\\b${name}\\b`, "g"))) {
+      const before = code.slice(0, u.index);
+      const after = code.slice(u.index + name.length);
+      const line = lineOf(code, u.index);
+      if (before.endsWith("export const ") && after.startsWith(" = ")) continue;
+      const template = /`\$\{\s*$/.exec(before) && /^\s*\}([^`]*)`/.exec(after);
+      if (template && shapes) {
+        const shape = template[1].replace(/\$\{[^}]*\}/g, "{}");
+        if (!shapes.includes(shape))
+          out.push({ path: file.path, line, rule: "google_path_not_allowed", detail: `${name}${shape}` });
+        continue;
+      }
+      if (!shapes && /[(,:]\s*$/.test(before) && !/\bURL\(\s*$/.test(before) && /^\s*[,)}]/.test(after)) continue;
+      out.push({ path: file.path, line, rule: "google_base_misused", detail: name });
     }
   }
 }
 
-const isDeclaration = (text: string, index: number) => text.slice(Math.max(0, index - 13), index) === "export const ";
-
 function checkImports(file: SourceFile, out: Violation[]) {
   if (GOOGLE_ALLOWLIST[file.path]) return; // the endpoint modules themselves
+  const code = withoutLineComments(file.text);
   const stmt = /\b(import|export)\s+(?:type\s+)?([^;]*?)\s+from\s*["']([^"']+)["']/g;
-  for (const m of file.text.matchAll(stmt)) {
-    if (!ENDPOINT_MODULES.test(m[3])) continue;
+  for (const m of code.matchAll(stmt)) {
+    if (!ENDPOINT_MODULE.test(m[3])) continue;
     const clause = m[2];
     const names = (clause.match(/\{([^}]*)\}/)?.[1] ?? "")
       .split(",")
@@ -125,10 +128,14 @@ function checkImports(file: SourceFile, out: Violation[]) {
     const bad = names.filter((n) => ENDPOINT_NAMES.has(n));
     if (/\*/.test(clause)) bad.push("*");
     for (const name of bad)
-      out.push({ path: file.path, line: lineOf(file.text, m.index), rule: "google_endpoint_imported", detail: name });
+      out.push({ path: file.path, line: lineOf(code, m.index), rule: "google_endpoint_imported", detail: name });
   }
-  for (const m of file.text.matchAll(/\b(?:REVIEWS_API|SHEETS_API)\b/g))
-    out.push({ path: file.path, line: lineOf(file.text, m.index), rule: "google_endpoint_imported", detail: m[0] });
+  // A dynamic import or require of a client module hands over every export, constants included.
+  for (const m of code.matchAll(/\b(?:import|require)\s*\(\s*["'`]([^"'`]+)["'`]\s*\)/g))
+    if (ENDPOINT_MODULE.test(m[1]))
+      out.push({ path: file.path, line: lineOf(code, m.index), rule: "google_endpoint_imported", detail: "dynamic" });
+  for (const m of code.matchAll(/\b(?:REVIEWS_API|SHEETS_API)\b/g))
+    out.push({ path: file.path, line: lineOf(code, m.index), rule: "google_endpoint_imported", detail: m[0] });
 }
 
 export function checkSourceFile(file: SourceFile): Violation[] {
@@ -143,23 +150,19 @@ export function checkSourceFile(file: SourceFile): Violation[] {
       out.push({ path: file.path, line: 1, rule: "google_allowlist_stale", detail: name });
     else text = blank(text, at, at + declaration.length);
   }
-  // The token endpoint is called as is: no path, query or other URL may be built from it.
-  if (rule.constants?.TOKEN_URL)
-    for (const m of file.text.matchAll(
-      /\$\{TOKEN_URL\}|\bTOKEN_URL\s*\+|\+\s*TOKEN_URL\b|new URL\([^)]*\bTOKEN_URL\b/g,
-    ))
-      out.push({ path: file.path, line: lineOf(file.text, m.index), rule: "google_base_misused", detail: "TOKEN_URL" });
   for (const pattern of rule.patterns ?? [])
     for (const m of [...text.matchAll(pattern)]) text = blank(text, m.index, m.index + m[0].length);
 
-  for (const m of text.matchAll(/[\w.-]*googleapis(?:\.com)?/gi))
+  for (const m of text.matchAll(GOOGLE_API_HOST))
+    out.push({ path: file.path, line: lineOf(text, m.index), rule: "google_api_not_allowed", detail: m[0] });
+  for (const m of text.matchAll(SPLIT_API_HOST))
     out.push({ path: file.path, line: lineOf(text, m.index), rule: "google_api_not_allowed", detail: m[0] });
   for (const m of text.matchAll(GOOGLE_OAUTH_HOST))
     out.push({ path: file.path, line: lineOf(text, m.index), rule: "google_oauth_not_allowed", detail: m[0] });
   for (const m of file.text.matchAll(SDK_SPECIFIER))
     out.push({ path: file.path, line: lineOf(file.text, m.index), rule: "google_sdk", detail: m[1] });
 
-  checkBases(file, rule, out);
+  checkConstantUses(file, rule, out);
   checkImports(file, out);
   return out;
 }
