@@ -1,25 +1,25 @@
 {
-  "sync_id": "sync-2026-11-26-05",
-  "synced_at": "2026-11-26T18:30Z to 19:00Z (on request, continuing sync-2026-11-26-04)",
+  "sync_id": "sync-2026-11-27-01",
+  "synced_at": "2026-11-27 (scheduled)",
   "repository": "adirathodd/review-automation (GitHub reports adirathodd/kindword)",
   "target_branch": "main",
-  "audited_sha": "6a3b21d7394ae1fce54b07fca2c20459da2da061",
+  "audited_sha": "113f99f5b52470bb737704068afc5819c06b3a8c",
   "main_moved_during_run": false,
   "previous_sync": {
-    "sync_id": "sync-2026-11-26-04",
-    "audited_sha": "9f7a11928d56dcf7d1368e4f747af5088dfd2bbd",
+    "sync_id": "sync-2026-11-26-05",
+    "audited_sha": "6a3b21d7394ae1fce54b07fca2c20459da2da061",
     "status": "complete_with_documented_discrepancies",
-    "pr": "#74 (merged as 6a3b21d)"
+    "pr": "#77 (merged as b0d74de)"
   },
-  "commits_reviewed": "9f7a119..6a3b21d: #75 (F-72-1 fix and audit record audit-2026-11-26-03), #62 (GET /api/status/jobs), #63 (operator alerts for owner-email and confirmation failures), #74 (this sync's previous PR). Open PRs #49 and #51 not used as evidence",
+  "commits_reviewed": "6a3b21d..113f99f: #77 (docs, previous sync PR) and #80 (D-19 carrier-failure email fallback, pending_receipts, provider_message_id index, malformed status-callback URL turns receipts off, job_runs; audit record audit-2026-11-26-04). Open PRs #49, #51, #78, #79, #81, #82 not used as evidence; #81 (audit-2026-11-27-01, same range) read for cross-check only",
   "sources_of_truth": {
     "spec": "docs/SPEC.md and the Claude Doc https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs, always kept in sync (owner decision D-1, 2026-11-24)",
     "status_and_priorities": "Notion: Kindword (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
     "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
     "doc_status": "Read via the Artifact tool: it is a Claude Docs document; no Claude Docs connector in this session, so its text could not be read or written. Edits the Doc still needs: docs/sync/proposed-spec-changes.md"
   },
-  "evidence": "Code read on main: src/optout/confirmations.ts (#75), src/jobs/status.ts and src/app/api/status/jobs/route.ts (#62), src/notifications/sendFailures.ts and operatorAlerts.ts (#63). Node 24.22.3 + Postgres 16: 672/672 vitest pass at e87f858 and 697/697 at 6a3b21d; prettier and eslint clean",
-  "requirements_reviewed": "FR-8, FR-13, FR-17, FR-19 and SPEC Reliability and Stack monitoring lines re-checked; other rows unchanged since sync-2026-11-26-04 (no code changes there)",
+  "evidence": "Code read on main: src/requests/requests.ts (recordSmsFailure, handleReceipt, applyPendingReceipts, purgePendingReceipts), src/app/api/sms/status/route.ts, src/app/api/email/events/route.ts, src/sms/twilio.ts, src/jobs/status.ts, src/jobs/jobs.ts, src/db/schema.ts, drizzle/0017. Node 24.22.3 + Postgres 16: 717/717 vitest pass at 113f99f; prettier and eslint clean",
+  "requirements_reviewed": "FR-5, FR-6, FR-8, FR-9, FR-17, FR-19, Data model (pending_receipts, job_runs), Stack monitoring and Reliability re-checked against #80; other rows unchanged since sync-2026-11-26-05 (no code changes there)",
   "requirements": {
     "implemented": [
       "FR-3",
@@ -42,19 +42,17 @@
       "FR-24: imports not refused for onboarding businesses (S-5)"
     ],
     "status_changes_since_last_sync": {
-      "FR-8": "implemented (not live-tested); F-72-1 fixed by #75",
-      "FR-13, FR-17, FR-19": "status unchanged; rows record #62, #63"
+      "FR-6": "stays Implemented (not live-tested); row already records D-19 carrier-failure fallback (#80)",
+      "FR-17, FR-19": "status unchanged; rows already record pending_receipts and job_runs (#80)"
     }
   },
   "spec_changes": [
-    "Header: last synced against 6a3b21d",
-    "FR-8: #75 (F-72-1) and #63 (failed confirmation alerted)",
-    "FR-13, FR-17: #63 (failed owner emails alerted)",
-    "FR-19: job-run rows (#62) and send-failure rows (#63)"
+    "Header: last synced against 113f99f",
+    "Implementation status intro: on main at 113f99f (2026-11-27). No row changed: #80 already updated FR-6, FR-17, FR-19 and the Data model, and those rows match the code (closes audit O-80-4)"
   ],
-  "doc_edits_pending": "docs/sync/proposed-spec-changes.md; no Claude Docs connector in this session",
-  "notion_changes": "see the SPEC sync log entry sync-2026-11-26-05",
-  "open_documentation_prs": ["this PR (sync-2026-11-26-05)"],
+  "doc_edits_pending": "docs/sync/proposed-spec-changes.md (adds this sync's two header lines); no Claude Docs connector in this session",
+  "notion_changes": "see the SPEC sync log entry sync-2026-11-27-01",
+  "open_documentation_prs": ["this PR (sync-2026-11-27-01)"],
   "open_decisions": [
     "D-3 password change (FR-24)",
     "D-4 breached-password check outage (FR-24)",
@@ -72,8 +70,9 @@
     "D-12 email sends without Twilio",
     "D-13 consent evidence retention (lawyer)",
     "Google-connect location ID lookup (Notion)",
-    "Bounce and complaint handling (Notion, from open #66)",
-    "D-14 to D-18 (FR-25, #73; D-18 a lawyer should check)"
+    "Bounce and complaint handling (Notion; the undelivered-text part is done by #80, D-19)",
+    "D-14 to D-18 (FR-25, #73; D-18 a lawyer should check)",
+    "FR-9 date an ask counts from (Notion, from open #82, audit O-43-1)"
   ],
   "open_observations": [
     "O-1 no E.164 check on locations.sms_number",
@@ -84,13 +83,16 @@
     "O-53-2 clicks can exceed sends",
     "O-72-1 a review request sent just after an opt-out can count as the confirmation (lost, never doubled)",
     "O-72-2 clock skew over 1 s in the confirmation lookup",
-    "O-59-1 purgeOffboardedBusinesses has no per-business catch"
+    "O-59-1 purgeOffboardedBusinesses has no per-business catch",
+    "O-80-1 a clock running ahead can make /api/status/jobs report a job late for up to an hour (false alarm only)",
+    "O-80-2 simultaneous delivered and undelivered receipts for one SID could both apply (not seen with real Twilio)"
   ],
   "owner_actions": [
     "Point an uptime monitor outside Vercel at GET /api/status/jobs (#62); until then the Stack 'daily check that jobs ran' has no watcher",
     "Resend webhook for email.delivered (RESEND_WEBHOOK_SECRET, #66)"
   ],
-  "cross_check": "audit-2026-11-26-03 (end 3fefa4c) agrees; its S-10 drift was fixed by #74",
+  "cross_check": "audit-2026-11-27-01 (open PR #81, end 113f99f) agrees: no verified bugs in #80; its O-80-4 drift is fixed by this PR",
   "status": "complete_with_documented_discrepancies",
-  "next_sync_starts_after": "6a3b21d7394ae1fce54b07fca2c20459da2da061"
+  "next_sync_starts_after": "113f99f5b52470bb737704068afc5819c06b3a8c",
+  "intermediate_runs": "sync-2026-11-26-06 at b0d74de (docs only, no PR; recorded in the Notion SPEC sync log only)"
 }
