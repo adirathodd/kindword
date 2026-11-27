@@ -137,7 +137,8 @@
   "spec_drift": ["O-82-1"],
   "fix_prs": [
     {
-      "pr": "see PR description (opened with this record)",
+      "pr": 87,
+      "url": "https://github.com/adirathodd/kindword/pull/87",
       "branch": "claude/cool-meitner-oum9gw",
       "base": "main",
       "remediates": [82],
