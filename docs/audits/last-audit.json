@@ -67,7 +67,7 @@
         "src/requests/requests.test.ts"
       ],
       "previously_audited": false,
-      "audit_status": "audited (1 verified bug F-82-1, fixed in the fix PR on claude/cool-meitner-2tbx4o; O-82-2)",
+      "audit_status": "audited (1 verified bug F-82-1, fixed in #90; O-82-2)",
       "findings": ["F-82-1", "O-82-2"]
     }
   ],
@@ -99,7 +99,7 @@
       "pr": 82,
       "classification": "pre-existing (O-43-1 family), left by #82's fix",
       "severity": "low",
-      "status": "fixed in fix PR (branch claude/cool-meitner-2tbx4o)",
+      "status": "fixed in #90 (branch claude/cool-meitner-2tbx4o)",
       "spec": "FR-9: 'a request counts from the first time it may have reached the customer to the last'",
       "summary": "An email retried through an outage whose final send may have gone out (an ambiguous error that is not retried) is marked failed with sent_at cleared. askedRecently's upper bound, greatest(sent_at, maybe_sent_at, scheduled_for), then fell back to when that retry was due, not when it went out. If the send job ran late (up to the 20-hour retry window), the customer could be asked again before 90 days from that last send.",
       "evidence": "Regression test 'counts a retried email to its last possible send, even when that send ran late': retry due 17:15Z, sent at 22:15Z, a new visit due 1 hour before 90 days after 22:15Z was scheduled instead of skipped as duplicate (failed on 9d771e1, passes with the fix).",
@@ -144,8 +144,8 @@
       "findings": ["F-82-1"],
       "branch": "claude/cool-meitner-2tbx4o",
       "base": "main @ 9d771e1",
-      "number": null,
-      "url": null,
+      "number": 90,
+      "url": "https://github.com/adirathodd/kindword/pull/90",
       "note": "also carries this record"
     }
   ],
@@ -166,7 +166,7 @@
       "schema": "no change, no migration"
     }
   },
-  "merge_order": ["fix PR (independent; one PR, based on current main)"],
+  "merge_order": ["#90 (independent; based on main 9d771e1)"],
   "unresolved": [
     "Claude Doc edits listed in docs/sync/proposed-spec-changes.md (#80/D-19, #82) still pending; no Claude Docs connector here",
     "O-80-1, O-80-2, O-82-2 and the earlier items listed in observations"
