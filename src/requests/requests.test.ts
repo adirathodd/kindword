@@ -843,6 +843,7 @@ describe("90-day rule (FR-9)", () => {
     // Its own address: the unsubscribe is also platform-wide, which the tenant cleanup does not remove.
     const mail = "unsubscribed-t82@example.test";
     const dropOptOut = () => db.delete(s.suppressionList).where(eq(s.suppressionList.address, mail));
+    await dropOptOut(); // in case a killed earlier run left it behind
     onTestFinished(() => dropOptOut().then(() => {}));
     const t = await makeTenant();
     const c = await t.customer({ phone: null, mail });
@@ -873,7 +874,7 @@ describe("90-day rule (FR-9)", () => {
     });
     expect(await one(inside)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
 
-    // Due 1 minute past 90 days after the skipped retry was due (the request's last date): asked as usual.
+    // Due more than 90 days after both the first send and the skipped retry: asked as usual.
     const dueAfter = plus(retryAt, 90 * DAY + 60_000);
     const after = await t.visit(c, plus(dueAfter, -2 * HOUR));
     await scheduleReviewRequests({ now: plus(dueAfter, -2 * HOUR) });
