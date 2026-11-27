@@ -166,6 +166,14 @@
       "status": "open (owner question in #86)",
       "summary": "Provider notes say 'one Google client module that exposes only list reviews and post reply; no other endpoint is called anywhere', but the SPEC also requires the Sheets read (FR-2a) and the landing page loads Google Fonts; the consent and revoke endpoints (connect step, FR-20) are not listed. The guard allows the first two. Recommend the note say it covers the owner's Business Profile grant and list these exceptions."
     },
+    {
+      "id": "O-87-2",
+      "pr": "87 (inherits pre-existing behaviour)",
+      "classification": "pre-existing (sent_at: now in sendDueRequests predates this period; #87 reuses the same run-level now)",
+      "severity": "nit",
+      "status": "open (unconfirmed magnitude; no code change)",
+      "summary": "sendDueRequests takes now once per run and sends up to BATCH (200) rows one after another, so sent_at (and, since #87, the scheduled_for kept for an unknown-outcome email retry) is the run's start, not when that send went out. The FR-9 span can end earlier than the real send by up to the batch's run time (seconds to a few minutes), so a new visit due right at the 90-day mark could in principle be asked that much under 90 days. Not reproduced (needs a timed multi-row batch). Possible fix: date each send by now plus time elapsed in the run; left for an owner decision because it changes every sent_at."
+    },
     "Closed in this period: A-82-1 (by #87), T-82-1 (by #88), O-41-2 (by #91), O-82-1 (by #89 header move, now superseded by O-87-1). Still open from earlier audits: O-82-2, O-80-1, O-80-2, O-72-1, O-72-2, O-59-1, A-45-1/D-13, A-5..A-8, S-1..S-5, S-8, S-9, O-37-1, O-40-1, O-40-2, O-41-1, O-41-3, O-46-1, O-53-1, O-53-2, F-7-5 part 2 data check."
   ],
   "spec_drift": ["O-87-1"],
@@ -201,5 +209,6 @@
     "Claude Doc edits for #80, #82, #86 and #89 still pending (no Claude Docs connector here); listed in docs/sync/proposed-spec-changes.md",
     "O-87-1 (SPEC status rows behind main), O-86-1, O-86-2 and the earlier items listed in observations"
   ],
-  "next_audit_starts_after": "c8b15b95e870e79488983c38980c5132a0a91227"
+  "next_audit_starts_after": "c8b15b95e870e79488983c38980c5132a0a91227",
+  "rerun_note": "Second run against the same range (9d771e1..c8b15b9) on 2026-11-27: main unchanged at c8b15b9; #91, #87, #88 and #86 re-read; no new verified findings. Added O-87-2 (pre-existing, unconfirmed). No new PR."
 }
