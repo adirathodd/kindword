@@ -248,6 +248,7 @@ describe("pollSheet", () => {
     };
     const r = await pollSheet(t.sourceId, offboardingReader);
     expect(r.ok && r.rows.map((x) => x.reason)).toEqual(Array(3).fill("business_offboarded"));
+    expect(await source()).toMatchObject({ lastRowId: null, lastReadAt: null });
     expect(await customersOf()).toHaveLength(0);
     expect(await visitsOf()).toHaveLength(0);
   });

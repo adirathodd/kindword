@@ -308,6 +308,7 @@ describe("importCsv for an offboarded business", () => {
         rows: [{ row: 2, status: "rejected", reason: "business_offboarded" }],
       });
     } finally {
+      await other.query("rollback"); // no-op after the commit; frees the row lock if an assertion failed first
       other.release();
     }
     expect(await customersOf()).toHaveLength(0);

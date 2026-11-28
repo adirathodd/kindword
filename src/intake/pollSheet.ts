@@ -51,6 +51,9 @@ export async function pollSheet(sheetSourceId: string, reader: SheetReader, db: 
     "sheet",
     db,
   );
+  // Offboarded during the read (FR-20): nothing more was stored, and the source is left as it was, not marked read.
+  if (results.some((r) => r.status === "rejected" && r.reason === "business_offboarded"))
+    return { ok: true, rows: results };
   // Each row has committed in its own transaction by now. A crash before this line only leaves the marker stale;
   // re-reads stay idempotent because dedup is by row ID in visits, not by last_row_id.
   await db
