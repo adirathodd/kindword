@@ -1,11 +1,18 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: example.test emails, made-up reviews.
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
-import { DIGEST_HOUR, localDayAndHour, sendDailyDigests, sendLowRatingAlerts } from "./ownerEmails";
+import {
+  DIGEST_HOUR,
+  localDayAndHour,
+  lowRatingIdempotencyKey,
+  sendDailyDigests,
+  sendLowRatingAlerts,
+} from "./ownerEmails";
 
 const BASE = "https://app.example.test";
 const HOUR = 60 * 60 * 1000;
@@ -67,10 +74,11 @@ async function tenant(
   return l.id;
 }
 
-async function review(locationId: string, opts: { rating?: number; hasReply?: boolean } = {}) {
+async function review(locationId: string, opts: { rating?: number; hasReply?: boolean; id?: string } = {}) {
   const [r] = await db
     .insert(s.reviews)
     .values({
+      ...(opts.id ? { id: opts.id } : {}),
       locationId,
       googleReviewId: `digest-test-${locationId}-${n++}`,
       rating: opts.rating ?? 5,
@@ -281,7 +289,7 @@ describe("sendLowRatingAlerts", () => {
     expect(mine[0]).toMatchObject({
       to: "owner@example.test",
       subject: "New 2-star review: Digest Test Plumbing",
-      idempotencyKey: `low-rating/${loc}/${low}`,
+      idempotencyKey: `low-rating/${loc}/${createHash("sha256").update(low).digest("hex")}`,
     });
     expect(mine[0].text).toContain("A new 2-star review for Digest Test Plumbing (Main St) needs a reply.");
     expect(mine[0].text).toContain(`${BASE}/inbox?location=${loc}`);
@@ -341,5 +349,74 @@ describe("sendLowRatingAlerts", () => {
     ]);
     expect(to(email, loc)).toHaveLength(1);
     expect(await audit(loc, "low_rating_email_sent")).toHaveLength(1);
+  });
+
+  it("gives a retry that covers more reviews its own key, so the provider does not refuse it (audit O-40-2)", async () => {
+    await sendLowRatingAlerts({ email, baseUrl: BASE, now: NOW }); // flush other tests' leftovers
+    // Resend's idempotency: a key it has seen with the same body replays the first send; with a different body it
+    // answers 409, which resend.ts retries and then reports as a failure.
+    class FakeResend implements EmailProvider {
+      seen = new Map<string, string>();
+      delivered: EmailMessage[] = [];
+      loseNext = false;
+      async send(m: EmailMessage) {
+        const key = m.idempotencyKey!;
+        const body = JSON.stringify([m.subject, m.text]);
+        const earlier = this.seen.get(key);
+        if (earlier !== undefined && earlier !== body) throw new Error("409 invalid_idempotent_request");
+        if (earlier === undefined) {
+          this.seen.set(key, body);
+          this.delivered.push(m);
+        }
+        if (this.loseNext) {
+          this.loseNext = false;
+          throw new Error("timeout"); // accepted, but the answer never reached us
+        }
+      }
+    }
+    const resend = new FakeResend();
+    const loc = await tenant();
+    // Eight low-rated reviews whose IDs sort first, then one more whose ID sorts last: joined and cut to 256
+    // characters, both sets gave the same key.
+    const early = (id: string) => `0${id.slice(1)}`;
+    for (let i = 0; i < 8; i++) await review(loc, { rating: 1, id: early(randomUUID()) });
+    resend.loseNext = true;
+    expect(await sendLowRatingAlerts({ email: resend, baseUrl: BASE, now: NOW })).toEqual({ sent: 0, failed: 1 });
+    expect(await audit(loc, "low_rating_email_sent")).toHaveLength(0);
+
+    await review(loc, { rating: 2, id: `f${randomUUID().slice(1)}` });
+    expect(await sendLowRatingAlerts({ email: resend, baseUrl: BASE, now: NOW })).toEqual({ sent: 1, failed: 0 });
+    const mine = resend.delivered.filter((m) => m.idempotencyKey?.includes(loc));
+    expect(mine.map((m) => m.subject)).toEqual([
+      "8 new low-rated reviews: Digest Test Plumbing",
+      "9 new low-rated reviews: Digest Test Plumbing",
+    ]);
+    expect(new Set(mine.map((m) => m.idempotencyKey)).size).toBe(2);
+    expect(await audit(loc, "low_rating_email_sent")).toHaveLength(9);
+  });
+});
+
+describe("lowRatingIdempotencyKey", () => {
+  const loc = randomUUID();
+  const ids = Array.from({ length: 30 }, () => randomUUID());
+
+  it("is the same for the same reviews in any order, and within Resend's 256-character limit", () => {
+    const key = lowRatingIdempotencyKey(loc, ids);
+    expect(lowRatingIdempotencyKey(loc, [...ids].reverse())).toBe(key);
+    expect(lowRatingIdempotencyKey(loc, [...ids, ids[0]])).toBe(key);
+    expect(key).toMatch(new RegExp(`^low-rating/${loc}/[0-9a-f]{64}$`));
+    expect(key.length).toBeLessThanOrEqual(256);
+  });
+
+  it("differs for any other set of reviews, including sets that start with the same IDs, and per location", () => {
+    const sorted = [...ids].sort();
+    const keys = new Set([
+      lowRatingIdempotencyKey(loc, sorted),
+      lowRatingIdempotencyKey(loc, sorted.slice(0, 29)),
+      lowRatingIdempotencyKey(loc, sorted.slice(0, 6)),
+      lowRatingIdempotencyKey(loc, sorted.slice(1)),
+      lowRatingIdempotencyKey(randomUUID(), sorted),
+    ]);
+    expect(keys.size).toBe(5);
   });
 });

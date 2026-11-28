@@ -16,6 +16,7 @@
 //
 // No scheduler is chosen yet, so callers invoke these: sendDailyDigests every hour or more often (each location gets
 // its digest on the first run at or after DIGEST_HOUR local time), sendLowRatingAlerts every few minutes.
+import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, isNull, lte, ne, notExists, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses, locations, ownerAccounts, replyDrafts, reviews } from "../db/schema";
@@ -265,8 +266,17 @@ export function lowRatingEmail(r: Recipient, ratings: number[], reviewIds: strin
     // Stable for this exact set of reviews, so a retry of the same email is not sent twice. shortcut: if a send's
     // outcome was lost and a new low-rated review arrives before the retry, the retry is a new email that repeats
     // the earlier reviews; rare, and a repeated alert is a small harm.
-    idempotencyKey: `low-rating/${r.locationId}/${[...reviewIds].sort().join(",")}`.slice(0, 256),
+    idempotencyKey: lowRatingIdempotencyKey(r.locationId, reviewIds),
   } satisfies EmailMessage;
+}
+
+// The provider idempotency key for one low-rating email: the same for the same location and set of reviews (in any
+// order), different for any other set, and always within Resend's 256-character limit. A hash, not the joined IDs
+// cut to length: a cut key is shared by two sets that start with the same IDs, so a retry with more reviews would
+// reuse the earlier key with a different body, which Resend refuses (409) until it forgets the key (audit O-40-2).
+export function lowRatingIdempotencyKey(locationId: string, reviewIds: readonly string[]) {
+  const ids = [...new Set(reviewIds)].sort();
+  return `low-rating/${locationId}/${createHash("sha256").update(ids.join(",")).digest("hex")}`;
 }
 
 // Unanswered reviews of 2 stars or lower that the owner has not been emailed about yet. A review the owner already
