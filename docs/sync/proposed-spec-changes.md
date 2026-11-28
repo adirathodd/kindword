@@ -38,3 +38,5 @@ sync-2026-11-27-02 (SPEC sync at main 9d771e1) moved the header line to 9d771e1,
 sync-2026-11-27-04 (SPEC sync rerun at main 9d771e1) changed the **Implementation status** FR-9 row: its status is now "Implemented, one failure-path gap (noncompliant)", and the row ends with the T-82-1 note (test in #88) and the A-82-1 gap (fix in #87). Copy the row from `docs/SPEC.md`.
 
 The Google endpoint guard PR #86 (2026-11-27, SPEC Provider notes: Google OAuth) adds one **Implementation status** row after "Retention (Security)": "Google least privilege (Provider notes)". Copy the row from `docs/SPEC.md` into the Doc.
+
+#97 (offboarded intake, 2026-11-28, FR-20) changed the **Implementation status** FR-20 row: after "review polling skips offboarded ones." it adds the sentence about CSV and Sheet intake refusing an offboarded business. Copy the row from `docs/SPEC.md` into the Doc. Under **Decisions needed**, the S-5 item's "Main imports for any status and sends only for live businesses." now reads "Main imports for any status except offboarded (#97) and sends only for live businesses." (status note only; the decision stays open).

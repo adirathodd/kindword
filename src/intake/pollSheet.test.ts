@@ -221,6 +221,46 @@ describe("pollSheet", () => {
     expect(await visitsOf()).toHaveLength(0);
   });
 
+  // SPEC FR-20: an offboarded client's Sheet is not read and nothing more is stored for it.
+  const businessOf = async () =>
+    (await db.select().from(s.locations).where(eq(s.locations.id, t.locationId)))[0].businessId;
+  const setStatus = async (status: (typeof s.businessStatus.enumValues)[number]) =>
+    db
+      .update(s.businesses)
+      .set({ status })
+      .where(eq(s.businesses.id, await businessOf()));
+
+  it("does not read the Sheet of an offboarded business", async () => {
+    await setStatus("offboarded");
+    const readRows = vi.fn(reader.readRows);
+    expect(await pollSheet(t.sourceId, { readRows })).toEqual({ ok: false, error: "business_offboarded" });
+    expect(readRows).not.toHaveBeenCalled();
+    expect(await customersOf()).toHaveLength(0);
+    expect(await source()).toMatchObject({ lastRowId: null, lastReadAt: null });
+  });
+
+  it("stores nothing when the business is offboarded while the Sheet is being read", async () => {
+    const offboardingReader: SheetReader = {
+      readRows: async (id) => {
+        await setStatus("offboarded");
+        return reader.readRows(id);
+      },
+    };
+    const r = await pollSheet(t.sourceId, offboardingReader);
+    expect(r.ok && r.rows.map((x) => x.reason)).toEqual(Array(3).fill("business_offboarded"));
+    expect(await source()).toMatchObject({ lastRowId: null, lastReadAt: null });
+    expect(await customersOf()).toHaveLength(0);
+    expect(await visitsOf()).toHaveLength(0);
+  });
+
+  it("picks the Sheet up again once the business is switched back", async () => {
+    await setStatus("offboarded");
+    expect(await poll()).toMatchObject({ ok: false, error: "business_offboarded" });
+    await setStatus("live");
+    const r = await poll();
+    expect(r.ok && r.rows.map((x) => x.status)).toEqual(["inserted", "inserted", "inserted"]);
+  });
+
   it("rejects rows without a row ID, skips repeated IDs, ignores blank rows and short rows", async () => {
     sheet = [
       HEADER,
