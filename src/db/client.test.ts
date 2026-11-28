@@ -7,16 +7,12 @@ import { db, POOL_CONNECTION_TIMEOUT_MS, poolConfig } from "./client";
 
 const url = process.env.DATABASE_URL;
 
-// Pools a test made; any client still checked out (leaked or held) is released before ending.
-const pools: Pool[] = [];
+// Pools a test made, with the clients each has checked out (tracked through pg's public pool
+// events). Any still out (leaked or held) are released before the pool ends.
+const pools: { pool: Pool; out: Set<PoolClient> }[] = [];
 afterEach(async () => {
-  for (const pool of pools.splice(0)) {
-    const clients = (pool as unknown as { _clients: (PoolClient & { release?: () => void })[] })._clients;
-    for (const c of [...clients]) {
-      try {
-        c.release?.(); // only clients still checked out; an idle one throws
-      } catch {}
-    }
+  for (const { pool, out } of pools.splice(0)) {
+    for (const c of [...out]) c.release();
     await pool.end();
   }
 });
@@ -24,7 +20,10 @@ afterEach(async () => {
 // A pool built like the app's, with one connection so it is easy to use up.
 function onePool(overrides: { connectionTimeoutMillis?: number } = {}) {
   const pool = new Pool({ ...poolConfig(url), max: 1, ...overrides });
-  pools.push(pool);
+  const out = new Set<PoolClient>();
+  pool.on("acquire", (c) => out.add(c));
+  pool.on("release", (_err, c) => out.delete(c));
+  pools.push({ pool, out });
   return pool;
 }
 
