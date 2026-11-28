@@ -2,8 +2,8 @@
 // to the account's business; otherwise 404.
 import { getAccountSession, openInbox } from "../../../../accounts/accounts";
 import { accountSecret, notAllowed } from "../../../../accounts/http";
-import { inboxBaseUrl } from "../../../../inbox/auth";
-import { UUID_RE, html, redirect, sameOrigin, sessionCookie } from "../../../../inbox/http";
+import { UUID_RE, inboxBaseUrl } from "../../../../inbox/auth";
+import { html, redirect, sameOrigin, sessionCookie } from "../../../../inbox/http";
 
 export async function POST(req: Request, ctx: RouteContext<"/account/inbox/[locationId]">) {
   const baseUrl = inboxBaseUrl();

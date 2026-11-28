@@ -27,13 +27,24 @@ export function readCookie(req: Request, name: string) {
   return undefined;
 }
 
-const secure = (baseUrl: string) => (baseUrl.startsWith("https://") ? "; Secure" : "");
+// Every session cookie (owner inbox, owner account, operator): HttpOnly, scoped to its own path, Secure on https.
+// No value and no expiry clears it.
+export const cookieHeader = (
+  name: string,
+  path: string,
+  sameSite: "Lax" | "Strict",
+  baseUrl: string,
+  value = "",
+  expiresAt = new Date(0),
+) =>
+  `${name}=${value}; Path=${path}; Expires=${expiresAt.toUTCString()}; HttpOnly; SameSite=${sameSite}${
+    baseUrl.startsWith("https://") ? "; Secure" : ""
+  }`;
 
 export const sessionCookie = (secret: string, expiresAt: Date, baseUrl: string) =>
-  `${SESSION_COOKIE}=${secret}; Path=/inbox; Expires=${expiresAt.toUTCString()}; HttpOnly; SameSite=Lax${secure(baseUrl)}`;
+  cookieHeader(SESSION_COOKIE, "/inbox", "Lax", baseUrl, secret, expiresAt);
 
-export const clearSessionCookie = (baseUrl: string) =>
-  `${SESSION_COOKIE}=; Path=/inbox; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax${secure(baseUrl)}`;
+export const clearSessionCookie = (baseUrl: string) => cookieHeader(SESSION_COOKIE, "/inbox", "Lax", baseUrl);
 
 // Form posts must come from our own pages. SameSite=Lax already keeps the cookie off cross-site posts; this also
 // refuses them outright (and covers the sign-in form, which has no cookie yet).
@@ -65,7 +76,7 @@ form{margin:.5rem 0 0}.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:cen
 button{font:inherit;font-weight:500;padding:.5rem 1rem;border-radius:var(--k-radius-md);border:1px solid var(--k-line);background:var(--k-surface);color:var(--k-ink);cursor:pointer}button.primary{background:var(--k-ink);border-color:var(--k-ink);color:var(--k-ink-on)}
 :focus-visible{outline:2px solid var(--k-ink);outline-offset:2px}
 details{margin-top:.5rem}summary{cursor:pointer;color:var(--k-ink);font-weight:500}label{display:flex;gap:.4rem;align-items:flex-start}.empty{color:var(--k-muted)}
-label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password],input[type=tel]{font:inherit;color:inherit;padding:.45rem .6rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card);width:100%;max-width:24rem;box-sizing:border-box}a{color:var(--k-ink)}`;
+label.stack{flex-direction:column;gap:.25rem}input[type=text],input[type=email],input[type=password],input[type=tel],select{font:inherit;color:inherit;padding:.45rem .6rem;border:1px solid var(--k-line);border-radius:var(--k-radius-md);background:var(--k-card);width:100%;max-width:24rem;box-sizing:border-box}a{color:var(--k-ink)}`;
 
 const FLAG_LABELS: Record<string, string> = {
   low_rating: "Rating of 2 stars or lower",
@@ -143,8 +154,6 @@ export function inboxPage(inbox: Inbox, notice: string | null) {
     `${n ? `<p class="notice${n[1] ? " error" : ""}" role="status">${e(n[0])}</p>` : ""}<h2>Waiting for you (${inbox.pending.length})</h2>${pending}${approved}<h2>Posted in the last 30 days</h2>${posted}<form method="post" action="/inbox/sign-out"><button type="submit">Sign out</button></form>`,
   );
 }
-
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // An owner email named a location the session does not cover (audit F-40-1). Shows nothing about either location:
 // the account route checks the location belongs to the signed-in business before opening its inbox.

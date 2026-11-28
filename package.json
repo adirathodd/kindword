@@ -14,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "operator:setup": "node scripts/operator-setup.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

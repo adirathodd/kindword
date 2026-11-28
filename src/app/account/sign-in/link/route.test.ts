@@ -8,7 +8,7 @@ import { routeDeps } from "../../../../accounts/http";
 import { db } from "../../../../db/client";
 import * as s from "../../../../db/schema";
 import type { EmailMessage } from "../../../../email/provider";
-import { LINK_LIMITS } from "../../../../inbox/linkRequest";
+import { LIMITS } from "../../../../accounts/accounts";
 import * as inbox from "../../../inbox/route";
 import * as useLink from "../../../inbox/sign-in/[token]/route";
 import * as resetReq from "../../reset/route";
@@ -270,13 +270,13 @@ describe("email me a sign-in link", () => {
 
   it("rate-limits per email across IPs and per IP across emails", async () => {
     await business("busy@link.example.test", ["Main"]);
-    for (let i = 0; i < LINK_LIMITS.signInLinkEmail.max; i++)
+    for (let i = 0; i < LIMITS.signInLinkEmail.max; i++)
       expect((await ask("busy@link.example.test", { "x-real-ip": `10.2.0.${i}` })).status).toBe(200);
     const limited = await ask("busy@link.example.test", { "x-real-ip": "10.2.1.1" });
     expect(limited.status).toBe(429);
-    expect(sent).toHaveLength(LINK_LIMITS.signInLinkEmail.max);
+    expect(sent).toHaveLength(LIMITS.signInLinkEmail.max);
 
-    for (let i = 0; i < LINK_LIMITS.signInLinkIp.max; i++)
+    for (let i = 0; i < LIMITS.signInLinkIp.max; i++)
       expect((await ask(`n${i}@link.example.test`, { "x-real-ip": "10.3.0.1" })).status).toBe(200);
     expect((await ask("one-more@link.example.test", { "x-real-ip": "10.3.0.1" })).status).toBe(429);
   });

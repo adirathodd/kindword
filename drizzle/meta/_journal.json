@@ -127,6 +127,13 @@
       "when": 1795738280641,
       "tag": "0017_delivery_receipts_and_job_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795867768208,
+      "tag": "0018_operator_sessions",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@
 import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, replyDrafts, reviews } from "../db/schema";
-import type { OwnerSession } from "./auth";
+import { UUID_RE, type OwnerSession } from "./auth";
 
 const HOUR = 60 * 60 * 1000;
 export const OVERDUE_MS = 48 * HOUR; // Flow 3 step 5
@@ -108,8 +108,7 @@ export async function decide(
   db: Db = defaultDb,
 ): Promise<DecisionResult> {
   const now = opts.now ?? new Date();
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(draftId))
-    return { ok: false, reason: "not_found" };
+  if (!UUID_RE.test(draftId)) return { ok: false, reason: "not_found" };
   if (decision.action === "approve_anyway" && !decision.confirmed) return { ok: false, reason: "needs_confirmation" };
   let text: string | undefined;
   if (decision.action === "edit") {
