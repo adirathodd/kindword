@@ -23,7 +23,7 @@
 import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses } from "../db/schema";
-import { logPurgeFailure, RetentionPurgeIncompleteError } from "./incomplete";
+import { logPurgeFailure, MAX_CONSECUTIVE_FAILURES, RetentionPurgeIncompleteError } from "./incomplete";
 
 export const OFFBOARDED_RETENTION_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -53,11 +53,18 @@ export async function purgeOffboardedBusinesses(
   // One business per transaction: a large business never holds locks on the others, and a failure rolls back and
   // skips only that business (audit O-59-1). The rest are still deleted in this run; the job then reports the
   // failure and is retried (RetentionPurgeIncompleteError).
-  for (const { id } of due) {
+  let inARow = 0;
+  for (const [i, { id }] of due.entries()) {
+    if (inARow >= MAX_CONSECUTIVE_FAILURES) {
+      failed += due.length - i; // not tried; the retry or the next run picks them up
+      break;
+    }
     try {
       if (await purgeOne(db, id, cutoff)) deleted++;
+      inARow = 0;
     } catch (e) {
       failed++;
+      inARow++;
       logPurgeFailure("business", id, e);
     }
   }

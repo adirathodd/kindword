@@ -204,7 +204,7 @@ describe("purgeExpiredCustomers", () => {
       expect(await purgeAudits(stuck.id)).toHaveLength(0);
 
       const lines = errors.mock.calls.map((c) => c.join(" "));
-      expect(lines).toContainEqual(expect.stringContaining(`retention: location failed id=${bad.locationId} error=`));
+      expect(lines).toContain(`retention: location failed id=${bad.locationId} error=P0001`);
       expect(lines.join("\n") + (err as Error).message).not.toMatch(/example\.test|blocked/);
     } finally {
       errors.mockRestore();

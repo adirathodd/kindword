@@ -22,7 +22,7 @@
 import { and, eq, gt, inArray, lte, notExists, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, customers, visits } from "../db/schema";
-import { logPurgeFailure, RetentionPurgeIncompleteError } from "./incomplete";
+import { logPurgeFailure, MAX_CONSECUTIVE_FAILURES, RetentionPurgeIncompleteError } from "./incomplete";
 
 export const CUSTOMER_RETENTION_MONTHS = 12;
 const BATCH = 500;
@@ -63,7 +63,12 @@ export async function purgeExpiredCustomers(
   // that location; the other locations are still purged in this run (audit O-59-1). Batches already committed for the
   // failed location stay deleted. The job then reports the failure and is retried (RetentionPurgeIncompleteError).
   let failed = 0;
-  for (const { locationId } of locationRows) {
+  let inARow = 0;
+  for (const [i, { locationId }] of locationRows.entries()) {
+    if (inARow >= MAX_CONSECUTIVE_FAILURES) {
+      failed += locationRows.length - i; // not tried; the retry or the next run picks them up
+      break;
+    }
     try {
       for (;;) {
         const n = await db.transaction(async (tx) => {
@@ -104,8 +109,10 @@ export async function purgeExpiredCustomers(
         total += n.deleted;
         if (!n.full) break;
       }
+      inARow = 0;
     } catch (e) {
       failed++;
+      inARow++;
       logPurgeFailure("location", locationId, e);
     }
   }

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import { purgeOffboardedBusinesses } from "./businesses";
-import { RetentionPurgeIncompleteError } from "./incomplete";
+import { MAX_CONSECUTIVE_FAILURES, RetentionPurgeIncompleteError } from "./incomplete";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date();
@@ -237,7 +237,8 @@ describe("purgeOffboardedBusinesses", () => {
       expect(await db.select().from(s.auditLog).where(eq(s.auditLog.entityId, stuck.businessId))).toHaveLength(0);
 
       const lines = errors.mock.calls.map((c) => c.join(" "));
-      expect(lines).toContainEqual(expect.stringContaining(`retention: business failed id=${stuck.businessId} error=`));
+      // P0001: the SQLSTATE of a plpgsql raise, from the pg error drizzle wraps.
+      expect(lines).toContain(`retention: business failed id=${stuck.businessId} error=P0001`);
       expect(lines.join("\n")).not.toMatch(/example\.test|blocked/);
     } finally {
       errors.mockRestore();
@@ -248,6 +249,34 @@ describe("purgeOffboardedBusinesses", () => {
     expect((await purgeOffboardedBusinesses({ now: NOW })).businesses).toBeGreaterThanOrEqual(1);
     expect(await get(stuck.businessId)).toBeUndefined();
     expect(await db.select().from(s.auditLog).where(eq(s.auditLog.entityId, stuck.businessId))).toHaveLength(1);
+  });
+
+  it("stops after 5 failures in a row and counts the businesses it did not try as failed", async () => {
+    const stuck = [];
+    for (let i = 0; i <= MAX_CONSECUTIVE_FAILURES; i++) stuck.push(await business("offboarded", daysAgo(200 - i)));
+    const later = await business("offboarded", daysAgo(40)); // newer than every stuck one, so tried after them
+    const fn = `test_block_many_${RUN}`;
+    const ids = stuck.map((b) => `'${b.id}'`).join(",");
+    await db.execute(
+      sql.raw(`create function ${fn}() returns trigger language plpgsql as $$ begin
+        if old.id in (${ids}) then raise exception 'blocked'; end if;
+        return old; end $$;
+        create trigger ${fn} before delete on businesses for each row execute function ${fn}();`),
+    );
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const err = await purgeOffboardedBusinesses({ now: NOW }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RetentionPurgeIncompleteError);
+      // 5 tried and failed, then the 6th stuck one and `later` were not tried.
+      expect(err).toMatchObject({ failed: MAX_CONSECUTIVE_FAILURES + 2, deleted: 0 });
+      expect(errors).toHaveBeenCalledTimes(MAX_CONSECUTIVE_FAILURES);
+      expect(await get(later.id)).toBeDefined();
+    } finally {
+      errors.mockRestore();
+      await db.execute(sql.raw(`drop trigger if exists ${fn} on businesses; drop function if exists ${fn}();`));
+    }
+    await purgeOffboardedBusinesses({ now: NOW });
+    for (const b of [...stuck, later]) expect(await get(b.id)).toBeUndefined();
   });
 
   it("rejects a margin outside 0 to 30 days", async () => {
