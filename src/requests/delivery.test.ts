@@ -1,6 +1,6 @@
 // Delivery receipts (FR-17 "delivered") through recordDelivery and the two webhook routes, against the Postgres in
 // DATABASE_URL. Fake data only: example.test addresses, made-up provider IDs, no outside calls.
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
@@ -10,6 +10,7 @@ import { POST as emailEvents } from "../app/api/email/events/route";
 import { resendSignature } from "../email/resendWebhook";
 import { twilioSignature } from "../sms/twilio";
 import { DELIVERED_ACTION, recordDelivery } from "./delivery";
+import { recordSmsFailure, scheduleReminders } from "./requests";
 
 const SID = "AC00000000000000000000000000000000";
 const TOKEN = "test-auth-token-0123456789abcdef";
@@ -186,6 +187,23 @@ describe("POST /api/sms/status", () => {
     expect(await receipts(id)).toHaveLength(0);
   });
 
+  it("answers 503 naming the setting when TWILIO_STATUS_CALLBACK_URL is malformed (O-66-3)", async () => {
+    vi.stubEnv("TWILIO_STATUS_CALLBACK_URL", "not a url");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await smsStatus(callback(fields(smsSid(), "delivered")))).status).toBe(503);
+    const logged = errors.mock.calls.flat().join(" ");
+    expect(logged).toContain("TWILIO_STATUS_CALLBACK_URL");
+    expect(logged).not.toContain("not a url");
+    errors.mockRestore();
+  });
+
+  it("looks requests up by an index on provider_message_id (O-66-2)", async () => {
+    const { rows } = await db.execute<{ indexdef: string }>(
+      sql`select indexdef from pg_indexes where tablename = 'review_requests'`,
+    );
+    expect(rows.some((r) => /\(provider_message_id\)/.test(r.indexdef))).toBe(true);
+  });
+
   it("answers 503 naming nothing secret when Twilio is not configured", async () => {
     vi.stubEnv("TWILIO_AUTH_TOKEN", "");
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -279,5 +297,212 @@ describe("POST /api/email/events", () => {
     }
     expect(errors.mock.calls.flat().join(" ")).not.toContain(KEY.toString("base64"));
     errors.mockRestore();
+  });
+});
+
+// FR-6 (owner decision 2026-11-27, audit O-66-4): a text Twilio took but later reported undelivered or failed counts
+// as the text failing, so the request goes by email instead, once, and never on top of a text that arrived.
+describe("carrier failure after Twilio took the text (FR-6)", () => {
+  const PHONE = "+12015550142";
+  async function textRequest(
+    t: Awaited<ReturnType<typeof tenant>>,
+    o: { email?: boolean; attempt?: 1 | 2; clicked?: boolean; phone?: string } = {},
+  ) {
+    const [a] = await db
+      .insert(s.consentAttestations)
+      .values({ businessId: t.businessId, signedAt: new Date(), documentRef: "a.pdf", listDescription: "estimates" })
+      .returning();
+    const mail = o.email === false ? null : `f${n}@example.test`;
+    const phone = o.phone ?? `+1201555${String(1000 + (n % 9000)).padStart(4, "0")}`;
+    const [c] = await db
+      .insert(s.customers)
+      .values({
+        locationId: t.locationId,
+        businessId: t.businessId,
+        phone,
+        normalizedPhone: phone,
+        email: mail,
+        normalizedEmail: mail,
+        consentMethod: "signed_estimate",
+        consentWordingVersion: "v1",
+        consentAt: new Date(),
+        consentEvidenceRef: "estimate.pdf",
+        attestationId: a.id,
+      })
+      .returning();
+    const [v] = await db
+      .insert(s.visits)
+      .values({
+        customerId: c.id,
+        locationId: t.locationId,
+        visitAt: new Date(),
+        source: "csv",
+        externalVisitId: `f${n++}`,
+      })
+      .returning();
+    const sid = smsSid();
+    const sentAt = new Date(Date.now() - 60_000);
+    if (o.attempt === 2)
+      await db.insert(s.reviewRequests).values({
+        visitId: v.id,
+        scheduledFor: sentAt,
+        sentAt,
+        channel: "sms",
+        status: "sent",
+        attempt: 1,
+        providerMessageId: smsSid(),
+      });
+    const [rr] = await db
+      .insert(s.reviewRequests)
+      .values({
+        visitId: v.id,
+        scheduledFor: sentAt,
+        sentAt,
+        channel: "sms",
+        status: "sent",
+        attempt: o.attempt ?? 1,
+        providerMessageId: sid,
+        clickedAt: o.clicked ? new Date() : null,
+      })
+      .returning();
+    return { sid, rr, visitId: v.id, customer: c };
+  }
+  const rows = (visitId: string) => db.select().from(s.reviewRequests).where(eq(s.reviewRequests.visitId, visitId));
+  const emails = async (visitId: string) => (await rows(visitId)).filter((r) => r.channel === "email");
+
+  it("fails the text and schedules the request by email once, whatever repeats", async () => {
+    const t = await tenant();
+    const { sid, rr, visitId } = await textRequest(t);
+    expect(await recordSmsFailure(sid, 30003)).toBe("failed");
+    expect(await recordSmsFailure(sid, 30003)).toBe("ignored");
+    expect(await recordSmsFailure(sid, null)).toBe("ignored");
+    const [text] = (await rows(visitId)).filter((r) => r.id === rr.id);
+    expect(text).toMatchObject({ status: "failed", sentAt: null, outcomeUnknown: false });
+    const mail = await emails(visitId);
+    expect(mail).toHaveLength(1);
+    expect(mail[0]).toMatchObject({ status: "scheduled", attempt: 1 });
+    const failed = await db
+      .select()
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.entityId, rr.id), eq(s.auditLog.action, "failed")));
+    expect(failed.map((r) => r.detail)).toEqual(["attempt=1;channel=sms;error=carrier_undelivered"]);
+  });
+
+  it("two failure callbacks at once schedule one email", async () => {
+    const t = await tenant();
+    const { sid, visitId } = await textRequest(t);
+    const results = await Promise.all([recordSmsFailure(sid, 30005), recordSmsFailure(sid, 30005)]);
+    expect(results.sort()).toEqual(["failed", "ignored"]);
+    expect(await emails(visitId)).toHaveLength(1);
+  });
+
+  it("ignores a failure status for a text that was clicked or confirmed delivered", async () => {
+    const t = await tenant();
+    const clicked = await textRequest(t, { clicked: true });
+    expect(await recordSmsFailure(clicked.sid, 30003)).toBe("ignored");
+    const delivered = await textRequest(t);
+    expect(await recordDelivery("sms", delivered.sid)).toBe("recorded");
+    expect(await recordSmsFailure(delivered.sid, 30003)).toBe("ignored");
+    for (const r of [clicked, delivered]) {
+      expect((await rows(r.visitId)).find((x) => x.id === r.rr.id)?.status).toBe("sent");
+      expect(await emails(r.visitId)).toHaveLength(0);
+    }
+  });
+
+  it("sends no email for a failed reminder, a customer without email, or an opted-out customer", async () => {
+    const t = await tenant();
+    const reminder = await textRequest(t, { attempt: 2 });
+    const noEmail = await textRequest(t, { email: false });
+    const optedOut = await textRequest(t, { phone: "+12015550143" });
+    await db.insert(s.suppressionList).values({
+      locationId: null,
+      channel: "email",
+      address: optedOut.customer.normalizedEmail!,
+      source: "customer_email",
+    });
+    for (const r of [reminder, noEmail, optedOut]) {
+      expect(await recordSmsFailure(r.sid, 30003)).toBe("failed");
+      expect(await emails(r.visitId)).toHaveLength(0);
+    }
+    await db.delete(s.suppressionList).where(eq(s.suppressionList.address, optedOut.customer.normalizedEmail!));
+  });
+
+  it("sends no email once the visit has a reminder (at most 2 messages per job)", async () => {
+    const t = await tenant();
+    const { sid, visitId } = await textRequest(t);
+    await db
+      .insert(s.reviewRequests)
+      .values({ visitId, scheduledFor: new Date(), channel: "sms", status: "scheduled", attempt: 2 });
+    expect(await recordSmsFailure(sid, 30003)).toBe("failed");
+    expect(await emails(visitId)).toHaveLength(0);
+  });
+
+  it("records a Twilio 21610 as an opt-out and sends nothing else", async () => {
+    const t = await tenant();
+    const phone = "+12015550144";
+    const { sid, visitId } = await textRequest(t, { phone });
+    expect(await recordSmsFailure(sid, 21610)).toBe("failed");
+    expect(await emails(visitId)).toHaveLength(0);
+    const sup = await db.select().from(s.suppressionList).where(eq(s.suppressionList.address, phone));
+    expect(sup.length).toBeGreaterThan(0);
+    await db.delete(s.suppressionList).where(eq(s.suppressionList.address, phone));
+  });
+
+  it("does not schedule a text reminder for the failed text", async () => {
+    const t = await tenant();
+    const { sid, visitId } = await textRequest(t);
+    expect(await recordSmsFailure(sid, 30003)).toBe("failed");
+    await scheduleReminders({ reminderDelayMs: 0 });
+    expect((await rows(visitId)).filter((r) => r.attempt === 2)).toHaveLength(0);
+  });
+
+  it("ignores unknown SIDs and email IDs", async () => {
+    const t = await tenant();
+    await request(t, { channel: "email", providerMessageId: `em-${RUN}-cf` });
+    expect(await recordSmsFailure(`em-${RUN}-cf`, 30003)).toBe("unknown");
+    expect(await recordSmsFailure(smsSid(), 30003)).toBe("unknown");
+    expect(await recordSmsFailure("  ", null)).toBe("unknown");
+  });
+
+  describe("through POST /api/sms/status", () => {
+    beforeEach(() => {
+      vi.stubEnv("TWILIO_ACCOUNT_SID", SID);
+      vi.stubEnv("TWILIO_AUTH_TOKEN", TOKEN);
+      vi.stubEnv("APP_BASE_URL", BASE);
+      vi.stubEnv("TWILIO_WEBHOOK_URL", "");
+      vi.stubEnv("TWILIO_STATUS_CALLBACK_URL", "");
+    });
+    afterEach(() => vi.unstubAllEnvs());
+    const signed = (fields: Record<string, string>) => {
+      const params = new URLSearchParams({ AccountSid: SID, From: "+12015550190", To: PHONE, ...fields });
+      return new Request(STATUS_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "x-twilio-signature": twilioSignature(TOKEN, STATUS_URL, params),
+        },
+        body: params,
+      });
+    };
+
+    for (const status of ["undelivered", "failed"])
+      it(`a signed "${status}" status sends the request by email instead`, async () => {
+        const t = await tenant();
+        const { sid, rr, visitId } = await textRequest(t);
+        const res = await smsStatus(signed({ MessageSid: sid, MessageStatus: status, ErrorCode: "30003" }));
+        expect(res.status).toBe(204);
+        expect((await rows(visitId)).find((x) => x.id === rr.id)?.status).toBe("failed");
+        expect(await emails(visitId)).toHaveLength(1);
+      });
+
+    it("an unsigned failure status changes nothing", async () => {
+      const t = await tenant();
+      const { sid, rr, visitId } = await textRequest(t);
+      const params = new URLSearchParams({ AccountSid: SID, MessageSid: sid, MessageStatus: "undelivered" });
+      const res = await smsStatus(new Request(STATUS_URL, { method: "POST", body: params }));
+      expect(res.status).toBe(403);
+      expect((await rows(visitId)).find((x) => x.id === rr.id)?.status).toBe("sent");
+      expect(await emails(visitId)).toHaveLength(0);
+    });
   });
 });

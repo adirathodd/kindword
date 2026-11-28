@@ -1,31 +1,31 @@
 {
-  "sync_id": "sync-2026-11-26-04",
-  "synced_at": "2026-11-26T17:35Z to 18:30Z",
+  "sync_id": "sync-2026-11-27-04",
+  "synced_at": "2026-11-27 ~11:45-12:30 UTC (scheduled rerun at the same SHA; sync-2026-11-27-03 was a Notion-only rerun)",
   "repository": "adirathodd/review-automation (GitHub reports adirathodd/kindword)",
   "target_branch": "main",
-  "audited_sha": "9f7a11928d56dcf7d1368e4f747af5088dfd2bbd",
-  "main_moved_during_run": "yes: 66a966e -> 3fefa4c (#65) during the run; then 51d99ce (#73, SPEC only: D-2 decided, new FR-25, D-14 to D-18) before the owner asked for an update. #65 and #73 reviewed; branch merged with main; then 9f7a119 (#66, delivery receipts for FR-17), reviewed and merged into this branch",
+  "audited_sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
+  "main_moved_during_run": false,
   "previous_sync": {
-    "sync_id": "sync-2026-11-26-02 (sync-2026-11-26-03 was a same-SHA rerun recorded in Notion only)",
-    "audited_sha": "f3d6d49fcfdc0ba3424542329ee46d854db43292",
-    "status": "complete_with_documented_discrepancies"
+    "sync_id": "sync-2026-11-27-02",
+    "audited_sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
+    "status": "complete_with_documented_discrepancies",
+    "pr": "#85 (open; this PR builds on it and supersedes it)"
   },
-  "commits_reviewed": "f3d6d49..9f7a119: #64, #60, #61, #69, #71, #70, #68, #72, #67, #59, #65, #73, #66. Open PRs #49, #51, #62, #63 not used as evidence",
+  "commits_reviewed": "No new commits on main since 9d771e1. Rechecked #82's code after audit-2026-11-27-02 rerun (open PR #87) reported A-82-1. Open PRs #49, #51, #78, #79, #84, #85, #86, #87, #88 not used as evidence of implementation; #87's new test was run against main's code only to confirm the gap",
   "sources_of_truth": {
     "spec": "docs/SPEC.md and the Claude Doc https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs, always kept in sync (owner decision D-1, 2026-11-24)",
     "status_and_priorities": "Notion: Kindword (v1.0), https://app.notion.com/p/420000200ba98170a686ee8e3cb40d3d",
     "sync_log": "Notion: SPEC sync log, https://app.notion.com/p/421000200ba9812c94dccabe099500f0",
     "doc_status": "Read via the Artifact tool: it is a Claude Docs document; no Claude Docs connector in this session, so its text could not be read or written. Edits the Doc still needs: docs/sync/proposed-spec-changes.md"
   },
-  "evidence": "Code read on main 66a966e and 3fefa4c for each PR (src/requests/requests.ts, src/email/resend.ts, src/optout/confirmations.ts, src/jobs/jobs.ts, src/accounts/accounts.ts, src/inbox/linkRequest.ts, src/app/inbox/route.ts, src/retention/businesses.ts, src/reviews/poll.ts, drizzle 0012-0016, vercel.json, src/compliance/compliance.ts for #65). Node 24.22.3 + local Postgres 16, migrations 0000-0016 applied: 639/639 vitest pass at 66a966e and 642/642 at 3fefa4c. next build not run (docs-only change). #73 changes docs only, so the 3fefa4c test run covers 51d99ce's code; checked on main that / has no link to /account and /account does not redirect a single-location owner to the inbox (D-2 not built). At 9f7a119 (#66): src/requests/delivery.ts, src/app/api/sms/status, src/app/api/email/events, src/reports/monthly.ts read; 670/670 vitest pass",
-  "requirements_reviewed": "All FR-1 to FR-25 rows and the Retention row re-checked against main; changed: FR-5, FR-6, FR-7, FR-8, FR-9, FR-13, FR-20, FR-23, FR-24, Retention (Security)",
+  "evidence": "Code read on main: src/requests/requests.ts deliver() failure path (maybeSentAt kept from the first send, failRequest clears sent_at, scheduled_for left at the retry's due time) and askedRecently lastContact. #87's test 'counts an email whose last retry had an unknown outcome until 90 days after that retry went out' run against main's requests.ts fails (scheduledFor 17:15, retry went out 17:29). Node 22.23.5 + Postgres 16: 702/719 vitest pass; the 17 failures are all crypto.argon2 tests that need Node 24 (runtime, password, account routes, sign-in link); sync-2026-11-27-03 recorded 719/719 on Node 24 at this SHA. Prettier and eslint clean",
+  "requirements_reviewed": "FR-9 (status row, A-82-1); other rows unchanged since sync-2026-11-27-02 (no code changes)",
   "requirements": {
     "implemented": [
       "FR-3",
       "FR-6",
       "FR-7",
       "FR-8",
-      "FR-9",
       "FR-10",
       "FR-12",
       "FR-14",
@@ -38,31 +38,22 @@
     "later": ["FR-4", "FR-21"],
     "noncompliant": [
       "FR-13: D-2 entry point decided (#73) but not built: no Sign in link on /, /account does not go straight to a single location's inbox",
-      "FR-24: imports not refused for onboarding businesses (S-5)"
+      "FR-24: imports not refused for onboarding businesses (S-5)",
+      "FR-9: last email retry with an unknown outcome dated by its due time, not when it went out (A-82-1, fix in open #87)"
     ],
     "status_changes_since_last_sync": {
-      "FR-7": "implemented with one failure-path gap -> implemented (#60 fixes F-43-1)",
-      "FR-8": "implemented with one failure-path gap -> implemented, not live-tested (#72 fixes F-9-2)",
-      "FR-20": "not implemented -> partial (#59 deletes 29 days after offboarding; no offboarding action, no Google revoke, no export)",
-      "Retention (Security)": "partial -> implemented, not live-tested; D-13 open (#59)",
-      "FR-23": "partial (draft wording); F-45-R fixed by #65",
-      "FR-25": "new requirement (#73): not implemented",
-      "FR-13": "partial; F-40-1 fixed (#68), F-36-2 fixed (#70); D-2 decided (#73), not built",
-      "FR-5, FR-6, FR-9, FR-24": "status unchanged; rows record #67, #71, #69, #70",
-      "FR-17": "partial; delivered now counted (#66, Resend webhook not yet configured in production); O-53-1 remains",
-      "FR-19": "partial; delivery receipt audit rows added (#66)"
+      "FR-9": "Implemented -> Implemented, one failure-path gap (noncompliant) (A-82-1)"
     }
   },
   "spec_changes": [
-    "Header: last synced against 9f7a119",
-    "Implementation status: FR-5, FR-6, FR-7, FR-8, FR-9, FR-13, FR-17, FR-19, FR-20, FR-23, FR-24, Retention (Security)",
-    "Data model: businesses.offboarded_at; review_requests.outcome_unknown, send_attempts, maybe_sent_at; new optout_confirmations row",
-    "Decisions needed: F-40-1 marked resolved by #68 (D-2 still open); D-11 note that F-9-2 is fixed by #72",
-    "Merged with #73: FR-13 status row combines #73's D-2 gap with F-40-1 fixed by #68; F-40-1 decision item ticked with #73's FR-25 note kept"
+    "Header: last synced against 9d771e1",
+    "Implementation status intro: on main at 9d771e1 (closes audit O-82-1)",
+    "FR-9 row: the 'still counts if later skipped' clause is met by the maybe_sent_at condition (#71) but no test pins it",
+    "FR-9 status row: noncompliant failure-path gap A-82-1 (fix in #87); T-82-1 test in #88"
   ],
-  "doc_edits_pending": "docs/sync/proposed-spec-changes.md; no Claude Docs connector in this session",
-  "notion_changes": "see the SPEC sync log entry sync-2026-11-26-04",
-  "open_documentation_prs": ["this PR (sync-2026-11-26-04)"],
+  "doc_edits_pending": "docs/sync/proposed-spec-changes.md (sync-2026-11-27-02 edits plus this sync's FR-9 row); no Claude Docs connector in this session",
+  "notion_changes": "see the SPEC sync log entry sync-2026-11-27-04 (new to-do for A-82-1)",
+  "open_documentation_prs": ["this PR (sync-2026-11-27-04, includes #85's commit; close #85 if this merges)"],
   "open_decisions": [
     "D-3 password change (FR-24)",
     "D-4 breached-password check outage (FR-24)",
@@ -80,17 +71,27 @@
     "D-12 email sends without Twilio",
     "D-13 consent evidence retention (lawyer)",
     "Google-connect location ID lookup (Notion)",
-    "Bounce and complaint handling (Notion, from open #66)",
+    "Bounce and complaint handling (Notion; the undelivered-text part is done by #80, D-19)",
     "D-14 to D-18 (FR-25, #73; D-18 a lawyer should check)"
   ],
   "open_observations": [
     "O-1 no E.164 check on locations.sms_number",
     "O-2 sheet_sources attestation FK not tenant-scoped",
-    "O-43-1 90-day window dated by scheduled_for for outcome-unknown sends",
     "O-46-1 failure-path transaction error aborts the batch",
     "O-40-1 audit_log NOT EXISTS without an index",
-    "O-53-2 clicks can exceed sends"
+    "O-53-2 clicks can exceed sends",
+    "O-72-1 a review request sent just after an opt-out can count as the confirmation (lost, never doubled)",
+    "O-72-2 clock skew over 1 s in the confirmation lookup",
+    "O-59-1 purgeOffboardedBusinesses has no per-business catch",
+    "O-80-1 a clock running ahead can make /api/status/jobs report a job late for up to an hour (false alarm only)",
+    "O-80-2 simultaneous delivered and undelivered receipts for one SID could both apply (not seen with real Twilio)",
+    "T-82-1 no test pins that a possibly-sent request still counts for FR-9 after it is skipped"
   ],
+  "owner_actions": [
+    "Point an uptime monitor outside Vercel at GET /api/status/jobs (#62); until then the Stack 'daily check that jobs ran' has no watcher",
+    "Resend webhook for email.delivered (RESEND_WEBHOOK_SECRET, #66)"
+  ],
+  "cross_check": "audit-2026-11-27-02 rerun (open PR #87) found A-82-1; confirmed independently here by reading main and running #87's test against main's code",
   "status": "complete_with_documented_discrepancies",
-  "next_sync_starts_after": "9f7a11928d56dcf7d1368e4f747af5088dfd2bbd"
+  "next_sync_starts_after": "9d771e167474cfb9c99f07ea8b2b349350c718d7"
 }

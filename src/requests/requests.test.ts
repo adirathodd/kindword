@@ -1,7 +1,7 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: 555-01xx numbers, example.test emails. No live sends.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { GET as clickGET, HEAD as clickHEAD } from "../app/r/[id]/route";
 import { GET as unsubGET, POST as unsubPOST } from "../app/u/[token]/route";
 import { db } from "../db/client";
@@ -9,8 +9,13 @@ import { ResendEmail } from "../email/resend";
 import * as s from "../db/schema";
 import type { EmailMessage, EmailProvider } from "../email/provider";
 import type { InboundSms, SmsProvider } from "../sms/provider";
+import { optOutEmail, unsubscribeToken } from "../optout/optout";
 import { TwilioSms } from "../sms/twilio";
 import {
+  applyPendingReceipts,
+  handleReceipt,
+  purgePendingReceipts,
+  PENDING_RECEIPT_MAX_AGE_MS,
   recordClick,
   runReviewRequestJobs,
   scheduleReminders,
@@ -735,6 +740,112 @@ describe("90-day rule (FR-9)", () => {
     expect((await one(second)).skipReason).toBe("duplicate");
   });
 
+  // O-43-1: a send with an unknown outcome is dated by when it may have reached the customer (maybe_sent_at), not by
+  // when it was due. Here the text went out 2 days late (for example the business went live late), then timed out.
+  it("dates an unknown-outcome send by when it went out, not when it was due", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ mail: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    const late = plus(DUE, 2 * DAY); // noon in New York, still inside the 72-hour stale limit
+    sms.failWith = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    expect(await send(late)).toMatchObject({ sent: 0, failed: 1 });
+    expect(await one(first)).toMatchObject({ status: "failed", outcomeUnknown: true, maybeSentAt: late });
+    sms.failWith = null;
+
+    // Due 89 days after the send went out (91 days after it was due): still within 90 days, so not asked.
+    const v89 = await t.visit(c, plus(VISIT, 2 * DAY + 89 * DAY));
+    expect(await scheduleReviewRequests({ now: plus(VISIT, 2 * DAY + 89 * DAY) })).toEqual({
+      scheduled: 0,
+      skipped: { duplicate: 1 },
+    });
+    expect((await one(v89)).skipReason).toBe("duplicate");
+
+    // Due 91 days after the send went out: asked as usual.
+    const v91 = await t.visit(c, plus(VISIT, 2 * DAY + 91 * DAY));
+    await scheduleReviewRequests({ now: plus(VISIT, 2 * DAY + 91 * DAY) });
+    expect((await one(v91)).status).toBe("scheduled");
+  });
+
+  // O-43-1: an email retried through an outage may have reached the customer at its first send (maybe_sent_at), even
+  // though it is marked sent at its last one, so the window runs from the first send. The scheduler only schedules
+  // forward from now, so in production this lower bound is a safeguard; the test reaches it by scheduling an older
+  // visit with an earlier `now`.
+  it("counts an email retried through an outage from its first possible send", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true }); // may have been accepted
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    email.failWith = null;
+    const retryAt = (await one(first)).scheduledFor;
+    expect(await send(retryAt)).toMatchObject({ sent: 1 });
+    expect(await one(first)).toMatchObject({ status: "sent", sentAt: retryAt, maybeSentAt: DUE });
+
+    // An older visit, due 90 days minus 5 minutes before the first send (but more than 90 days before the last).
+    const dueEarlier = plus(DUE, -90 * DAY + 5 * 60_000);
+    const earlier = await t.visit(c, plus(dueEarlier, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueEarlier, -2 * HOUR) });
+    expect(await one(earlier)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
+  });
+
+  // A-82-1: the last send of an email retried through an outage can go out after the retry was due (sends run every
+  // 15 minutes). If that send's outcome is unknown, the request counts until 90 days after it went out, not 90 days
+  // after it was due.
+  it("counts an email whose last retry had an unknown outcome until 90 days after that retry went out", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true });
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    const retryAt = (await one(first)).scheduledFor;
+    const wentOut = plus(retryAt, 14 * 60_000); // the next run, 14 minutes after the retry was due
+    email.failWith = new DOMException("The operation was aborted due to timeout", "TimeoutError"); // final
+    expect(await send(wentOut)).toMatchObject({ failed: 1 });
+    expect(await one(first)).toMatchObject({
+      status: "failed",
+      outcomeUnknown: true,
+      maybeSentAt: DUE,
+      sentAt: null,
+      scheduledFor: wentOut,
+    });
+    email.failWith = null;
+
+    // Due 90 days after the retry was due plus 10 minutes: still 4 minutes inside 90 days of when it went out.
+    const dueLater = plus(retryAt, 90 * DAY + 10 * 60_000);
+    const later = await t.visit(c, plus(dueLater, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueLater, -2 * HOUR) });
+    expect(await one(later)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
+
+    // Due just after 90 days from when it went out: asked as usual.
+    const dueAfter = plus(wentOut, 90 * DAY + 60_000);
+    const after = await t.visit(c, plus(dueAfter, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueAfter, -2 * HOUR) });
+    expect((await one(after)).status).toBe("scheduled");
+  });
+
+  // A-82-1: a refused last retry did not reach the customer, so the request keeps the earlier dates.
+  it("keeps the due time of a refused last retry after an earlier send that may have gone out", async () => {
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true });
+    await send(DUE);
+    email.failWith = null;
+    const retryAt = (await one(first)).scheduledFor;
+    email.fail = true;
+    expect(await send(plus(retryAt, 14 * 60_000))).toMatchObject({ failed: 1 });
+    expect(await one(first)).toMatchObject({
+      status: "failed",
+      outcomeUnknown: true,
+      maybeSentAt: DUE,
+      scheduledFor: retryAt,
+    });
+  });
+
   it("does not count an email the provider refused", async () => {
     const t = await makeTenant();
     const c = await t.customer({ phone: null });
@@ -776,6 +887,54 @@ describe("90-day rule (FR-9)", () => {
     expect(await scheduleReviewRequests({ now: later })).toEqual({ scheduled: 1, skipped: {} });
     expect((await one(second)).skipReason).toBe("duplicate");
     expect((await one(third)).status).toBe("scheduled");
+  });
+
+  // T-82-1 (FR-9, decided 2026-11-27): a request that may have reached the customer still counts if it is later
+  // skipped. Here the first email send gets a 503 (it may have been accepted), the customer unsubscribes, and the retry
+  // is skipped as opted_out. Today an opted-out customer's next visit is skipped as opted_out before the 90-day check
+  // runs (FR-8), so this only matters once an opt-out can end (for example a future re-subscribe). The test clears the
+  // opt-out (suppression rows and the customer's opted_out_at) to stand in for that, and checks the 90-day rule still
+  // sees the skipped request.
+  it("counts a request that may have gone out even after its retry is skipped as opted out", async () => {
+    // Its own address: the unsubscribe is also platform-wide, which the tenant cleanup does not remove.
+    const mail = "unsubscribed-t82@example.test";
+    const dropOptOut = () => db.delete(s.suppressionList).where(eq(s.suppressionList.address, mail));
+    await dropOptOut(); // in case a killed earlier run left it behind
+    onTestFinished(() => dropOptOut().then(() => {}));
+    const t = await makeTenant();
+    const c = await t.customer({ phone: null, mail });
+    const first = await t.visit(c);
+    await scheduleReviewRequests({ now: VISIT });
+    email.failWith = Object.assign(new Error("resend 503"), { retryable: true }); // may have been accepted
+    expect(await send(DUE)).toMatchObject({ retrying: 1 });
+    email.failWith = null;
+    const retryAt = (await one(first)).scheduledFor;
+    expect(await optOutEmail(unsubscribeToken(t.locationId, mail))).toBe("opted_out"); // the email's /u link
+    expect(await send(retryAt)).toMatchObject({ sent: 0, skipped: { opted_out: 1 } });
+    expect(await one(first)).toMatchObject({ status: "skipped", skipReason: "opted_out", maybeSentAt: DUE });
+    expect(email.sent).toHaveLength(0);
+
+    // While the opt-out stands, the next visit is skipped as opted_out (FR-8 comes first).
+    const v30 = await t.visit(c, plus(VISIT, 30 * DAY));
+    await scheduleReviewRequests({ now: plus(VISIT, 30 * DAY) });
+    expect(await one(v30)).toMatchObject({ status: "skipped", skipReason: "opted_out" });
+
+    // Once the opt-out is gone, a visit due 90 days minus 10 minutes after the first possible send is a duplicate.
+    await dropOptOut();
+    await db.update(s.customers).set({ optedOutAt: null }).where(eq(s.customers.id, c));
+    const dueInside = plus(DUE, 90 * DAY - 10 * 60_000);
+    const inside = await t.visit(c, plus(dueInside, -2 * HOUR));
+    expect(await scheduleReviewRequests({ now: plus(dueInside, -2 * HOUR) })).toEqual({
+      scheduled: 0,
+      skipped: { duplicate: 1 },
+    });
+    expect(await one(inside)).toMatchObject({ status: "skipped", skipReason: "duplicate" });
+
+    // Due more than 90 days after both the first send and the skipped retry: asked as usual.
+    const dueAfter = plus(retryAt, 90 * DAY + 60_000);
+    const after = await t.visit(c, plus(dueAfter, -2 * HOUR));
+    await scheduleReviewRequests({ now: plus(dueAfter, -2 * HOUR) });
+    expect((await one(after)).status).toBe("scheduled");
   });
 
   it("applies per location: the same phone at another business is asked", async () => {
@@ -1039,5 +1198,80 @@ describe("end to end", () => {
     expect(text).not.toContain(PHONE);
     expect(text).not.toContain("5550110");
     expect(text).not.toContain(EMAIL);
+  });
+});
+
+// O-66-1: Twilio's status callback can arrive before deliver() records the message ID, and Twilio does not retry it.
+// The fake below posts the receipt from inside send(), before it returns the SID, so the receipt always wins the race.
+describe("receipts that arrive before the send records the message ID (O-66-1)", () => {
+  let n = 0;
+  class RacingSms extends FakeSms {
+    constructor(
+      private readonly status: "delivered" | "undelivered",
+      readonly sid = `SM-race-${Date.now().toString(36)}-${++n}`,
+    ) {
+      super();
+    }
+    async send(from: string, to: string, body: string) {
+      this.sent.push({ from, to, body });
+      this.early = await handleReceipt("sms", this.sid, this.status, this.status === "delivered" ? null : 30003);
+      return this.sid;
+    }
+    early = "";
+  }
+  const pending = (id: string) =>
+    db.select().from(s.pendingReceipts).where(eq(s.pendingReceipts.providerMessageId, id));
+
+  it("keeps an early 'delivered' receipt and records it once the send has the ID", async () => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    const racing = new RacingSms("delivered");
+    sms = racing;
+    await send(DUE);
+    expect(racing.early).toBe("pending"); // the request had no message ID yet
+    const rr = await one(v);
+    expect(rr).toMatchObject({ status: "sent", providerMessageId: racing.sid });
+    const receipts = await db
+      .select()
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.entityId, rr.id), eq(s.auditLog.action, "delivered")));
+    expect(receipts).toHaveLength(1);
+    expect(await pending(racing.sid)).toHaveLength(0);
+    expect(await applyPendingReceipts("sms", racing.sid)).toBe(0); // nothing left to apply twice
+  });
+
+  it("keeps an early 'undelivered' receipt, then sends the request by email (FR-6)", async () => {
+    const t = await makeTenant();
+    const v = await t.visit(await t.customer());
+    await scheduleReviewRequests({ now: VISIT });
+    const racing = new RacingSms("undelivered");
+    sms = racing;
+    await send(DUE);
+    expect(racing.early).toBe("pending");
+    const rows = await db.select().from(s.reviewRequests).where(eq(s.reviewRequests.visitId, v));
+    expect(rows.find((r) => r.channel === "sms")).toMatchObject({ status: "failed", sentAt: null });
+    expect(rows.find((r) => r.channel === "email")).toMatchObject({ status: "scheduled", attempt: 1 });
+    expect(await pending(racing.sid)).toHaveLength(0);
+    await send(plus(DUE, 60_000));
+    expect(email.sent.map((m) => m.to)).toEqual([EMAIL]); // one email, after the one text that failed
+    expect(racing.sent).toHaveLength(1);
+  });
+
+  it("a receipt matching nothing stays pending for a day, then the purge job deletes it", async () => {
+    const id = `SM-orphan-${Date.now().toString(36)}-${++n}`;
+    expect(await handleReceipt("sms", id, "delivered", null)).toBe("pending");
+    expect(await handleReceipt("sms", id, "delivered", null)).toBe("pending"); // a repeat adds no row
+    expect(await pending(id)).toHaveLength(1);
+    const [row] = await pending(id);
+    await purgePendingReceipts(new Date(row.receivedAt.getTime() + PENDING_RECEIPT_MAX_AGE_MS - 1000));
+    expect(await pending(id)).toHaveLength(1);
+    await purgePendingReceipts(new Date(row.receivedAt.getTime() + PENDING_RECEIPT_MAX_AGE_MS + 1000));
+    expect(await pending(id)).toHaveLength(0);
+  });
+
+  it("refuses empty and oversized IDs without storing anything", async () => {
+    expect(await handleReceipt("email", "  ", "delivered", null)).toBe("unknown");
+    expect(await handleReceipt("email", "x".repeat(201), "delivered", null)).toBe("unknown");
   });
 });

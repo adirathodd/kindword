@@ -1,7 +1,7 @@
 // Scheduled-job dispatch and retries: each schedule name reaches its job code (mocked here), a missing setting is
 // named and not retried, a transient failure is retried with backoff and dropped after MAX_DELIVERIES. Runs against
 // the Postgres in DATABASE_URL for the sheet-source lookup. Fake data only.
-import { and, desc, eq, inArray, lte } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
@@ -19,6 +19,7 @@ const track =
 vi.mock("../intake/pollSheet", () => ({ pollSheet: track("pollSheet", { ok: true, rows: [] }) }));
 vi.mock("../requests/requests", async (orig) => ({
   ...(await orig<object>()),
+  purgePendingReceipts: track("purgePendingReceipts", 0),
   runReviewRequestJobs: track("runReviewRequestJobs", {
     scheduled: { scheduled: 0, skipped: {} },
     reminders: { scheduled: 0 },
@@ -110,7 +111,7 @@ describe("dispatch", () => {
     ["review-requests", ["runReviewRequestJobs"]],
     ["reviews", ["pollReviews", "draftPendingReviews", "postApprovedReplies", "sendLowRatingAlerts"]],
     ["owner-digest", ["sendDailyDigests"]],
-    ["purge", ["purgeExpiredReviews", "purgeExpiredCustomers", "purgeOffboardedBusinesses"]],
+    ["purge", ["purgeExpiredReviews", "purgeExpiredCustomers", "purgeOffboardedBusinesses", "purgePendingReceipts"]],
     ["monthly-report", ["sendMonthlyReports"]],
     ["operator-alerts", ["sendOperatorAlerts"]],
   ])("%s calls its job code", async (job, expected) => {
@@ -138,28 +139,14 @@ describe("dispatch", () => {
 
 describe("run records for the outside jobs-ran check", () => {
   const lastRun = async (name: string) =>
-    (
-      await db
-        .select({ action: s.auditLog.action, locationId: s.auditLog.locationId })
-        .from(s.auditLog)
-        // status.test.ts writes job rows far in the future; only rows up to now are this test's.
-        .where(
-          and(
-            eq(s.auditLog.entity, "job"),
-            eq(s.auditLog.detail, `job=${name}`),
-            lte(s.auditLog.at, new Date(Date.now() + 60_000)),
-          ),
-        )
-        .orderBy(desc(s.auditLog.at), desc(s.auditLog.id))
-        .limit(1)
-    )[0];
+    (await db.select({ lastResult: s.jobRuns.lastResult }).from(s.jobRuns).where(eq(s.jobRuns.name, name)))[0];
 
   it("records each finished run with its result, including runs that will be retried", async () => {
     await runScheduled(msg("operator-alerts"));
-    expect(await lastRun("operator-alerts")).toEqual({ action: "job_ran", locationId: null });
+    expect(await lastRun("operator-alerts")).toEqual({ lastResult: "ok" });
     calls.failPurge = true;
     await expect(runScheduled(msg("purge"))).rejects.toBeInstanceOf(JobFailedError);
-    expect(await lastRun("purge")).toEqual({ action: "job_ran_failed", locationId: null });
+    expect(await lastRun("purge")).toEqual({ lastResult: "failed" });
   });
 
   it("records nothing for an unknown schedule name", async () => {
@@ -211,7 +198,7 @@ describe("failures and retries", () => {
     const line = String(vi.mocked(console.error).mock.calls[0][0]);
     // The customer retention step still runs after the review purge failed.
     expect(line).toBe(
-      'job purge: failed {"purge":{"error":"Error"},"customers":{"customers":0},"businesses":{"businesses":0}}',
+      'job purge: failed {"purge":{"error":"Error"},"customers":{"customers":0},"businesses":{"businesses":0},"receipts":{"receipts":0}}',
     );
   });
 

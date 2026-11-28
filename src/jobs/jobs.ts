@@ -29,7 +29,7 @@ import { pollSheet } from "../intake/pollSheet";
 import { sendMonthlyReports } from "../reports/monthly";
 import { sendOperatorAlerts } from "../notifications/operatorAlerts";
 import { sendDailyDigests, sendLowRatingAlerts } from "../notifications/ownerEmails";
-import { runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
+import { purgePendingReceipts, runReviewRequestJobs, sendConfigFromEnv } from "../requests/requests";
 import { sendPendingConfirmations } from "../optout/confirmations";
 import { purgeOffboardedBusinesses } from "../retention/businesses";
 import { purgeExpiredCustomers } from "../retention/customers";
@@ -164,6 +164,8 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       },
       customers: async () => ({ customers: (await purgeExpiredCustomers()).customers }),
       businesses: async () => ({ businesses: (await purgeOffboardedBusinesses()).businesses }),
+      // Delivery receipts that never matched a review request (audit O-66-1): IDs and status only, kept one day.
+      receipts: async () => ({ receipts: await purgePendingReceipts() }),
     }),
 
   // FR-17: hourly; each location gets last month's report on the first run at or after DIGEST_HOUR local time on
