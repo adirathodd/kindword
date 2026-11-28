@@ -4,7 +4,7 @@ import { and, eq, or, sql } from "drizzle-orm";
 import Papa from "papaparse";
 import { z } from "zod";
 import { db as defaultDb, type Db } from "../db/client";
-import { consentAttestations, consentMethod, customers, locations, visits } from "../db/schema";
+import { businesses, consentAttestations, consentMethod, customers, locations, visits } from "../db/schema";
 import { customerRetentionCutoff } from "../retention/customers";
 import { normalizePhone, parseTime } from "./normalize";
 
@@ -39,11 +39,13 @@ export type RowResult =
         | "visit_past_retention"
         | "no_contact"
         | "no_consent_no_email"
-        | "contact_conflict";
+        | "contact_conflict"
+        | "business_offboarded";
     };
 
 export type ImportResult =
   | { ok: true; rows: RowResult[] }
+  | { ok: false; error: "business_offboarded" }
   | { ok: false; error: "malformed_csv"; row: number }
   | { ok: false; error: "missing_columns"; columns: string[] };
 
@@ -69,6 +71,13 @@ const rowSchema = (tz: string) =>
     evidence_ref: text,
   });
 
+// SPEC FR-20 and Security: an offboarded business is past the point of collecting anything; its data is waiting to
+// be deleted (src/retention/businesses.ts). Onboarding and paused businesses still import (S-5 is open).
+export async function isOffboarded(businessId: string, db: Db = defaultDb): Promise<boolean> {
+  const [b] = await db.select({ status: businesses.status }).from(businesses).where(eq(businesses.id, businessId));
+  return !b || b.status === "offboarded"; // a deleted business is treated the same way
+}
+
 // Header is row 1. shortcut: blank lines are not counted and a quoted multi-line field counts once, so numbers drift
 // from the spreadsheet view in those files; track line offsets if operators get confused.
 const rowNo = (i: number) => i + 2;
@@ -83,6 +92,7 @@ export async function importCsv(
   z.uuid().parse(locationId); // a non-UUID would otherwise surface as a raw Postgres error
   const [loc] = await db.select().from(locations).where(eq(locations.id, locationId));
   if (!loc) throw new Error("importCsv: location not found");
+  if (await isOffboarded(loc.businessId, db)) return { ok: false, error: "business_offboarded" };
 
   const parsed = Papa.parse<Record<string, string>>(csvText, {
     header: true,
@@ -190,6 +200,14 @@ export async function importRows(
       outcome = await db.transaction(async (tx) => {
         // Serialize imports per location so concurrent uploads cannot race the customer lookup.
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${locationId}))`);
+        // Re-checked per row under a share lock (FR-20): offboarding (an update of this row) waits for this row to
+        // commit, and every row after it sees the new status, so nothing is stored once the business is offboarded.
+        const [biz] = await tx
+          .select({ status: businesses.status })
+          .from(businesses)
+          .where(eq(businesses.id, loc.businessId))
+          .for("share");
+        if (!biz || biz.status === "offboarded") return ["rejected", "business_offboarded"];
         // Match on the row's phone even when it will be dropped (used, never stored), so a person already on file
         // is not split into a second email-only customer and asked twice (FR-9).
         const matches = await tx

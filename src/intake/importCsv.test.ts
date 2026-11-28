@@ -4,7 +4,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
-import { importCsv } from "./importCsv";
+import { importCsv, importRows } from "./importCsv";
 import { normalizePhone, parseTime } from "./normalize";
 
 const HEADER = "name,phone,email,visit_time,consent_method,consent_date,evidence_ref";
@@ -237,6 +237,93 @@ describe("importCsv", () => {
     expect(JSON.stringify(r)).not.toMatch(/555|example\.test|Pat/);
   });
 });
+
+// SPEC FR-20 and Security: nothing more is collected for an offboarded business. Onboarding (S-5, open) and paused
+// still import, as before.
+describe("importCsv for an offboarded business", () => {
+  const ROW = `Pat Doe,201-555-0130,pat@example.test,2026-11-20 14:30,${CONSENT}`;
+  const location = async () => (await db.select().from(s.locations).where(eq(s.locations.id, t.locationId)))[0];
+  const setStatus = async (status: (typeof s.businessStatus.enumValues)[number]) =>
+    db
+      .update(s.businesses)
+      .set({ status })
+      .where(eq(s.businesses.id, (await location()).businessId));
+
+  it("refuses the whole upload and stores nothing", async () => {
+    await setStatus("offboarded");
+    expect(await run(csv(ROW))).toEqual({ ok: false, error: "business_offboarded" });
+    expect(await customersOf()).toHaveLength(0);
+    expect(await visitsOf()).toHaveLength(0);
+  });
+
+  it("refuses before parsing, so a malformed file gives the same answer", async () => {
+    await setStatus("offboarded");
+    expect(await run("name,phone\nA,201-555-0131")).toEqual({ ok: false, error: "business_offboarded" });
+  });
+
+  it("still imports for live, paused and onboarding businesses", async () => {
+    for (const [i, status] of (["live", "paused", "onboarding"] as const).entries()) {
+      await setStatus(status);
+      const r = await run(csv(`P${i},201-555-014${i},p${i}@example.test,2026-11-20 14:30,${CONSENT}`));
+      expect(r).toEqual({ ok: true, rows: [{ row: 2, status: "inserted", reason: "ok" }] });
+    }
+    expect(await customersOf()).toHaveLength(3);
+  });
+
+  it("imports again once the business is switched back from offboarded", async () => {
+    await setStatus("offboarded");
+    expect(await run(csv(ROW))).toMatchObject({ ok: false });
+    await setStatus("live");
+    expect(await run(csv(ROW))).toEqual({ ok: true, rows: [{ row: 2, status: "inserted", reason: "ok" }] });
+  });
+
+  it("re-checks every row, so rows after an offboarding are rejected", async () => {
+    const loc = await location(); // taken while the business is still onboarding
+    await setStatus("offboarded");
+    const rows = [
+      { row: 2, raw: { ...rawOf(ROW) } },
+      { row: 3, raw: { ...rawOf(`Sam Roe,,sam@example.test,2026-11-20 15:00,,,`) } },
+    ];
+    expect(await importRows(loc, rows, t.ctx, "csv")).toEqual([
+      { row: 2, status: "rejected", reason: "business_offboarded" },
+      { row: 3, status: "rejected", reason: "business_offboarded" },
+    ]);
+    expect(await customersOf()).toHaveLength(0);
+  });
+
+  it("waits for an offboarding in progress and then stores nothing", async () => {
+    const other = await db.$client.connect();
+    try {
+      await other.query("begin");
+      await other.query("update businesses set status = 'offboarded' where id = $1", [(await location()).businessId]);
+      // The entry check sees the committed status (onboarding); the row's share lock waits for the update.
+      const pending = run(csv(ROW));
+      let settled = false;
+      void pending.then(() => (settled = true));
+      await new Promise((r) => setTimeout(r, 300));
+      expect(settled).toBe(false);
+      await other.query("commit");
+      expect(await pending).toEqual({
+        ok: true,
+        rows: [{ row: 2, status: "rejected", reason: "business_offboarded" }],
+      });
+    } finally {
+      other.release();
+    }
+    expect(await customersOf()).toHaveLength(0);
+  });
+
+  it("does not block an import for another business while one is offboarded", async () => {
+    await setStatus("offboarded");
+    const mine = t;
+    t = await makeTenant("Other Plumbing");
+    expect(await run(csv(ROW))).toEqual({ ok: true, rows: [{ row: 2, status: "inserted", reason: "ok" }] });
+    t = mine;
+    expect(await customersOf()).toHaveLength(0);
+  });
+});
+
+const rawOf = (line: string) => Object.fromEntries(HEADER.split(",").map((h, i) => [h, line.split(",")[i] ?? ""]));
 
 describe("normalizePhone", () => {
   it.each([
