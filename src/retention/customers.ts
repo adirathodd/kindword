@@ -16,9 +16,13 @@
 //
 // The importer refuses rows whose visit is already past this window (visit_past_retention), so a row left in a
 // shared Sheet is not imported again after its customer is deleted.
+//
+// A location whose delete fails is logged by ID and skipped; the other locations are still purged, then
+// RetentionPurgeIncompleteError is thrown so the job reports the failure and is retried (audit O-59-1).
 import { and, eq, gt, inArray, lte, notExists, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, customers, visits } from "../db/schema";
+import { logPurgeFailure, RetentionPurgeIncompleteError } from "./incomplete";
 
 export const CUSTOMER_RETENTION_MONTHS = 12;
 const BATCH = 500;
@@ -55,46 +59,56 @@ export async function purgeExpiredCustomers(
     .selectDistinct({ locationId: customers.locationId })
     .from(customers)
     .where(and(hasOldVisit, noRecentVisit));
+  // One location's failure (a lock timeout, a database error) rolls back only its current batch and skips the rest of
+  // that location; the other locations are still purged in this run (audit O-59-1). Batches already committed for the
+  // failed location stay deleted. The job then reports the failure and is retried (RetentionPurgeIncompleteError).
+  let failed = 0;
   for (const { locationId } of locationRows) {
-    for (;;) {
-      const n = await db.transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${locationId}))`); // the importer's lock
-        const expired = await tx
-          .select({ id: customers.id })
-          .from(customers)
-          .where(and(eq(customers.locationId, locationId), hasOldVisit, noRecentVisit))
-          .orderBy(customers.id)
-          .limit(BATCH)
-          .for("update");
-        if (!expired.length) return { deleted: 0, full: false };
-        const deleted = await tx
-          .delete(customers)
-          .where(
-            and(
-              inArray(
-                customers.id,
-                expired.map((c) => c.id),
+    try {
+      for (;;) {
+        const n = await db.transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${locationId}))`); // the importer's lock
+          const expired = await tx
+            .select({ id: customers.id })
+            .from(customers)
+            .where(and(eq(customers.locationId, locationId), hasOldVisit, noRecentVisit))
+            .orderBy(customers.id)
+            .limit(BATCH)
+            .for("update");
+          if (!expired.length) return { deleted: 0, full: false };
+          const deleted = await tx
+            .delete(customers)
+            .where(
+              and(
+                inArray(
+                  customers.id,
+                  expired.map((c) => c.id),
+                ),
+                noRecentVisit, // re-checked in a new statement, after the lock: sees any visit committed meanwhile
               ),
-              noRecentVisit, // re-checked in a new statement, after the lock: sees any visit committed meanwhile
-            ),
-          )
-          .returning({ id: customers.id });
-        if (deleted.length)
-          await tx.insert(auditLog).values(
-            deleted.map((c) => ({
-              locationId,
-              entity: "customer",
-              entityId: c.id,
-              action: "purged",
-              actor: ACTOR,
-              detail: `reason=retention_${CUSTOMER_RETENTION_MONTHS}m`,
-            })),
-          );
-        return { deleted: deleted.length, full: expired.length === BATCH };
-      });
-      total += n.deleted;
-      if (!n.full) break;
+            )
+            .returning({ id: customers.id });
+          if (deleted.length)
+            await tx.insert(auditLog).values(
+              deleted.map((c) => ({
+                locationId,
+                entity: "customer",
+                entityId: c.id,
+                action: "purged",
+                actor: ACTOR,
+                detail: `reason=retention_${CUSTOMER_RETENTION_MONTHS}m`,
+              })),
+            );
+          return { deleted: deleted.length, full: expired.length === BATCH };
+        });
+        total += n.deleted;
+        if (!n.full) break;
+      }
+    } catch (e) {
+      failed++;
+      logPurgeFailure("location", locationId, e);
     }
   }
+  if (failed) throw new RetentionPurgeIncompleteError("customers", total, failed);
   return { customers: total, cutoff };
 }

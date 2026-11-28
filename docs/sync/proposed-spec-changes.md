@@ -38,3 +38,5 @@ sync-2026-11-27-02 (SPEC sync at main 9d771e1) moved the header line to 9d771e1,
 sync-2026-11-27-04 (SPEC sync rerun at main 9d771e1) changed the **Implementation status** FR-9 row: its status is now "Implemented, one failure-path gap (noncompliant)", and the row ends with the T-82-1 note (test in #88) and the A-82-1 gap (fix in #87). Copy the row from `docs/SPEC.md`.
 
 The Google endpoint guard PR #86 (2026-11-27, SPEC Provider notes: Google OAuth) adds one **Implementation status** row after "Retention (Security)": "Google least privilege (Provider notes)". Copy the row from `docs/SPEC.md` into the Doc.
+
+The retention purge PR #95 (audit O-59-1, 2026-11-28) adds one sentence to the **Implementation status** "Retention (Security)" row, before "Offboarding itself has no app path yet (FR-20).": "In both steps a business or location whose delete fails is rolled back, logged by ID only and skipped, the others are still deleted in the same run, and the step then fails so the queue retries the purge job (audit O-59-1, PR #95)." Copy the row from `docs/SPEC.md`.

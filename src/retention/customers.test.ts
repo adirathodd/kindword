@@ -1,10 +1,11 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: example.test emails, 555-01xx numbers.
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import { customerRetentionCutoff, purgeExpiredCustomers } from "./customers";
+import { RetentionPurgeIncompleteError } from "./incomplete";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Real time, so rows other test files leave behind are judged by the same clock; assertions only look at our rows.
@@ -174,5 +175,44 @@ describe("purgeExpiredCustomers", () => {
     await purging;
     expect(await exists(old.id)).toBe(true);
     expect(await purgeAudits(old.id)).toHaveLength(0);
+  });
+
+  // Audit O-59-1: one location whose delete fails must not keep every other location's customers past 12 months.
+  it("purges the other locations when one fails, then reports the failure and purges it on a later run", async () => {
+    const bad = await makeLocation();
+    const good = await makeLocation();
+    const stuck = await customer(bad, [daysAgo(400)]);
+    const other = await customer(good, [daysAgo(400)]);
+    const fn = `test_block_customer_delete_${RUN}`;
+    // A database error on deleting this location's customers only; the message quotes the customer's fake email.
+    await db.execute(
+      sql.raw(`create function ${fn}() returns trigger language plpgsql as $$ begin
+        if old.location_id = '${bad.locationId}' then raise exception 'blocked %', old.normalized_email; end if;
+        return old; end $$;
+        create trigger ${fn} before delete on customers for each row execute function ${fn}();`),
+    );
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const err = await purgeExpiredCustomers({ now: NOW }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RetentionPurgeIncompleteError);
+      expect(err).toMatchObject({ purge: "customers", failed: 1 });
+      expect((err as RetentionPurgeIncompleteError).deleted).toBeGreaterThanOrEqual(1);
+
+      expect(await exists(other.id)).toBe(false);
+      expect(await purgeAudits(other.id)).toHaveLength(1);
+      expect(await exists(stuck.id)).toBe(true);
+      expect(await purgeAudits(stuck.id)).toHaveLength(0);
+
+      const lines = errors.mock.calls.map((c) => c.join(" "));
+      expect(lines).toContainEqual(expect.stringContaining(`retention: location failed id=${bad.locationId} error=`));
+      expect(lines.join("\n") + (err as Error).message).not.toMatch(/example\.test|blocked/);
+    } finally {
+      errors.mockRestore();
+      await db.execute(sql.raw(`drop trigger if exists ${fn} on customers; drop function if exists ${fn}();`));
+    }
+
+    await purgeExpiredCustomers({ now: NOW });
+    expect(await exists(stuck.id)).toBe(false);
+    expect(await purgeAudits(stuck.id)).toHaveLength(1);
   });
 });

@@ -1,10 +1,11 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: example.test emails, 555-01xx numbers.
-import { eq, inArray, like } from "drizzle-orm";
+import { eq, inArray, like, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "../db/client";
 import * as s from "../db/schema";
 import { purgeOffboardedBusinesses } from "./businesses";
+import { RetentionPurgeIncompleteError } from "./incomplete";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date();
@@ -206,6 +207,47 @@ describe("purgeOffboardedBusinesses", () => {
     const again = await purgeOffboardedBusinesses({ now: NOW });
     expect(again.businesses).toBe(0);
     expect(await db.select().from(s.auditLog).where(eq(s.auditLog.entityId, b.id))).toHaveLength(1);
+  });
+
+  // Audit O-59-1: one business whose delete fails must not keep the others past their deadline.
+  it("deletes the other due businesses when one fails, then reports the failure and deletes it on a later run", async () => {
+    const stuck = await fullBusiness(60); // oldest, so it is tried first
+    const next = await fullBusiness(45);
+    const fn = `test_block_delete_${RUN}`;
+    // A database error on deleting this one business only. Its message quotes a fake email, which must not be logged.
+    await db.execute(
+      sql.raw(`create function ${fn}() returns trigger language plpgsql as $$ begin
+        if old.id = '${stuck.businessId}' then raise exception 'blocked for owner-${RUN}@example.test'; end if;
+        return old; end $$;
+        create trigger ${fn} before delete on businesses for each row execute function ${fn}();`),
+    );
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const err = await purgeOffboardedBusinesses({ now: NOW }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RetentionPurgeIncompleteError);
+      expect(err).toMatchObject({ purge: "businesses", failed: 1 });
+      expect((err as RetentionPurgeIncompleteError).deleted).toBeGreaterThanOrEqual(1);
+      expect((err as Error).message).not.toMatch(/example\.test/);
+
+      expect(await get(next.businessId)).toBeUndefined();
+      expect(await db.select().from(s.auditLog).where(eq(s.auditLog.entityId, next.businessId))).toHaveLength(1);
+      // The failed business is rolled back whole: still there with its customer, and not audited as purged.
+      expect(await get(stuck.businessId)).toBeDefined();
+      expect(await db.select().from(s.customers).where(eq(s.customers.id, stuck.customerId))).toHaveLength(1);
+      expect(await db.select().from(s.auditLog).where(eq(s.auditLog.entityId, stuck.businessId))).toHaveLength(0);
+
+      const lines = errors.mock.calls.map((c) => c.join(" "));
+      expect(lines).toContainEqual(expect.stringContaining(`retention: business failed id=${stuck.businessId} error=`));
+      expect(lines.join("\n")).not.toMatch(/example\.test|blocked/);
+    } finally {
+      errors.mockRestore();
+      await db.execute(sql.raw(`drop trigger if exists ${fn} on businesses; drop function if exists ${fn}();`));
+    }
+
+    // Once the cause is gone, the next run (or the queue retry) deletes it.
+    expect((await purgeOffboardedBusinesses({ now: NOW })).businesses).toBeGreaterThanOrEqual(1);
+    expect(await get(stuck.businessId)).toBeUndefined();
+    expect(await db.select().from(s.auditLog).where(eq(s.auditLog.entityId, stuck.businessId))).toHaveLength(1);
   });
 
   it("rejects a margin outside 0 to 30 days", async () => {
