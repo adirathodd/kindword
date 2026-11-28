@@ -41,7 +41,8 @@ export type TwilioConfig = {
 
 // A signed status callback for one message we sent (https://www.twilio.com/docs/messaging/guides/track-outbound-message-status).
 // MessageStatus is queued, sending, sent, delivered, undelivered, failed, read or canceled.
-export type SmsStatus = { messageSid: string; status: string };
+// errorCode: Twilio's numeric ErrorCode on an undelivered or failed status (e.g. 30003 unreachable), else null.
+export type SmsStatus = { messageSid: string; status: string; errorCode: number | null };
 
 // Twilio's request signature: base64(HMAC-SHA1(authToken, url + each key+value, keys sorted)).
 export function twilioSignature(authToken: string, url: string, params: URLSearchParams) {
@@ -123,7 +124,7 @@ export class TwilioSms implements ConfirmationSms {
     };
   }
 
-  // Checks the signature against statusCallbackUrl. Reads only the message SID and status, never the numbers.
+  // Checks the signature against statusCallbackUrl. Reads only the message SID, status and error code, never the numbers.
   async parseStatusCallback(req: Request): Promise<SmsStatus | null> {
     if (!this.config.statusCallbackUrl) return null;
     const params = await this.signedParams(req, this.config.statusCallbackUrl);
@@ -131,7 +132,9 @@ export class TwilioSms implements ConfirmationSms {
     const messageSid = params.get("MessageSid") ?? params.get("SmsSid");
     const status = (params.get("MessageStatus") ?? params.get("SmsStatus"))?.toLowerCase();
     if (!messageSid || !/^(SM|MM)[0-9a-fA-F]{32}$/.test(messageSid) || !status) return null;
-    return { messageSid, status };
+    const code = params.get("ErrorCode");
+    const errorCode = code && /^\d{1,6}$/.test(code) ? Number(code) : null;
+    return { messageSid, status, errorCode };
   }
 
   async send(from: string, to: string, body: string): Promise<string | void> {
@@ -211,8 +214,9 @@ class TwilioRetryable {
 }
 
 // Reads TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WEBHOOK_URL (or APP_BASE_URL + /api/sms/inbound) and
-// TWILIO_STATUS_CALLBACK_URL (or APP_BASE_URL + /api/sms/status, else the same origin as the webhook URL).
-// Throws with the name of the missing setting, never its value.
+// TWILIO_STATUS_CALLBACK_URL (or APP_BASE_URL + /api/sms/status, else the same origin as the webhook URL; left out,
+// with an error log naming the setting, when malformed). Throws with the name of a missing required setting, never its
+// value.
 export function twilioConfigFromEnv(env: Record<string, string | undefined> = process.env): TwilioConfig {
   const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
   if (!accountSid || !/^AC[0-9a-fA-F]{32}$/.test(accountSid))
@@ -226,7 +230,11 @@ export function twilioConfigFromEnv(env: Record<string, string | undefined> = pr
   const statusCallbackUrl =
     env.TWILIO_STATUS_CALLBACK_URL?.trim() ||
     (base ? `${base}/api/sms/status` : new URL("/api/sms/status", webhookUrl).href);
-  if (!/^https?:\/\//.test(statusCallbackUrl) || !URL.canParse(statusCallbackUrl))
-    throw new Error("TWILIO_STATUS_CALLBACK_URL not an http(s) URL");
+  // Delivery receipts are optional, so a malformed setting turns them off instead of failing every Twilio use (sends,
+  // the inbound STOP webhook, opt-out confirmations; audit O-66-3). /api/sms/status then answers 503 naming it.
+  if (!/^https?:\/\//.test(statusCallbackUrl) || !URL.canParse(statusCallbackUrl)) {
+    console.error("twilio: TWILIO_STATUS_CALLBACK_URL not an http(s) URL; delivery receipts are off"); // name only
+    return { accountSid, authToken, webhookUrl };
+  }
   return { accountSid, authToken, webhookUrl, statusCallbackUrl };
 }

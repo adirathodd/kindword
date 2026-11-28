@@ -1,6 +1,6 @@
 // Unit tests for the Twilio adapter. No network: fetch is faked. Expected signatures were produced independently by
 // Twilio's own Node library (twilio@5, webhooks.getExpectedTwilioSignature), not by this code.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TwilioSendError, TwilioSms, twilioConfigFromEnv, twilioSignature } from "./twilio";
 
 const SID = "AC00000000000000000000000000000000";
@@ -135,11 +135,21 @@ describe("TwilioSms.parseStatusCallback", () => {
       body: new URLSearchParams(params),
     });
 
-  it("reads the SID and status of a signed callback", async () => {
+  it("reads the SID, status and error code of a signed callback", async () => {
     const sms = new TwilioSms({ ...config, statusCallbackUrl: STATUS_URL });
-    expect(await sms.parseStatusCallback(req(fields))).toEqual({ messageSid: MSG, status: "delivered" });
-    const legacy = { AccountSid: SID, SmsSid: MSG, SmsStatus: "Undelivered" };
-    expect(await sms.parseStatusCallback(req(legacy))).toEqual({ messageSid: MSG, status: "undelivered" });
+    expect(await sms.parseStatusCallback(req(fields))).toEqual({
+      messageSid: MSG,
+      status: "delivered",
+      errorCode: null,
+    });
+    const legacy = { AccountSid: SID, SmsSid: MSG, SmsStatus: "Undelivered", ErrorCode: "30003" };
+    expect(await sms.parseStatusCallback(req(legacy))).toEqual({
+      messageSid: MSG,
+      status: "undelivered",
+      errorCode: 30003,
+    });
+    const odd = { ...legacy, ErrorCode: "not-a-code" };
+    expect(await sms.parseStatusCallback(req(odd))).toMatchObject({ errorCode: null });
   });
 
   it("refuses an inbound-message signature, another token or account, and a bad SID", async () => {
@@ -301,9 +311,16 @@ describe("twilioConfigFromEnv", () => {
       twilioConfigFromEnv({ ...env, APP_BASE_URL: undefined, TWILIO_WEBHOOK_URL: "https://hooks.example.test/sms" })
         .statusCallbackUrl,
     ).toBe("https://hooks.example.test/api/sms/status");
-    expect(() => twilioConfigFromEnv({ ...env, TWILIO_STATUS_CALLBACK_URL: "hooks.example.test" })).toThrow(
-      /TWILIO_STATUS_CALLBACK_URL/,
-    );
+  });
+
+  it("turns receipts off, keeping texts and the STOP webhook working, when the callback URL is malformed (O-66-3)", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bad = "hooks.example.test/secret-path";
+    const cfg = twilioConfigFromEnv({ ...env, TWILIO_STATUS_CALLBACK_URL: bad });
+    expect(cfg).toEqual(config); // no statusCallbackUrl: none requested with sends, none accepted
+    expect(errors.mock.calls.flat().join(" ")).toContain("TWILIO_STATUS_CALLBACK_URL");
+    expect(errors.mock.calls.flat().join(" ")).not.toContain(bad);
+    errors.mockRestore();
   });
 
   it("prefers TWILIO_WEBHOOK_URL", () => {

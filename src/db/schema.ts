@@ -209,6 +209,7 @@ export const reviewRequests = pgTable(
     check("attempt_1_or_2", sql`${t.attempt} in (1, 2)`), // request or the one reminder
     check("skip_reason_iff_skipped", sql`(${t.status} = 'skipped') = (${t.skipReason} is not null)`),
     index().on(t.status, t.scheduledFor),
+    index().on(t.providerMessageId), // delivery receipts look the request up by the provider's message ID (#66)
   ],
 );
 
@@ -363,6 +364,35 @@ export const auditLog = pgTable(
   },
   (t) => [index().on(t.locationId, t.at)],
 );
+
+// A delivery receipt (Twilio status callback, Resend email.delivered) that matched no request yet: it can arrive
+// before the send has recorded the provider's message ID (audit O-66-1). Kept so the send can apply it as soon as
+// it records the ID. IDs and status only: no number, address or text. Deleted after a day by the purge job, which
+// also clears receipts for messages that are not review requests (owner emails, opt-out confirmations).
+export const pendingReceipts = pgTable(
+  "pending_receipts",
+  {
+    id: id(),
+    channel: channel("channel").notNull(),
+    providerMessageId: text("provider_message_id").notNull(),
+    status: text("status").notNull(), // delivered, undelivered or failed
+    errorCode: integer("error_code"),
+    receivedAt: ts("received_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique().on(t.channel, t.providerMessageId, t.status),
+    index().on(t.receivedAt),
+    check("pending_receipt_status", sql`${t.status} in ('delivered', 'undelivered', 'failed')`),
+  ],
+);
+
+// The last finished run of each scheduled job, for the outside "jobs ran" check (src/jobs/status.ts). One row per
+// job, overwritten on every run, so it never grows (audit O-62-1). Job names and times only.
+export const jobRuns = pgTable("job_runs", {
+  name: text("name").primaryKey(),
+  lastRunAt: ts("last_run_at").notNull(),
+  lastResult: text("last_result").notNull(), // ok or failed
+});
 
 export const sheetSources = pgTable("sheet_sources", {
   id: id(),

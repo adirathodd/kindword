@@ -2,20 +2,22 @@
 //
 // Operator alerts (src/notifications/operatorAlerts.ts) run on Vercel Schedules too, so a full Schedules or Queues
 // outage, or a consumer that never starts, would stop the alerts along with everything else. This module records
-// one audit row each time a scheduled job finishes a run, and GET /api/status/jobs reports whether every job has run
-// recently enough. An uptime monitor outside Vercel polls that route and alerts the operator when it answers 503.
+// the last finished run of each scheduled job in job_runs (one row per job, overwritten each run, so it never grows:
+// audit O-62-1), and GET /api/status/jobs reports whether every job has run recently enough. An uptime monitor outside Vercel polls that route and alerts the operator when it answers 503.
 //
 // "Ran" means the job was delivered and finished a run, whatever its result: a job that runs but fails is already
 // visible in the job logs and, for sends and Google access, in operator alerts. This check is about the scheduler.
 //
 // What is stored and shown: job names, the time of each run and "ok" or "failed". Never personal data, message
 // text, review text, setting values or error messages.
-import { and, eq, gt, inArray, isNull, lte, max } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, max, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
-import { auditLog } from "../db/schema";
+import { auditLog, jobRuns } from "../db/schema";
 
 const ENTITY = "job";
-const ACTOR = "system:jobs";
+// Runs used to be one audit_log row each (#62). audit_log is append-only, so those rows cannot be deleted; they are no
+// longer written, and are still read for LOOKBACK_MS after this change so the check does not report a job "never" run
+// until it next runs (the daily purge, up to a day). The audit read can go in a later PR.
 export const JOB_RUN_ACTIONS = { ok: "job_ran", failed: "job_ran_failed" } as const;
 
 const MINUTE = 60 * 1000;
@@ -37,20 +39,24 @@ export const JOB_MAX_AGE_MS: Record<string, number> = {
   "monthly-report": 3 * HOUR,
   purge: 26 * HOUR,
 };
-// Runs older than this are not read: every limit above is shorter, so they cannot change the answer.
+// Old audit_log runs older than this are not read: every limit above is shorter, so they cannot change the answer.
 const LOOKBACK_MS = 7 * 24 * HOUR;
 
-// Records that a job finished a run. Called by the scheduled-job handler after every run, including retries.
+// Records that a job finished a run. Called by the scheduled-job handler after every run, including retries. A run
+// a little older than the stored one (an overlapping retry finishing late; retries span under 20 minutes) does not
+// move the time back, but a stored time more than an hour ahead of a new run is a clock error and is replaced, so a
+// bad clock can never hide a stopped job for long.
 export async function recordJobRun(name: string, ok: boolean, db: Db = defaultDb, now: Date = new Date()) {
-  await db.insert(auditLog).values({
-    locationId: null,
-    entity: ENTITY,
-    entityId: null,
-    action: ok ? JOB_RUN_ACTIONS.ok : JOB_RUN_ACTIONS.failed,
-    actor: ACTOR,
-    detail: `job=${name}`,
-    at: now,
-  });
+  const lastResult = ok ? "ok" : "failed";
+  await db
+    .insert(jobRuns)
+    .values({ name, lastRunAt: now, lastResult })
+    .onConflictDoUpdate({
+      target: jobRuns.name,
+      set: { lastRunAt: now, lastResult },
+      setWhere: sql`${jobRuns.lastRunAt} <= ${now.toISOString()}::timestamptz
+        or ${jobRuns.lastRunAt} > ${now.toISOString()}::timestamptz + interval '1 hour'`,
+    });
 }
 
 export type JobState = "ok" | "late" | "never";
@@ -64,6 +70,17 @@ export type JobsStatus = {
 // run on record (for example right after the first deploy, until the daily purge has run once) counts as not ok.
 export async function jobsStatus(now: Date = new Date(), db: Db = defaultDb): Promise<JobsStatus> {
   const names = Object.keys(JOB_MAX_AGE_MS);
+  const latest = new Map<string, { at: Date; result: "ok" | "failed" }>();
+  const consider = (name: string, at: Date, result: "ok" | "failed") => {
+    if (at > now) return; // a clock ahead of this one must not hide a stopped job
+    const seen = latest.get(name);
+    if (!seen || at > seen.at) latest.set(name, { at, result });
+  };
+
+  const runs = await db.select().from(jobRuns).where(inArray(jobRuns.name, names));
+  for (const r of runs) consider(r.name, r.lastRunAt, r.lastResult === "ok" ? "ok" : "failed");
+
+  // Runs recorded in audit_log before job_runs existed (see JOB_RUN_ACTIONS).
   const rows = await db
     .select({ detail: auditLog.detail, action: auditLog.action, at: max(auditLog.at) })
     .from(auditLog)
@@ -71,7 +88,7 @@ export async function jobsStatus(now: Date = new Date(), db: Db = defaultDb): Pr
       and(
         isNull(auditLog.locationId), // the (location_id, at) index
         gt(auditLog.at, new Date(now.getTime() - LOOKBACK_MS)),
-        lte(auditLog.at, now), // a clock ahead of this one must not hide a stopped job
+        lte(auditLog.at, now),
         eq(auditLog.entity, ENTITY),
         inArray(auditLog.action, Object.values(JOB_RUN_ACTIONS)),
         inArray(
@@ -81,14 +98,9 @@ export async function jobsStatus(now: Date = new Date(), db: Db = defaultDb): Pr
       ),
     )
     .groupBy(auditLog.detail, auditLog.action);
-
-  const latest = new Map<string, { at: Date; result: "ok" | "failed" }>();
   for (const r of rows) {
     if (!r.detail || !r.at) continue;
-    const name = r.detail.slice("job=".length);
-    const result = r.action === JOB_RUN_ACTIONS.ok ? "ok" : "failed";
-    const seen = latest.get(name);
-    if (!seen || r.at > seen.at) latest.set(name, { at: r.at, result });
+    consider(r.detail.slice("job=".length), r.at, r.action === JOB_RUN_ACTIONS.ok ? "ok" : "failed");
   }
 
   const jobs: JobsStatus["jobs"] = {};

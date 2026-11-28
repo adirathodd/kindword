@@ -1,238 +1,84 @@
 {
-  "audit_id": "audit-2026-11-26-03",
-  "started_at": "2026-11-26T17:55Z",
-  "completed_at": "2026-11-26T19:00Z",
+  "audit_id": "audit-2026-11-27-02",
+  "started_at": "2026-11-27T09:40Z",
+  "completed_at": "2026-11-27",
   "status": "complete_with_documented_issues",
   "target_branch": "main",
   "repository_note": "GitHub reports the repository as adirathodd/kindword; adirathodd/review-automation redirects.",
   "previous_audit": {
-    "audit_id": "audit-2026-11-26-02",
+    "audit_id": "audit-2026-11-27-01",
     "status": "complete_with_documented_issues",
-    "end_sha": "f3d6d49fcfdc0ba3424542329ee46d854db43292",
-    "record": "this file before this audit (PR #61)"
+    "end_sha": "113f99f5b52470bb737704068afc5819c06b3a8c",
+    "record": "this file before this audit (merged with #81)"
   },
   "baseline": {
-    "sha": "f3d6d49fcfdc0ba3424542329ee46d854db43292",
+    "sha": "113f99f5b52470bb737704068afc5819c06b3a8c",
     "inferred": false,
-    "reasoning": "next_audit_starts_after of audit-2026-11-26-02"
+    "reasoning": "next_audit_starts_after of audit-2026-11-27-01"
   },
-  "end_sha": "3fefa4c4b7b39569ab0fb3dbf05cd80bbe200fa3",
-  "end_sha_note": "main was 66a966e when the audit started; #65 (3fefa4c) merged during the audit and was added to this cycle.",
+  "end_sha": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
+  "end_sha_note": "origin/main was 9d771e1 when this audit started and when it ended.",
   "spec": {
     "file": "docs/SPEC.md",
     "note": "The Claude Doc was not read (no Claude Docs connector in this session). This audit does not edit the SPEC.",
     "changes_in_period": [
-      "#64 sync at f3d6d49 (status, D-13)",
-      "#69 FR-9 text: a duplicate skip is final; F-7-4 decided",
-      "#72 FR-8 status row"
+      "#83: header and Implementation status 'synced against' lines moved to 113f99f",
+      "#82: FR-9 requirement text (owner decision 2026-11-27, O-43-1), FR-9 status row, review_requests notes, new ticked Decisions item 'Which date an ask counts from'"
     ]
   },
   "in_scope": [
     {
-      "pr": 64,
-      "title": "SPEC sync at main f3d6d49 (sync-2026-11-26-02)",
-      "url": "https://github.com/adirathodd/kindword/pull/64",
+      "pr": 83,
+      "title": "SPEC sync at main 113f99f (sync-2026-11-27-01)",
+      "url": "https://github.com/adirathodd/kindword/pull/83",
       "author": "adirathodd",
-      "merge_commit": "6e0e6621e2700199e971329a31af2c6182925153",
+      "merge_commit": "41fa7d9fcb90fdae2dee4c9950b4e7a43e94e45e",
       "merge_type": "squash",
-      "merged_at": "2026-11-26T17:15:51Z",
+      "merged_at": "2026-11-27T02:53:34Z",
+      "depends_on": "#80",
       "changed_files": ["docs/SPEC.md", "docs/sync/last-sync.json", "docs/sync/proposed-spec-changes.md"],
       "previously_audited": false,
       "audit_status": "audited (docs only; no findings)",
       "findings": []
     },
     {
-      "pr": 60,
-      "title": "Audit fix for #43: keep the review link working after a send with an unknown outcome (FR-7)",
-      "url": "https://github.com/adirathodd/kindword/pull/60",
+      "pr": 81,
+      "title": "Record SPEC audit audit-2026-11-27-01 (main b0d74de..113f99f)",
+      "url": "https://github.com/adirathodd/kindword/pull/81",
       "author": "adirathodd",
-      "merge_commit": "f3a4161fa64ad5014c48e00f9a7073bbdcf9753c",
+      "merge_commit": "2e444cdaad292e49b8442bffee3ea18cac3aa3a5",
       "merge_type": "squash",
-      "merged_at": "2026-11-26T17:16:11Z",
-      "changed_files": ["src/app/r/[id]/route.ts", "src/requests/requests.ts", "src/requests/requests.test.ts"],
-      "previously_audited": false,
-      "audit_status": "audited (no findings; closes F-43-1)",
-      "findings": []
-    },
-    {
-      "pr": 61,
-      "title": "Record SPEC audit audit-2026-11-26-02",
-      "url": "https://github.com/adirathodd/kindword/pull/61",
-      "author": "adirathodd",
-      "merge_commit": "8b38bf4676912bcb458227057863958c75c52ee4",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:17:05Z",
+      "merged_at": "2026-11-27T02:53:49Z",
+      "depends_on": "none",
       "changed_files": ["docs/audits/last-audit.json"],
       "previously_audited": false,
       "audit_status": "audited (audit record only; no findings)",
       "findings": []
     },
     {
-      "pr": 69,
-      "title": "Audit fix: a duplicate skip is final (F-7-4)",
-      "url": "https://github.com/adirathodd/kindword/pull/69",
+      "pr": 82,
+      "title": "FR-9: date the 90-day window by when a request may have reached the customer (audit O-43-1)",
+      "url": "https://github.com/adirathodd/kindword/pull/82",
       "author": "adirathodd",
-      "merge_commit": "3928518f07155b39bf50571aa968fb7761e343e6",
+      "merge_commit": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
       "merge_type": "squash",
-      "merged_at": "2026-11-26T17:29:05Z",
-      "changed_files": ["docs/SPEC.md", "src/requests/requests.test.ts"],
-      "previously_audited": false,
-      "audit_status": "audited (no bugs; SPEC FR-9 text changed by owner decision; S-10)",
-      "findings": ["S-10"]
-    },
-    {
-      "pr": 71,
-      "title": "Audit fix: retry an email through a Resend outage on a later run (F-12-2, F-12-3)",
-      "url": "https://github.com/adirathodd/kindword/pull/71",
-      "author": "adirathodd",
-      "merge_commit": "a6ee57318d9d60e16bf1076e2fe522ad8a85a872",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:30:09Z",
+      "merged_at": "2026-11-27T03:01:59Z",
+      "depends_on": "#43/#60 (outcome_unknown), #71 (maybe_sent_at, email retries), #69 (duplicate skip is final)",
       "changed_files": [
-        "drizzle/0012_review_request_email_retry.sql",
-        "drizzle/meta/*",
-        "src/db/schema.ts",
-        "src/email/resend.ts",
-        "src/email/resend.test.ts",
-        "src/notifications/operatorAlerts.ts",
+        "docs/SPEC.md",
+        "docs/sync/proposed-spec-changes.md",
         "src/requests/requests.ts",
         "src/requests/requests.test.ts"
       ],
       "previously_audited": false,
-      "audit_status": "audited (no verified bugs; closes F-12-2, F-12-3)",
-      "findings": []
-    },
-    {
-      "pr": 70,
-      "title": "Audit fix: answer account email requests before the path-dependent work (F-28-2, F-36-2)",
-      "url": "https://github.com/adirathodd/kindword/pull/70",
-      "author": "adirathodd",
-      "merge_commit": "3af4ae0e6ccb3052bc6ed794555bb64390e78703",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:31:27Z",
-      "changed_files": [
-        "src/accounts/accounts.ts",
-        "src/accounts/http.ts",
-        "src/app/account/routes.test.ts",
-        "src/app/account/sign-in/link/route.test.ts",
-        "src/inbox/linkRequest.ts"
-      ],
-      "previously_audited": false,
-      "audit_status": "audited (no verified bugs; closes F-28-2, F-36-2)",
-      "findings": []
-    },
-    {
-      "pr": 68,
-      "title": "Audit fix: owner emails open the emailed location's inbox (F-40-1)",
-      "url": "https://github.com/adirathodd/kindword/pull/68",
-      "author": "adirathodd",
-      "merge_commit": "f16d2742b9d333075939ac81d7ffe1d17eac8524",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:31:42Z",
-      "changed_files": [
-        "src/app/account/inbox/[locationId]/route.ts",
-        "src/app/inbox/route.ts",
-        "src/app/inbox/routes.test.ts",
-        "src/inbox/http.ts",
-        "src/notifications/ownerEmails.ts",
-        "src/notifications/ownerEmails.test.ts",
-        "src/reports/monthly.ts",
-        "src/reports/monthly.test.ts"
-      ],
-      "previously_audited": false,
-      "audit_status": "audited (no verified bugs; closes F-40-1; SPEC open item still listed, S-10)",
-      "findings": []
-    },
-    {
-      "pr": 72,
-      "title": "Audit fix: keep the opt-out confirmation through a Twilio timeout, never sending it twice (F-9-2)",
-      "url": "https://github.com/adirathodd/kindword/pull/72",
-      "author": "adirathodd",
-      "merge_commit": "a8df7684af33a45ea239b085f0a2176a5fc14172",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:38:10Z",
-      "changed_files": [
-        "docs/SPEC.md",
-        "drizzle/0013_optout_confirmations.sql",
-        "drizzle/meta/*",
-        "src/app/api/sms/inbound/route.ts",
-        "src/db/schema.ts",
-        "src/jobs/jobs.ts",
-        "src/jobs/run.test.ts",
-        "src/optout/confirmations.ts",
-        "src/optout/optout.ts",
-        "src/optout/optout.test.ts",
-        "src/sms/twilio.ts",
-        "src/sms/twilio.test.ts",
-        "vercel.json"
-      ],
-      "previously_audited": false,
-      "audit_status": "audited (verified finding F-72-1, introduced by #72; fixed in #75)",
-      "findings": ["F-72-1", "O-72-1", "O-72-2"]
-    },
-    {
-      "pr": 67,
-      "title": "Audit fix: reject invalid location time zones in the database (F-7-5, part 1)",
-      "url": "https://github.com/adirathodd/kindword/pull/67",
-      "author": "adirathodd",
-      "merge_commit": "3f32866ac73d6897b96604717bd8124935d1d15c",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:41:45Z",
-      "changed_files": [
-        "drizzle/0014_locations_timezone_valid.sql",
-        "drizzle/meta/*",
-        "src/db/schema.ts",
-        "src/db/schema.test.ts",
-        "src/requests/requests.test.ts"
-      ],
-      "previously_audited": false,
-      "audit_status": "audited (no findings; all 499 pg_timezone_names except the 3 excluded are accepted by Intl on Node 24)",
-      "findings": []
-    },
-    {
-      "pr": 59,
-      "title": "Delete everything for a business 30 days after offboarding (SPEC Security, Retention)",
-      "url": "https://github.com/adirathodd/kindword/pull/59",
-      "author": "adirathodd",
-      "merge_commit": "66a966ee2c1d9ccc0825a3c6a11254724d6df092",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:46:18Z",
-      "changed_files": [
-        "drizzle/0015_business_offboarded_at.sql",
-        "drizzle/0016_business_offboarded_at_trigger.sql",
-        "drizzle/meta/*",
-        "src/db/schema.ts",
-        "src/jobs/dispatch.test.ts",
-        "src/jobs/jobs.ts",
-        "src/retention/businesses.ts",
-        "src/retention/businesses.test.ts"
-      ],
-      "previously_audited": false,
-      "audit_status": "audited (no verified bugs; interaction with #72 optout_confirmations checked: purge succeeds; O-59-1)",
-      "findings": ["O-59-1"]
-    },
-    {
-      "pr": 65,
-      "title": "State the SPEC retention periods on both privacy pages (FR-23, SPEC Retention)",
-      "url": "https://github.com/adirathodd/kindword/pull/65",
-      "author": "adirathodd",
-      "merge_commit": "3fefa4c4b7b39569ab0fb3dbf05cd80bbe200fa3",
-      "merge_type": "squash",
-      "merged_at": "2026-11-26T17:49:15Z",
-      "changed_files": [
-        "src/accounts/accounts.ts",
-        "src/compliance/compliance.ts",
-        "src/compliance/compliance.test.ts"
-      ],
-      "previously_audited": false,
-      "audit_status": "audited (no findings; DRAFT wording, D-13 still open)",
-      "findings": []
+      "audit_status": "audited (A-82-1 verified and fixed in this PR; O-82-1)",
+      "findings": ["A-82-1", "O-82-1"]
     }
   ],
-  "not_in_scope": ["open, unmerged PRs #49, #51, #62, #63, #66, #73, #74: next cycle if merged"],
+  "not_in_scope": ["open, unmerged PRs: next cycle if merged"],
   "direct_commits_outside_prs": [],
   "worktrees": {
-    "note": "Each PR was reviewed as its own diff against its parent and traced on main at 3fefa4c; F-72-1 was reproduced on main (66a966e and 3fefa4c) with the fix reverted, which is the #72 tree for src/optout (no later PR touched it). No separate worktree was needed."
+    "note": "Three squash commits, one with code (#82, the last commit on main), so main at 9d771e1 is #82's exact state; #81 and #83 are docs only. Reviewed as diffs against their parents and traced on main; no finding needed an older tree, so no separate worktree was created."
   },
   "completed_stages": [
     "scope_inventory",
@@ -244,61 +90,88 @@
     "mergeability",
     "report"
   ],
+  "spec_requirements_reviewed": [
+    "FR-9 (new text): a request counts from the first time it may have reached the customer to the last; an unknown-outcome send counts; it still counts if later skipped. askedRecently spans coalesce(maybe_sent_at, sent_at, scheduled_for)..greatest(sent_at, maybe_sent_at, scheduled_for) and keeps isNotNull(maybe_sent_at) in the status filter; skip() and failRequest() never clear maybe_sent_at; the only writer is deliver(), which sets it once at the first send that may have gone out",
+    "FR-9: a duplicate skip stays final (#69 test unchanged and passing); scheduled rows unchanged in behaviour (all three dates equal scheduled_for)",
+    "FR-9 / D-19: a carrier-failed text (accepted then undelivered) is a definite failure: sent_at cleared, outcome_unknown false, maybe_sent_at null, so it does not count; the fallback email row does",
+    "FR-9: only attempt 1 counts (the one reminder is part of the same ask, FR-5)",
+    "Hard constraints: no phone numbers, message or review text added to logs; no schema change (drizzle-kit generate: no changes)",
+    "SPEC sync: #82's Doc edits listed in docs/sync/proposed-spec-changes.md"
+  ],
   "findings": [
     {
-      "id": "F-72-1",
-      "pr": 72,
-      "classification": "introduced by #72",
-      "severity": "important",
-      "status": "fixed in #75 (open, not merged)",
-      "spec": "FR-8 and Flow 2 step 4 (one confirmation-only text); Reliability (a retry never sends the same message twice)",
-      "summary": "sendPendingConfirmations ran the Twilio message-list lookup inside the send try/catch. A lookup failing with 429 or 503 throws TwilioSendError (refused: true); recordSendError then marked the row pending, and a pending row is resent without a lookup, so a confirmation Twilio took during the timed-out webhook attempt is sent a second time.",
-      "reproduction": "src/optout/optout.test.ts 'a failed Twilio lookup after a timeout never leads to a resend without a lookup' fails on main (row status pending) and passes with the fix."
+      "id": "A-82-1",
+      "pr": 82,
+      "classification": "exposed by #82 (the lost send time dates from #71; #82's new upper bound made it the deciding value)",
+      "severity": "low",
+      "status": "fixed in this PR",
+      "spec": "FR-9: never ask the same customer more than once in 90 days at a location; a request counts from the first time it may have reached the customer to the last (decided 2026-11-27, O-43-1).",
+      "summary": "An email retried through a Resend outage whose last send had an unknown outcome (timeout, or the 5th send) is marked failed with sent_at cleared and maybe_sent_at at the first send. The time the last send went out was not kept, so askedRecently ended the span at that retry's scheduled_for. Sends run every 15 minutes, so the real send is up to about 15 minutes later (more if a run is late), and a new visit due inside that gap 90 days on was scheduled: the customer could be asked twice within 90 days.",
+      "reproduction": "src/requests/requests.test.ts 'counts an email whose last retry had an unknown outcome until 90 days after that retry went out': failed before the fix (later visit status 'scheduled', expected 'skipped'/'duplicate').",
+      "fix": "deliver(): when a failed send may have gone out, also set scheduled_for to the send time (src/requests/requests.ts). A refused last send keeps its due time (over-counts by at most one run interval, on the safe side).",
+      "regression_tests": [
+        "counts an email whose last retry had an unknown outcome until 90 days after that retry went out",
+        "keeps the due time of a refused last retry after an earlier send that may have gone out"
+      ]
     }
   ],
   "observations": [
-    "O-72-1: sentSince treats any text from our number to the customer after the opt-out as the confirmation. A review request claimed just before the opt-out and sent just after it would count, and the confirmation would not be resent (lost, never doubled). Rare; no change.",
-    "O-72-2: the lookup compares Twilio date_created with Postgres now() floored to the second; clock skew over 1 s between them could miss the sent text and allow a resend. Hosted clocks are NTP-synced; not reproducible here.",
-    "O-59-1: purgeOffboardedBusinesses has no per-business catch although its comment says 'a failure stops only it': one business whose delete throws stops the rest for that run. Every FK under businesses cascades or sets null today (checked in pg_constraint), so no current input triggers it.",
-    "#71: retries only email; key review-request/<id> kept; no retry past 20 h after maybe_sent_at; stale limit fixed to the visit (attempt 1) or the first send (attempt 2); 9-8 window kept; maybe_sent_at counted for FR-9 and the /r link.",
-    "#70: validation, rate limits, breach check and hash still run on every path before the response; deferred failures logged without address.",
-    "#68: ?location= only compared with the session; the other-location page shows no data; account route still tenant-checks.",
-    "Still open from earlier audits: A-45-1/D-13, A-5..A-8, S-1..S-5, S-8, S-9, O-37-1, O-40-1, O-40-2, O-41-1..O-41-3, O-43-1, O-46-1, O-53-1, O-53-2, F-7-5 part 2 data check. Closed in this period: F-43-1 (#60), F-7-4 (#69), F-12-2/F-12-3 (#71), F-28-2/F-36-2 (#70), F-40-1 (#68), F-9-2 (#72), F-7-5 part 1 (#67)."
+    {
+      "id": "O-82-2",
+      "pr": 82,
+      "classification": "introduced by #82 (by design)",
+      "severity": "nit",
+      "status": "open (not a SPEC violation)",
+      "summary": "A row that expires without sending (stale or past the 20-hour key window at claim time) or whose last retry was refused ends its span at that unsent retry's scheduled_for, a little after its last possible send. This over-counts by at most the run delay and never lets a customer be asked twice."
+    },
+    {
+      "id": "O-82-1",
+      "pr": 82,
+      "classification": "SPEC drift (docs)",
+      "severity": "nit",
+      "status": "open (for the SPEC sync routine)",
+      "summary": "docs/SPEC.md's Implementation status header says 'on main at 113f99f', but its FR-9 row now describes #82 (9d771e1). The Doc still needs the #80 and #82 edits listed in docs/sync/proposed-spec-changes.md."
+    },
+    "Closed in this period: A-82-1 (by this PR), O-43-1 (by #82, owner decision 2026-11-27), O-80-4 (by #83). Still open from earlier audits: O-80-1, O-80-2, O-72-1, O-72-2, O-59-1, A-45-1/D-13, A-5..A-8, S-1..S-5, S-8, S-9, O-37-1, O-40-1, O-40-2, O-41-1..O-41-3, O-46-1, O-53-1, O-53-2, F-7-5 part 2 data check."
   ],
-  "spec_drift": [
-    "S-10: SPEC text not yet updated for merged fixes: Decisions needed still lists F-40-1 (owner emails, multi-location) as open after #68; D-11 still says F-9-2 'is not covered and stays open' after #72; FR-7 row still describes F-43-1 as open after #60. #69 and #72 changed docs/SPEC.md without adding rows to docs/sync/proposed-spec-changes.md for the Claude Doc. For the next SPEC sync; this audit does not edit the SPEC."
-  ],
+  "spec_drift": ["O-82-1"],
   "fix_prs": [
     {
-      "pr": 75,
-      "url": "https://github.com/adirathodd/kindword/pull/75",
-      "branch": "claude/cool-meitner-7a9xpf",
-      "base": "main @ 3fefa4c",
-      "remediates": [72],
-      "findings": ["F-72-1"],
-      "depends_on": [],
-      "state": "open, not merged",
-      "note": "same PR also carries this audit record (one branch allowed for this session)"
+      "pr": 87,
+      "url": "https://github.com/adirathodd/kindword/pull/87",
+      "branch": "claude/cool-meitner-oum9gw",
+      "base": "main",
+      "remediates": [82],
+      "findings": ["A-82-1"]
     }
   ],
   "validation": {
-    "environment": "local Postgres 16 (CI uses 17); Node 24.22",
+    "environment": "local Postgres 16 (CI uses 17); Node 24.22.3 (session default Node 22 is too old for the Argon2 and runtime tests)",
     "main_at_end_sha": {
-      "vitest": "639/639 passed at 66a966e (before #65); not re-run at 3fefa4c without the fix"
-    },
-    "fix": {
-      "vitest": "644/644 passed",
+      "vitest": "719/719 passed (39 files) at 9d771e1",
       "prettier": "clean",
       "eslint": "clean",
-      "next_build": "passed",
-      "regression": "new lookup-failure test fails without the fix, passes with it"
+      "drizzle_kit_generate": "no schema changes",
+      "migrations": "0000..0017 applied to a fresh database"
+    },
+    "record_pr": "docs/audits/last-audit.json only; prettier checked",
+    "fix_branch": {
+      "vitest": "721/721 passed (2 new)",
+      "prettier": "clean",
+      "eslint": "clean",
+      "next_build": "passed (TypeScript included)",
+      "drizzle_kit_generate": "no schema changes",
+      "new_test_before_fix": "failed as expected"
     }
   },
-  "merge_order": ["#75 (independent)"],
-  "unresolved": [
-    "S-10 (next SPEC sync)",
-    "O-72-1, O-72-2, O-59-1 (observations)",
-    "earlier items listed in observations"
+  "merge_order": [
+    "this PR (independent; based on main 9d771e1). Close #84 unmerged: it holds the same record without A-82-1 and would conflict on docs/audits/last-audit.json."
   ],
-  "next_audit_starts_after": "3fefa4c4b7b39569ab0fb3dbf05cd80bbe200fa3"
+  "unresolved": [
+    "Claude Doc edits for #80 and #82 still pending (no Claude Docs connector here); listed in docs/sync/proposed-spec-changes.md",
+    "O-82-1 and the earlier items listed in observations",
+    "SPEC FR-9 Implementation status row could note A-82-1 (last retry dated by when it went out); this audit does not edit the SPEC, left for the SPEC sync routine (open PR #85)."
+  ],
+  "next_audit_starts_after": "9d771e167474cfb9c99f07ea8b2b349350c718d7",
+  "rerun_note": "Second run against the same range (113f99f..9d771e1). The first run's record is in open PR #84 (no verified bugs). This run keeps that record and adds verified finding A-82-1 and its fix. This PR replaces #84; close #84 unmerged."
 }
