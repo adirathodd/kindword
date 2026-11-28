@@ -251,9 +251,9 @@ describe("purgeOffboardedBusinesses", () => {
     expect(await db.select().from(s.auditLog).where(eq(s.auditLog.entityId, stuck.businessId))).toHaveLength(1);
   });
 
-  it("stops after 5 failures in a row and counts the businesses it did not try as failed", async () => {
+  it("keeps going past any number of businesses that fail with an SQL error", async () => {
     const stuck = [];
-    for (let i = 0; i <= MAX_CONSECUTIVE_FAILURES; i++) stuck.push(await business("offboarded", daysAgo(200 - i)));
+    for (let i = 0; i <= MAX_CONSECUTIVE_FAILURES + 1; i++) stuck.push(await business("offboarded", daysAgo(200 - i)));
     const later = await business("offboarded", daysAgo(40)); // newer than every stuck one, so tried after them
     const fn = `test_block_many_${RUN}`;
     const ids = stuck.map((b) => `'${b.id}'`).join(",");
@@ -266,17 +266,42 @@ describe("purgeOffboardedBusinesses", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const err = await purgeOffboardedBusinesses({ now: NOW }).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(RetentionPurgeIncompleteError);
-      // 5 tried and failed, then the 6th stuck one and `later` were not tried.
-      expect(err).toMatchObject({ failed: MAX_CONSECUTIVE_FAILURES + 2, deleted: 0 });
-      expect(errors).toHaveBeenCalledTimes(MAX_CONSECUTIVE_FAILURES);
-      expect(await get(later.id)).toBeDefined();
+      expect(err).toMatchObject({ failed: stuck.length });
+      expect(errors).toHaveBeenCalledTimes(stuck.length);
+      expect(await get(later.id)).toBeUndefined();
     } finally {
       errors.mockRestore();
       await db.execute(sql.raw(`drop trigger if exists ${fn} on businesses; drop function if exists ${fn}();`));
     }
     await purgeOffboardedBusinesses({ now: NOW });
-    for (const b of [...stuck, later]) expect(await get(b.id)).toBeUndefined();
+    for (const b of stuck) expect(await get(b.id)).toBeUndefined();
+  });
+
+  it("stops after 3 lost connections in a row and counts the businesses it did not try as failed", async () => {
+    // A stand-in database: the due list comes back, then every transaction fails the way a dropped connection does
+    // (a Node socket error: a code, but no Postgres severity).
+    const due = Array.from({ length: 5 }, () => ({ id: crypto.randomUUID() }));
+    const chain = { from: () => chain, where: () => chain, orderBy: async () => due };
+    let tries = 0;
+    const fake = {
+      select: () => chain,
+      transaction: async () => {
+        tries++;
+        throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+      },
+    } as unknown as Parameters<typeof purgeOffboardedBusinesses>[1];
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const err = await purgeOffboardedBusinesses({ now: NOW }, fake).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RetentionPurgeIncompleteError);
+      expect(err).toMatchObject({ failed: 5, deleted: 0 });
+      expect(tries).toBe(MAX_CONSECUTIVE_FAILURES);
+      expect(errors.mock.calls.map((c) => c.join(" "))).toContain(
+        `retention: business failed id=${due[0].id} error=Error`,
+      );
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("rejects a margin outside 0 to 30 days", async () => {

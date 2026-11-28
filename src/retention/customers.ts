@@ -22,7 +22,12 @@
 import { and, eq, gt, inArray, lte, notExists, sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, customers, visits } from "../db/schema";
-import { logPurgeFailure, MAX_CONSECUTIVE_FAILURES, RetentionPurgeIncompleteError } from "./incomplete";
+import {
+  countsTowardStop,
+  logPurgeFailure,
+  MAX_CONSECUTIVE_FAILURES,
+  RetentionPurgeIncompleteError,
+} from "./incomplete";
 
 export const CUSTOMER_RETENTION_MONTHS = 12;
 const BATCH = 500;
@@ -112,7 +117,7 @@ export async function purgeExpiredCustomers(
       inARow = 0;
     } catch (e) {
       failed++;
-      inARow++;
+      inARow = countsTowardStop(e) ? inARow + 1 : 0;
       logPurgeFailure("location", locationId, e);
     }
   }

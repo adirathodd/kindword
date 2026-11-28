@@ -23,7 +23,12 @@
 import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { db as defaultDb, type Db } from "../db/client";
 import { auditLog, businesses } from "../db/schema";
-import { logPurgeFailure, MAX_CONSECUTIVE_FAILURES, RetentionPurgeIncompleteError } from "./incomplete";
+import {
+  countsTowardStop,
+  logPurgeFailure,
+  MAX_CONSECUTIVE_FAILURES,
+  RetentionPurgeIncompleteError,
+} from "./incomplete";
 
 export const OFFBOARDED_RETENTION_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -64,7 +69,7 @@ export async function purgeOffboardedBusinesses(
       inARow = 0;
     } catch (e) {
       failed++;
-      inARow++;
+      inARow = countsTowardStop(e) ? inARow + 1 : 0;
       logPurgeFailure("business", id, e);
     }
   }
