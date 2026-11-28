@@ -12,6 +12,7 @@ The Claude Doc (https://claude.ai/artifact/2MP1j84JD2TXC7B8SwriPs) was last brou
 | sync-2026-11-26-04 (SPEC sync at main 9f7a119, #74)     | FR-5, FR-6, FR-7, FR-8, FR-9, FR-13, FR-17, FR-19, FR-20, FR-23, FR-24, Retention (Security) |
 | sync-2026-11-26-05 (SPEC sync at main 6a3b21d)          | FR-8, FR-13, FR-17, FR-19                                                                    |
 | D-19 carrier-failure fallback (audit-2026-11-26-04)     | FR-6, FR-17, FR-19                                                                           |
+| #49 (post approved replies, FR-15)                      | FR-14, FR-15, FR-17, FR-19                                                                   |
 
 sync-2026-11-26-02 also changed two lines outside the table: the header line ("Last synced against main f3d6d49") and a new item under **Decisions needed**, "Consent evidence retention (D-13, …)", added after D-12.
 
@@ -24,6 +25,8 @@ sync-2026-11-26-04 also changed, outside the table: the header line (then 9f7a11
 sync-2026-11-26-05 also moved the header line to 6a3b21d.
 
 sync-2026-11-27-01 (SPEC sync at main 113f99f) moved the header line to 113f99f and the first sentence under **Implementation status** to "Status of each requirement on main at 113f99f (2026-11-27)." No row changed.
+
+#49 also changed **Decisions needed**: it appended one sentence each to D-6 (the poster never overwrites a reply already on Google) and D-7 (posts run only for live businesses), and added "Written authorization to post (D-20, …)" and "Failed reply posts (D-21, …)" after the D-19 carrier-failure item.
 
 When a later PR changes `docs/SPEC.md`, make the same edit in the Doc, or list it here.
 

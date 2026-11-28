@@ -7,7 +7,8 @@
 // - review-requests: each message row is claimed (FOR UPDATE SKIP LOCKED, marked sent) and committed before the
 //   provider is called (src/requests/requests.ts); emails also carry a provider idempotency key.
 // - sheet-intake: dedup by the sheet's row ID in visits (src/intake/pollSheet.ts).
-// - reviews: unique google_review_id (poll), at most one draft per review (draft), per-location advisory lock plus
+// - reviews: unique google_review_id (poll), at most one draft per review (draft), each approved draft locked and
+//   re-checked before its one post, and Google keeps one reply per review (post), per-location advisory lock plus
 //   audit check plus idempotency key (low-rating email).
 // - owner-digest: per-location advisory lock, one audit row per local day, idempotency key.
 // - purge: deletes under row locks; a rerun finds nothing left.
@@ -34,6 +35,7 @@ import { purgeOffboardedBusinesses } from "../retention/businesses";
 import { purgeExpiredCustomers } from "../retention/customers";
 import { draftPendingReviews } from "../reviews/draft";
 import { pollReviews } from "../reviews/poll";
+import { postApprovedReplies } from "../reviews/post";
 import { purgeExpiredReviews } from "../reviews/purge";
 import { TwilioSms, twilioConfigFromEnv } from "../sms/twilio";
 import { recordJobRun } from "./status";
@@ -68,6 +70,12 @@ async function steps(list: Record<string, () => Promise<StepResult>>): Promise<J
 }
 
 const email = () => new ResendEmail(configure(() => resendConfigFromEnv()));
+const googleTokenSecret = () =>
+  configure(() => {
+    const s = process.env.GOOGLE_TOKEN_SECRET;
+    if (!s || s.length < 32) throw new Error("GOOGLE_TOKEN_SECRET missing or shorter than 32 chars");
+    return s;
+  });
 const count = <T extends string>(xs: T[]) =>
   xs.reduce<Record<string, number>>((m, x) => ((m[x] = (m[x] ?? 0) + 1), m), {});
 
@@ -107,25 +115,35 @@ export const JOBS: Record<string, () => Promise<JobResult>> = {
       },
     }),
 
-  // FR-11, then FR-12 drafts for what polling found, then the FR-13 low-rating email. Every run reads every
-  // review, so a missed run is caught up by the next one.
-  reviews: () =>
-    steps({
+  // FR-11, then FR-12 drafts for what polling found, then FR-15 posts of owner-approved replies, then the FR-13
+  // low-rating email. Every run reads every review, so a missed run is caught up by the next one. Posting runs after
+  // polling so has_reply is fresh when it checks for a reply the owner made on Google.
+  reviews: () => {
+    // Locations whose poll failed this run; null when the poll step itself failed. Posting needs a fresh has_reply.
+    let pollFailed: Set<string> | null = null;
+    return steps({
       poll: async () => {
         const source = new BusinessProfileClient(configure(() => googleOAuthConfigFromEnv()));
-        const tokenSecret = configure(() => {
-          const s = process.env.GOOGLE_TOKEN_SECRET;
-          if (!s || s.length < 32) throw new Error("GOOGLE_TOKEN_SECRET missing or shorter than 32 chars");
-          return s;
-        });
-        const r = await pollReviews({ source, tokenSecret });
+        const r = await pollReviews({ source, tokenSecret: googleTokenSecret() });
+        pollFailed = new Set(r.failed.map((f) => f.locationId));
         return { locations: r.locations, newReviews: r.newReviews, failed: count(r.failed.map((f) => f.code)) };
       },
       draft: async () => ({ ...(await draftPendingReviews(configure(() => draftModelFromEnv()))) }),
+      post: async () => {
+        if (!pollFailed) return { skipped: "poll_failed" };
+        const poster = new BusinessProfileClient(configure(() => googleOAuthConfigFromEnv()));
+        const r = await postApprovedReplies({ poster, tokenSecret: googleTokenSecret(), skipLocationIds: pollFailed });
+        return {
+          posted: r.posted,
+          failed: count(r.failed.map((f) => f.code)),
+          waiting: count(r.waiting.map((f) => f.code)),
+        };
+      },
       lowRating: async () => ({
         ...(await sendLowRatingAlerts({ email: email(), baseUrl: configure(() => inboxBaseUrl()) })),
       }),
-    }),
+    });
+  },
 
   // FR-13: hourly; each location gets its digest on the first run at or after DIGEST_HOUR local time.
   "owner-digest": () =>

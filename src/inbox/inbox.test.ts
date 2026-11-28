@@ -271,7 +271,13 @@ describe("decide", () => {
       ok: false,
       reason: "too_long",
     });
+    // Under 4,000 characters but over Google's 4,096 bytes (FR-15 would refuse it after approval).
+    expect(await decide(sess, id, { action: "edit", text: "é".repeat(2049) })).toEqual({
+      ok: false,
+      reason: "too_long",
+    });
     expect((await draftRow(id)).status).toBe("awaiting_owner");
+    expect(await decide(sess, id, { action: "edit", text: "é".repeat(2048) })).toMatchObject({ ok: true });
   });
 
   it("rejects a draft so it is never posted", async () => {

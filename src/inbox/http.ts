@@ -121,7 +121,7 @@ const NOTICES: Record<string, [string, boolean]> = {
   not_found: ["That draft is no longer in your inbox.", true],
   needs_confirmation: ["Tick the box to confirm before approving a flagged reply.", true],
   empty_text: ["The reply cannot be empty.", true],
-  too_long: ["The reply is too long (4,000 characters at most).", true],
+  too_long: ["The reply is too long for Google. Shorten it, especially if it has accents or emoji.", true],
 };
 
 export function inboxPage(inbox: Inbox, notice: string | null) {

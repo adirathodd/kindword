@@ -7,12 +7,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { db } from "../db/client";
 import * as s from "../db/schema";
 
-const calls = vi.hoisted(() => ({ list: [] as string[], failPurge: false }));
+const calls = vi.hoisted(() => ({ list: [] as string[], failPurge: false, failPoll: false }));
 const track =
   <T>(name: string, value: T) =>
   async () => {
     calls.list.push(name);
     if (name === "purgeExpiredReviews" && calls.failPurge) throw new Error("connection reset");
+    if (name === "pollReviews" && calls.failPoll) throw new Error("connection reset");
     return value;
   };
 vi.mock("../intake/pollSheet", () => ({ pollSheet: track("pollSheet", { ok: true, rows: [] }) }));
@@ -27,6 +28,9 @@ vi.mock("../requests/requests", async (orig) => ({
 }));
 vi.mock("../reviews/poll", () => ({ pollReviews: track("pollReviews", { locations: 0, newReviews: 0, failed: [] }) }));
 vi.mock("../reviews/draft", () => ({ draftPendingReviews: track("draftPendingReviews", { drafted: 0 }) }));
+vi.mock("../reviews/post", () => ({
+  postApprovedReplies: track("postApprovedReplies", { posted: 0, failed: [], waiting: [] }),
+}));
 vi.mock("../notifications/ownerEmails", () => ({
   sendLowRatingAlerts: track("sendLowRatingAlerts", { sent: 0, failed: 0 }),
   sendDailyDigests: track("sendDailyDigests", { sent: 0, failed: 0 }),
@@ -105,7 +109,7 @@ describe("dispatch", () => {
   it.each([
     ["sheet-intake", ["pollSheet"]],
     ["review-requests", ["runReviewRequestJobs"]],
-    ["reviews", ["pollReviews", "draftPendingReviews", "sendLowRatingAlerts"]],
+    ["reviews", ["pollReviews", "draftPendingReviews", "postApprovedReplies", "sendLowRatingAlerts"]],
     ["owner-digest", ["sendDailyDigests"]],
     ["purge", ["purgeExpiredReviews", "purgeExpiredCustomers", "purgeOffboardedBusinesses", "purgePendingReceipts"]],
     ["monthly-report", ["sendMonthlyReports"]],
@@ -170,6 +174,16 @@ describe("failures and retries", () => {
     const line = String(vi.mocked(console.error).mock.calls[0][0]);
     expect(line).toContain("GOOGLE_OAUTH_CLIENT_ID missing or not an OAuth client ID");
     expect(line).not.toContain(ENV.GOOGLE_OAUTH_CLIENT_SECRET);
+  });
+
+  it("does not post replies when the review poll failed in the same run (has_reply may be stale)", async () => {
+    calls.failPoll = true;
+    try {
+      await expect(runScheduled(msg("reviews"))).rejects.toThrow();
+      expect(calls.list).toEqual(["pollReviews", "draftPendingReviews", "sendLowRatingAlerts"]);
+    } finally {
+      calls.failPoll = false;
+    }
   });
 
   it("does not send review requests when sending is misconfigured", async () => {

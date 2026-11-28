@@ -1,4 +1,5 @@
 // Runs against the Postgres in DATABASE_URL. Fake data only: example.test emails, made-up reviews, 555-01xx numbers.
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -164,26 +165,53 @@ async function approval(t: T, at: Date, minutes: number) {
   });
 }
 
-async function postedDraft(t: T, postedAt: Date) {
-  const [r] = await db
-    .insert(s.reviews)
-    .values({ locationId: t.locationId, googleReviewId: `report-test-${n++}`, rating: 5, text: "Secret review text." })
-    .returning();
-  const [o] = await db
-    .insert(s.ownerSessions)
-    .values({ locationId: t.locationId, ownerEmail: "o@example.test", loginTokenHash: `h-${n++}`, tokenExpiresAt: NOW })
-    .returning();
-  await db.insert(s.replyDrafts).values({
-    reviewId: r.id,
+// A post as src/reviews/post.ts records it: the draft marked posted and one reply_posted audit row. purged: the draft
+// and review are gone (FR-22), so only the audit row is left.
+async function postedDraft(t: T, postedAt: Date, opts: { purged?: boolean } = {}) {
+  let draftId: string = randomUUID();
+  if (!opts.purged) {
+    const [r] = await db
+      .insert(s.reviews)
+      .values({
+        locationId: t.locationId,
+        googleReviewId: `report-test-${n++}`,
+        rating: 5,
+        text: "Secret review text.",
+      })
+      .returning();
+    const [o] = await db
+      .insert(s.ownerSessions)
+      .values({
+        locationId: t.locationId,
+        ownerEmail: "o@example.test",
+        loginTokenHash: `h-${n++}`,
+        tokenExpiresAt: NOW,
+      })
+      .returning();
+    const [d] = await db
+      .insert(s.replyDrafts)
+      .values({
+        reviewId: r.id,
+        locationId: t.locationId,
+        draftText: "Secret reply text.",
+        finalText: "Secret reply text.",
+        status: "posted",
+        model: "test",
+        promptVersion: 1,
+        approvedSessionId: o.id,
+        approvedAt: postedAt,
+        postedAt,
+      })
+      .returning();
+    draftId = d.id;
+  }
+  await db.insert(s.auditLog).values({
     locationId: t.locationId,
-    draftText: "Secret reply text.",
-    finalText: "Secret reply text.",
-    status: "posted",
-    model: "test",
-    promptVersion: 1,
-    approvedSessionId: o.id,
-    approvedAt: postedAt,
-    postedAt,
+    entity: "reply_draft",
+    entityId: draftId,
+    action: "reply_posted",
+    actor: "system:reply_post",
+    at: postedAt,
   });
 }
 
@@ -287,6 +315,8 @@ describe("sendMonthlyReports", () => {
     await approval(t, new Date("2026-10-20T12:00:00Z"), 5); // October
     await approval(other, NOV("12T12:00:00Z"), 1);
     await postedDraft(t, NOV("14T12:00:00Z"));
+    await postedDraft(t, NOV("02T12:00:00Z"), { purged: true }); // still counted after its draft is purged (O-53-1)
+    await postedDraft(t, new Date("2026-10-28T12:00:00Z"), { purged: true }); // October
     await postedDraft(other, NOV("14T12:00:00Z"));
 
     await run();
@@ -308,7 +338,7 @@ describe("sendMonthlyReports", () => {
       "Customers who opted out: 1",
       "Replies you approved: 3",
       "Typical time to approve (median): 2 hours",
-      "Replies posted to Google: 1",
+      "Replies posted to Google: 2",
       `Open your reply inbox: ${BASE}/inbox?location=${t.locationId}`,
     ])
       expect(m.text).toContain(line);

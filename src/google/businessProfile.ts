@@ -1,9 +1,11 @@
-// Google Business Profile client (SPEC FR-11; Integrations: Google Business Profile API; Provider notes: Google
-// OAuth). The only module that talks to the Business Profile API. Per the SPEC it may expose only "list reviews" and
-// "post reply"; this version has list reviews (posting is FR-15). The API has one scope (business.manage) with no
-// read-only variant, so least privilege is enforced here: the two URLs below are the only ones this module calls,
-// and businessProfile.test.ts fails the build if any other is requested.
-// No SDK: an access token is one refresh-token grant at Google's token endpoint, and a read is the v4 reviews list.
+// Google Business Profile client (SPEC FR-11, FR-15; Integrations: Google Business Profile API; Provider notes: Google
+// OAuth). The only module that talks to the Business Profile API. Per the SPEC it exposes only "list reviews" and
+// "post reply". The API has one scope (business.manage) with no read-only variant, so least privilege is enforced
+// here: the token endpoint, the v4 reviews list (GET) and one review's reply (PUT) are the only calls this module
+// makes, and businessProfile.test.ts fails the build if any other is requested.
+// No SDK: an access token is one refresh-token grant at Google's token endpoint, a read is the v4 reviews list, and a
+// post is the v4 updateReply PUT. Google keeps one reply per review and a PUT replaces it, so repeating a post with the
+// same text (a retry, or a run after a crash) never creates a second reply.
 // Transient failures (429, 5xx, network errors, timeouts) are retried with backoff. Errors carry the HTTP status and
 // a short code only, never review content, Google's message text, the tokens or the client secret. Safe to log.
 // The list response also carries averageRating and totalReviewCount; they are ignored, never returned or stored
@@ -22,6 +24,9 @@ const TOKEN_REFRESH_MARGIN_MS = 60_000;
 
 // "accounts/{accountId}/locations/{locationId}", as stored in locations.google_location_id.
 export const GOOGLE_LOCATION_RE = /^accounts\/[0-9]{1,30}\/locations\/[0-9]{1,30}$/;
+// A review ID as it goes into the reply URL path: URL-safe characters only, the length parseReview accepts.
+export const GOOGLE_REVIEW_ID_RE = /^[A-Za-z0-9_-]{1,256}$/;
+export const MAX_REPLY_BYTES = 4096; // Google's limit for a reply (UTF-8)
 const STARS: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
 
 export type GoogleReview = {
@@ -43,17 +48,25 @@ export interface ReviewSource {
   listReviews(location: ReviewSourceLocation): Promise<GoogleReview[]>;
 }
 
+// The poster's boundary (src/reviews/post.ts). Resolves once Google has stored the reply. Tests use a fake.
+export interface ReplyPoster {
+  postReply(location: ReviewSourceLocation, reviewId: string, comment: string): Promise<void>;
+}
+
 // code: invalid_location (refused before any call), token_revoked (the owner revoked our access or the grant
 // expired: Google answered invalid_grant; someone must reconnect), auth_failed (Google refused our OAuth client:
-// fix the configuration), no_access (403 or 404: the token's user cannot read this location), too_many_pages,
-// bad_response, timeout, network, http_error. retryable is true for failures a later run may get past on its own.
+// fix the configuration), no_access (403, or 404 on a read: the token's user cannot read this location),
+// too_many_pages, bad_response, timeout, network, http_error. Posting adds invalid_review and invalid_reply (refused
+// before any call), rejected (400: Google refused this reply) and not_found (404: the review is gone, or access to the
+// location was lost; Google answers both the same way).
+// retryable is true for failures a later run may get past on its own.
 export class GoogleReviewsError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     readonly retryable: boolean,
   ) {
-    super(`Google reviews read failed: status=${status} code=${code}`);
+    super(`Google reviews call failed: status=${status} code=${code}`);
     this.name = "GoogleReviewsError";
   }
 }
@@ -103,7 +116,7 @@ export function parseReview(raw: unknown): GoogleReview | null {
   };
 }
 
-export class BusinessProfileClient implements ReviewSource {
+export class BusinessProfileClient implements ReviewSource, ReplyPoster {
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => Date;
@@ -144,16 +157,52 @@ export class BusinessProfileClient implements ReviewSource {
     throw new GoogleReviewsError(200, "too_many_pages", false);
   }
 
+  // Sets the location's reply to one review (FR-15). Only the poster calls this, and only for an owner-approved draft.
+  async postReply(location: ReviewSourceLocation, reviewId: string, comment: string): Promise<void> {
+    if (!GOOGLE_LOCATION_RE.test(location.googleLocationId)) throw new GoogleReviewsError(0, "invalid_location", false);
+    if (!GOOGLE_REVIEW_ID_RE.test(reviewId)) throw new GoogleReviewsError(0, "invalid_review", false);
+    if (!comment.trim() || Buffer.byteLength(comment, "utf8") > MAX_REPLY_BYTES)
+      throw new GoogleReviewsError(0, "invalid_reply", false);
+    const url = `${REVIEWS_API}/${location.googleLocationId}/reviews/${reviewId}/reply`;
+    const res = await this.authorized(url, location.refreshToken, {
+      method: "PUT",
+      contentType: "application/json",
+      body: JSON.stringify({ comment }),
+    });
+    if (res.status === 400) throw new GoogleReviewsError(400, "rejected", false);
+    if (res.status === 403) throw new GoogleReviewsError(403, "no_access", false);
+    if (res.status === 404) throw new GoogleReviewsError(404, "not_found", false);
+    await this.parseJson(res);
+  }
+
   private async getJson(url: string, refreshToken: string): Promise<object> {
-    const auth = async () => ({ Authorization: `Bearer ${await this.accessToken(refreshToken)}` });
-    let res = await this.call(url, auth);
+    const res = await this.authorized(url, refreshToken);
+    if (res.status === 403 || res.status === 404) throw new GoogleReviewsError(res.status, "no_access", false);
+    return this.parseJson(res);
+  }
+
+  // One call with the location's access token. A 401 gets one fresh token and one more try, then means token_revoked.
+  private async authorized(
+    url: string,
+    refreshToken: string,
+    init: { method?: string; body?: string; contentType?: string } = {},
+  ): Promise<Response> {
+    const auth = async () => ({
+      Authorization: `Bearer ${await this.accessToken(refreshToken)}`,
+      ...(init.contentType ? { "Content-Type": init.contentType } : {}),
+    });
+    let res = await this.call(url, auth, init);
     if (res.status === 401) {
       // The cached token was revoked or expired early: get a new one and try once more.
       this.tokens.delete(refreshToken);
-      res = await this.call(url, auth);
+      res = await this.call(url, auth, init);
     }
     if (res.status === 401) throw new GoogleReviewsError(401, "token_revoked", false);
-    if (res.status === 403 || res.status === 404) throw new GoogleReviewsError(res.status, "no_access", false);
+    return res;
+  }
+
+  // A 2xx JSON object, or the error for anything else not already handled by the caller.
+  private async parseJson(res: Response): Promise<object> {
     if (!res.ok) throw new GoogleReviewsError(res.status, "http_error", retryableStatus(res.status));
     const json = await res.json().catch(() => null);
     if (!json || typeof json !== "object" || Array.isArray(json))
